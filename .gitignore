@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.resume-agent/
+.env
+.env.*
+!.env.example
+*.log
+coverage/
