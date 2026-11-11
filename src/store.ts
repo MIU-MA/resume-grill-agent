@@ -13,6 +13,7 @@ export class Store {
       .exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS objects(id TEXT PRIMARY KEY, kind TEXT NOT NULL, data TEXT NOT NULL);
       CREATE UNIQUE INDEX IF NOT EXISTS application_digest ON objects(json_extract(data,'$.digest')) WHERE kind='application';
+      CREATE UNIQUE INDEX IF NOT EXISTS batch_request ON objects(json_extract(data,'$.requestHash')) WHERE kind='batch';
       CREATE TABLE IF NOT EXISTS approvals(application_id TEXT PRIMARY KEY, digest TEXT NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, application_id TEXT NOT NULL REFERENCES objects(id), created_at INTEGER NOT NULL, type TEXT NOT NULL, detail TEXT NOT NULL);`);
   }

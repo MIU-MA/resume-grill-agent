@@ -1,33 +1,37 @@
 # Resume Grill Agent
 
-Resume Grill 的独立插件可行性试验：把简历、JD、岗位版本、邮件准备与投递记录接成一条本地 MCP 流程。数据存入本机 SQLite；修改建议由宿主模型给出，工具负责引用校验、生成文件和执行结果记录。
+DSH 原生求职插件，也提供通用 MCP 接口。在对话中读取岗位、按 JD 核对简历、准备邮件并确认投递。模型负责理解和建议，本地服务保存资料、校验修改及记录执行结果。
 
 ## 当前能做
 
-- 导入 PDF、DOCX、TXT、Markdown，复制保存原文件。
-- 保存 JD 和招聘来源，提取结构化段落供宿主改写；复用主项目的事实与岗位引用校验。
-- 按用户接受项保存岗位版本，生成中文 PDF；原文件保留，新 PDF 暂为文本排版，**不保留原布局和照片**。
-- 冻结收件人、正文和实际附件，按内容摘要去重；模拟执行、查询投递和事件记录。
-- 提供 SMTP 发送适配器，支持 QQ／163／126。真实发送默认关闭，须交互终端确认当前内容摘要；不确定结果阻止自动重发。
+- **对话内操作**：岗位清单、逐条修改与投递核对直接显示在回答下方；按钮调用本地服务，操作结果留在同一会话。刷新后恢复实际记录。
+- **记住求职目标**：主简历、岗位方向、城市、排除词及招聘来源，重启后可继续使用。
+- **读取官网岗位**：从内置公开官网或指定 HTTPS 页面提取真实 JD、招聘邮箱及来源；支持岗位别名筛选，保留失败原因。宿主浏览器读取的 JD 也可导入同一清单。
+- **逐条改简历**：导入 PDF／DOCX／TXT／Markdown，按 JD 生成并保存建议，用户选择接受项；原文件保留，岗位副本另存。
+- **批量准备投递**：核对建议后，集中生成岗位 PDF 与邮件；缺邮箱、地点证据或修改选择的条目单独提示。重复请求复用已有批次及附件，不会重复生成邮件。
+- **真实邮箱发送**：支持 QQ／163／126 SMTP，须用户确认。记录实际收件人、冻结附件、Message-ID、SMTP 回执及状态，结果不明确时阻止自动重发。
 
-**这是试验版，不是完整工作台迁移。** 岗位搜索、官网填写、回复同步、打开追踪、面试与复盘尚未接入。当前填写 JD 或使用宿主已有的搜索／浏览器能力获取岗位。原项目浏览器数据不会自动导入。本地 MCP 不代表正文不经过宿主的模型服务。
+当前新 PDF 是文本排版，**不保留原布局和照片**。官网读取针对静态公开页面，每次最多 6 个来源、10 个页面，约 40 秒预算；不是全网搜索，不能覆盖登录页和所有动态列表。方向筛选使用标题及别名，城市只检查 JD 中的文字证据，不能替代人工确认。
 
-## 运行
+官网自动填表、定时查找、收信同步、已读追踪与面试还未接入；批量准备后仍需逐封核对发送。原工作台的浏览器数据不会自动迁移。资料存本机 SQLite，但宿主模型仍会接触简历与 JD。
 
-需要 Node.js 24 或更新版本。SQLite 使用 Node 内置模块，Node 24 可能打印实验性提示到 stderr。
+## 安装到 DSH
+
+需要 Node.js 24+ 和本机 DSH。先在本仓库安装依赖、构建，再将实际绝对路径加入使用的 profile：
 
 ```bash
 npm ci
 npm run build
-npm test
-npm run demo
+dsh plugin --profile desktop add "link:C:/path/resume-grill-agent"
 ```
 
-演示不调用模型、不发信，会输出生成 PDF 和临时数据目录的位置。
+重启 DSH，在插件列表确认“求职助手”已启用。直接告诉助手简历路径、求职方向或具体 JD；建议生成后在对话卡片中勾选，点击“用所选修改准备邮件”，继续核对实际附件与正文。无需启动额外网页。Web 版把 `desktop` 换成 `web`，详细步骤见 [DSH 说明](integrations/dsh/README.md)。
 
-## 接入宿主
+DSH 原生版默认将资料放在 `DSH_HOME/storages/resume-grill`（通常是用户目录下的 `.dsh/storages/resume-grill`）。可用 `RESUME_AGENT_HOME` 指定其他绝对目录。通用 MCP／独立面板默认使用启动目录下的 `.resume-agent`，需要共用资料时显式设置同一目录。
 
-MCP 使用 stdio，程序启动时不监听端口。按宿主支持的 MCP 配置格式，指向构建好的 CLI；下面是通用配置示例，需要将路径替换成实际绝对路径：
+## 接入助手
+
+按宿主的 MCP 格式配置，替换为实际绝对路径：
 
 ```json
 {
@@ -35,34 +39,38 @@ MCP 使用 stdio，程序启动时不监听端口。按宿主支持的 MCP 配�
     "resume-grill": {
       "command": "node",
       "args": ["C:/path/resume-grill-agent/dist/cli.js", "serve"],
-      "env": {"RESUME_AGENT_HOME": "C:/path/private-resume-agent-data"}
+      "env": { "RESUME_AGENT_HOME": "C:/path/private-resume-data" }
     }
   }
 }
 ```
 
-WorkBuddy 连接器采用 MCP + Skill；DSH 使用其 MCP 客户端的 stdio 配置。两者的安装元数据不同，上面的配置不是可直接提交商店的插件包。将 `skills/job-workbench/SKILL.md` 按宿主的技能安装方式加载。
+其他宿主可加载 [求职 Skill](skills/job-workbench/SKILL.md)。MCP 与 DSH 原生版复用同一组业务操作；WorkBuddy 尚未实装。`npm run panel` 仍提供可选的本机 React 面板，用于调试和没有原生界面的宿主，默认端口 4319。
 
-工具顺序：`import_resume → add_job → review_context → save_resume_version → prepare_application → preview_application → execute_application → application_history`。`list_workspace` 用于复用已有资料。宿主需要先显示逐段建议并得到选择，不可自行接受所有修改。
+任务流程：`import_resume → save_search_goal → discover_jobs / add_job → goal_candidates → review_context → propose_resume_changes → prepare_application_batch`。单份投递仍可使用 `save_resume_version → prepare_application`；`list_workspace` 用于找回目标和批次。用户选择修改、核对附件后才进入发送。
 
-## 真实发信
+## 发送与记录
 
-测试只使用假 SMTP；仓库没有验证真实邮箱投递。启用前须自行核对生成的 PDF、收件人和邮件内容。
+在服务环境中配置 `RESUME_SMTP_ADDRESS`、`RESUME_SMTP_CODE`、`RESUME_SMTP_PROVIDER`（qq／163／126）以及 `RESUME_ALLOW_SEND=1`。凭证不通过工具参数传递，不写入数据库。
 
-在 MCP 进程环境中配置 `RESUME_SMTP_ADDRESS`、`RESUME_SMTP_CODE`、`RESUME_SMTP_PROVIDER`，以及 `RESUME_ALLOW_SEND=1`。凭证不通过工具参数传递，不写入数据库。
-
-用户在自己的交互终端，设置相同 `RESUME_AGENT_HOME` 后运行：
+DSH 投递卡片或独立面板中核对完整邮件及实际 PDF，勾选核对项、输入“发送”，再确认；也可在自己的交互终端运行：
 
 ```bash
 node dist/cli.js approve <applicationId> <digest>
 ```
 
-程序完整展示内容，输入 `SEND` 后生成有效期 10 分钟的一次性确认，再让 MCP 调用 `execute_application` 且 `dryRun:false`。批准能力不作为 MCP 工具提供；不要授予宿主自动代替用户在终端确认的权限。这是本地流程约束，不是对拥有完整电脑控制权的 Agent 的强安全隔离。
+终端展示内容后输入 `SEND`，获得 10 分钟内有效的一次性确认，再通过通用 MCP 调用 `execute_application`，明确传入 `dryRun:false`。DSH 原生工具不接受模型直接发信，须用户通过卡片确认。`dryRun:true` 仅检查附件，不发信。确认能力不作为 MCP 工具提供；不要让助手替用户完成批准。这是流程约束，不能隔离拥有完整电脑控制权的助手。
 
-`sent` 只表示发件服务接受。SMTP 抛错会保守记为 `uncertain`；进程在发送期间退出可能留下 `sending`，两者均不能自动重试，必须先人工核对邮箱记录。
+`sent` 只表示 SMTP 接受，不代表送达或阅读；`sending`／`uncertain` 需要核对邮箱记录，不能自动重试。此前真实发信测试已由用户确认收到 PDF，本轮任务验证没有发信。
 
-## 开发
+## 开发与验证
 
-`src/domain/` 是可复用规则，`service.ts` 编排工作流，`store.ts` 保存数据，`documents.ts` 处理文件，`mcp.ts`／`cli.ts` 是入口适配。`npm run check` 检查类型，`npm test` 包含真实 stdio MCP 握手和演示工作流，网络 SMTP 全部替换为测试函数。
+```bash
+npm run check
+npm test
+node scripts/check-panel.mjs
+```
 
-当前尚未在真实 DSH／WorkBuddy 客户端安装验证；协议测试不能替代客户端兼容性验证。来源与许可见 [THIRD_PARTY.md](THIRD_PARTY.md)。
+自动测试使用临时资料库和替代 SMTP；浏览器验证使用演示数据，检查逐条修改、PDF、任务、批量准备与阻塞提示，不发信，结束后关闭服务。原生插件另用 `scripts/check-dsh-native.mjs` 在实际 DSH 中检查安装、卡片、按钮、附件和会话恢复，采用本地固定测试响应，不请求付费模型。截图仅保存在已忽略的 `.resume-agent/verification/`。
+
+`src/dsh/` 是原生插件及卡片，`operations.ts` 供 DSH／MCP 共用；`src/domain/` 放规则，`src/careers/` 读取招聘页，`tasks.ts` 编排目标与批次，`service.ts` 管理简历和邮件，`store.ts` 保存数据。来源与许可见 [THIRD_PARTY.md](THIRD_PARTY.md)。

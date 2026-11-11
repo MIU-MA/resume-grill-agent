@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { PDFDocument } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
+import { createFont } from "fonteditor-core";
 
 export async function readResume(path: string) {
   const bytes = await readFile(path);
@@ -50,13 +51,32 @@ export async function readResume(path: string) {
 export async function renderPdf(text: string): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
-  const font = await pdf.embedFont(
-    await readFile(
-      fileURLToPath(
-        new URL("../assets/NotoSansSC-Regular.ttf", import.meta.url),
+  const bytes = await readFile(
+    fileURLToPath(new URL("../assets/NotoSansSC-Regular.ttf", import.meta.url)),
+  );
+  const available = new Set(fontkit.create(bytes).characterSet);
+  if (
+    Array.from(text).some(
+      (c) => !/\s/u.test(c) && !available.has(c.codePointAt(0)!),
+    )
+  )
+    throw new Error("简历包含字体不支持的字符，请替换后重新生成。");
+  // Same standalone TTF approach as Resume Grill: pdf-lib CJK subsetting can omit glyphs.
+  const subset = createFont(Uint8Array.from(bytes).buffer, {
+    type: "ttf",
+    subset: [
+      ...new Set(
+        Array.from(text + " ")
+          .filter((c) => !/[\n\r\t]/.test(c))
+          .map((c) => c.codePointAt(0)!),
       ),
-    ),
-    { subset: true },
+    ],
+    compound2simple: true,
+    hinting: false,
+  });
+  const font = await pdf.embedFont(
+    subset.write({ type: "ttf", toBuffer: false }),
+    { subset: false },
   );
   let page = pdf.addPage([595.28, 841.89]),
     y = 795;

@@ -41,7 +41,12 @@ test(
     try {
       await connect();
       const tools = await client!.listTools();
-      assert.equal(tools.tools.length, 9);
+      assert.equal(tools.tools.length, 14);
+      assert.ok(
+        tools.tools
+          .find((tool) => tool.name === "execute_application")
+          ?.inputSchema.required?.includes("dryRun"),
+      );
       assert.ok(!tools.tools.some((tool) => tool.name.includes("approve")));
       const source = join(home, "demo.md");
       await writeFile(source, "张三\n项目经历\n- 负责 Go API 开发与测试。");
@@ -51,11 +56,47 @@ test(
         role: "Go",
         jd: "示例公司招聘 Go，负责 Go API 开发与测试。",
         sourceUrl: "https://example.com/job",
+        recipient: "hr@example.com",
       });
       const context = await call("review_context", {
         resumeId: resume.id,
         jobId: job.id,
       });
+      const proposed = await call("propose_resume_changes", {
+        resumeId: resume.id,
+        jobId: job.id,
+        plan: {
+          company: job.company,
+          role: job.role,
+          sectionOrder: context.sections.map(
+            (section: { id: string }) => section.id,
+          ),
+          changes: [],
+          highlights: [],
+          gaps: [],
+        },
+      });
+      assert.equal(proposed.resumeId, resume.id);
+      const goal = await call("save_search_goal", {
+        resumeId: resume.id,
+        directions: ["Go"],
+      });
+      const candidates = await call("goal_candidates", { goalId: goal.id });
+      assert.equal(candidates[0].job.id, job.id);
+      const batch = await call("prepare_application_batch", {
+        goalId: goal.id,
+        choices: [{ jobId: job.id, proposalId: proposed.id, accepted: [] }],
+      });
+      assert.equal(batch.items[0].status, "prepared");
+      assert.equal(
+        (
+          await call("prepare_application_batch", {
+            goalId: goal.id,
+            choices: [{ jobId: job.id, proposalId: proposed.id, accepted: [] }],
+          })
+        ).id,
+        batch.id,
+      );
       const version = await call("save_resume_version", {
         resumeId: resume.id,
         jobId: job.id,
@@ -83,11 +124,15 @@ test(
         draft.digest,
       );
       assert.equal(
-        (await call("execute_application", { id: draft.id })).status,
+        (await call("execute_application", { id: draft.id, dryRun: true }))
+          .status,
         "simulated",
       );
       await client!.close();
       await connect();
+      const saved = await call("list_workspace", {});
+      assert.equal(saved.goals[0].id, goal.id);
+      assert.equal(saved.batches[0].id, batch.id);
       assert.equal(
         (await call("application_history", {}))[0].status,
         "simulated",

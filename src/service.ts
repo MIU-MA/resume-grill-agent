@@ -13,7 +13,7 @@ import {
 
 const hash = (value: string | Uint8Array) =>
   createHash("sha256").update(value).digest("hex");
-type Resume = {
+export type Resume = {
   id: string;
   name: string;
   text: string;
@@ -23,7 +23,7 @@ type Resume = {
   pdf?: string;
   pdfHash?: string;
 };
-type Job = {
+export type Job = {
   id: string;
   company: string;
   role: string;
@@ -31,7 +31,7 @@ type Job = {
   sourceUrl: string;
   recipient?: string;
 };
-type Application = {
+export type Application = {
   id: string;
   jobId: string;
   resumeId: string;
@@ -44,6 +44,13 @@ type Application = {
   messageId: string;
   status: "prepared" | "simulated" | "sending" | "sent" | "uncertain";
   createdAt: number;
+  receipt?: SmtpReceipt;
+};
+export type SmtpReceipt = {
+  accepted: string[];
+  response: string;
+  messageId: string;
+  acceptedAt: number;
 };
 export type Send = (mail: {
   recipient: string;
@@ -51,7 +58,7 @@ export type Send = (mail: {
   body: string;
   messageId: string;
   attachment: Uint8Array;
-}) => Promise<void>;
+}) => Promise<void | SmtpReceipt>;
 
 export class Workspace {
   constructor(
@@ -95,6 +102,8 @@ export class Workspace {
       .find(
         (job) =>
           job.sourceUrl === parsed.sourceUrl &&
+          job.role === parsed.role &&
+          job.company === parsed.company &&
           job.jd === parsed.jd &&
           job.recipient === parsed.recipient,
       );
@@ -157,6 +166,20 @@ export class Workspace {
       ),
     };
   }
+  propose(resumeId: string, jobId: string, value: unknown) {
+    const resume = this.store.get<Resume>("resume", resumeId),
+      job = this.store.get<Job>("job", jobId);
+    const plan = groundedTailoringSchema(resume.text, job.jd).parse(value);
+    const proposal = {
+      id: randomUUID(),
+      resumeId,
+      jobId,
+      plan,
+      createdAt: Date.now(),
+    };
+    this.store.put("proposal", proposal);
+    return proposal;
+  }
   async prepare(
     jobId: string,
     resumeId: string,
@@ -212,7 +235,9 @@ export class Workspace {
       createdAt: Date.now(),
     };
     return this.store.transaction(() => {
-      const concurrent = this.store.list<Application>("application").find(item => item.digest === digest);
+      const concurrent = this.store
+        .list<Application>("application")
+        .find((item) => item.digest === digest);
       if (concurrent) return concurrent;
       this.store.put("application", application);
       this.store.event(id, "prepared", "投递内容及附件已冻结。");
@@ -268,7 +293,7 @@ export class Workspace {
       this.store.event(id, "sending", "已消耗本次确认，开始发送。");
     });
     try {
-      await this.send({
+      const receipt = await this.send({
         recipient: item.recipient,
         subject: item.subject,
         body: item.body,
@@ -276,7 +301,11 @@ export class Workspace {
         attachment: bytes,
       });
       this.store.transaction(() => {
-        this.store.put("application", { ...item, status: "sent" });
+        this.store.put("application", {
+          ...item,
+          status: "sent",
+          ...(receipt ? { receipt } : {}),
+        });
         this.store.event(id, "sent", "发件服务已接受，不代表对方收到或阅读。");
       });
     } catch {
@@ -288,15 +317,13 @@ export class Workspace {
     return this.preview(id);
   }
   history() {
-    return this.store
-      .list<Application>("application")
-      .map((item) => ({
-        ...item,
-        events: this.store.db
-          .prepare(
-            "SELECT created_at,type,detail FROM events WHERE application_id=? ORDER BY id",
-          )
-          .all(item.id),
-      }));
+    return this.store.list<Application>("application").map((item) => ({
+      ...item,
+      events: this.store.db
+        .prepare(
+          "SELECT created_at,type,detail FROM events WHERE application_id=? ORDER BY id",
+        )
+        .all(item.id),
+    }));
   }
 }

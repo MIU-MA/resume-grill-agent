@@ -7,11 +7,52 @@ import { Store } from "../src/store.js";
 import { Workspace } from "../src/service.js";
 import { renderPdf, readResume } from "../src/documents.js";
 
-test("并行准备相同内容只生成一条投递记录", async t => {
+test("SMTP 回执随投递记录持久化，重开存储仍可查询", async (t) => {
+  const receipt = {
+    accepted: ["hr@example.com"],
+    response: "250 queued test-receipt",
+    messageId: "<test@example.com>",
+    acceptedAt: Date.now(),
+  };
+  const f = await fixture(t, async () => receipt);
+  const previous = process.env.RESUME_ALLOW_SEND;
+  process.env.RESUME_ALLOW_SEND = "1";
+  try {
+    f.workspace.approve(f.application.id, f.application.digest);
+    assert.deepEqual(
+      (await f.workspace.execute(f.application.id, false)).receipt,
+      receipt,
+    );
+    const second = new Store(f.home);
+    try {
+      assert.deepEqual(new Workspace(second).history()[0].receipt, receipt);
+    } finally {
+      second.close();
+    }
+  } finally {
+    if (previous === undefined) delete process.env.RESUME_ALLOW_SEND;
+    else process.env.RESUME_ALLOW_SEND = previous;
+  }
+});
+
+test("并行准备相同内容只生成一条投递记录", async (t) => {
   const f = await fixture(t);
-  const results = await Promise.all(Array.from({ length: 3 }, () => f.workspace.prepare(f.job.id, f.version.id, "hr@example.com", "新主题", "相同正文")));
-  assert.equal(new Set(results.map(item => item.id)).size, 1);
-  assert.equal(f.workspace.history().filter(item => item.subject === "新主题").length, 1);
+  const results = await Promise.all(
+    Array.from({ length: 3 }, () =>
+      f.workspace.prepare(
+        f.job.id,
+        f.version.id,
+        "hr@example.com",
+        "新主题",
+        "相同正文",
+      ),
+    ),
+  );
+  assert.equal(new Set(results.map((item) => item.id)).size, 1);
+  assert.equal(
+    f.workspace.history().filter((item) => item.subject === "新主题").length,
+    1,
+  );
 });
 
 async function fixture(t: any, sender?: any) {

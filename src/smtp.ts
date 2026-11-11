@@ -1,6 +1,14 @@
 import nodemailer from "nodemailer";
 import type { Send } from "./service.js";
 
+export function smtpConfigured() {
+  return (
+    !!process.env.RESUME_SMTP_ADDRESS &&
+    !!process.env.RESUME_SMTP_CODE &&
+    ["qq", "163", "126"].includes(process.env.RESUME_SMTP_PROVIDER ?? "qq")
+  );
+}
+
 export function smtpSender(): Send {
   return async (mail) => {
     const address = process.env.RESUME_SMTP_ADDRESS,
@@ -51,6 +59,12 @@ export function smtpSender(): Send {
         )
       )
         throw new Error("邮件未被接受。");
+      return {
+        accepted: result.accepted.map(String),
+        response: String(result.response).slice(0, 1000),
+        messageId: result.messageId,
+        acceptedAt: Date.now(),
+      };
     } finally {
       transport.close();
     }

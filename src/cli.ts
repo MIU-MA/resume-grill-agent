@@ -5,6 +5,7 @@ import { Store } from "./store.js";
 import { Workspace } from "./service.js";
 import { createServer } from "./mcp.js";
 import { smtpSender } from "./smtp.js";
+import { startPanel } from "./panel/server.js";
 
 const store = new Store(
   resolve(process.env.RESUME_AGENT_HOME ?? ".resume-agent"),
@@ -12,7 +13,21 @@ const store = new Store(
 const workspace = new Workspace(store, smtpSender());
 const [command = "serve", id, digest] = process.argv.slice(2);
 try {
-  if (command === "serve") {
+  if (command === "panel") {
+    const panel = await startPanel(
+      workspace,
+      Number(process.env.RESUME_PANEL_PORT ?? 4319),
+    );
+    console.log(`本机操作面板：${panel.url}`);
+    console.log(`资料库：${store.home}`);
+    let closing = false;
+    for (const signal of ["SIGINT", "SIGTERM"] as const)
+      process.on(signal, () => {
+        if (closing) return;
+        closing = true;
+        void panel.close().finally(() => store.close());
+      });
+  } else if (command === "serve") {
     const server = createServer(workspace);
     process.stdin.on("end", () => {
       void server.close().finally(() => store.close());

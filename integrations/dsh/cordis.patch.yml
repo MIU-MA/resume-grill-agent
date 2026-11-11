@@ -1,0 +1,4 @@
+- insert:
+    - id: resume-grill
+      name: resume-grill-agent
+      config: {}
