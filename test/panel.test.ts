@@ -137,9 +137,12 @@ test("React 面板 API：来源校验、共享建议、PDF、冻结预览、确�
   );
   assert.equal(sends, 0);
   const old = Object.fromEntries(
-    ["RESUME_ALLOW_SEND", "RESUME_SMTP_ADDRESS", "RESUME_SMTP_CODE"].map(
-      (k) => [k, process.env[k]],
-    ),
+    [
+      "RESUME_ALLOW_SEND",
+      "RESUME_SMTP_ADDRESS",
+      "RESUME_SMTP_CODE",
+      "RESUME_SMTP_PROVIDER",
+    ].map((k) => [k, process.env[k]]),
   );
   try {
     delete process.env.RESUME_ALLOW_SEND;
@@ -157,6 +160,29 @@ test("React 面板 API：来源校验、共享建议、PDF、冻结预览、确�
     process.env.RESUME_ALLOW_SEND = "1";
     process.env.RESUME_SMTP_ADDRESS = "sender@example.com";
     process.env.RESUME_SMTP_CODE = "secret-test-value";
+    process.env.RESUME_SMTP_PROVIDER = "unsupported";
+    assert.equal(
+      (await (await request("workspace")).json()).sendingEnabled,
+      false,
+    );
+    assert.equal(
+      (
+        await request("send", {
+          id: draft.id,
+          digest: draft.digest,
+          acknowledged: true,
+          confirmation: "发送",
+        })
+      ).status,
+      400,
+    );
+    assert.equal(sends, 0);
+    assert.equal(workspace.preview(draft.id).status, "simulated");
+    assert.equal(
+      store.db.prepare("SELECT COUNT(*) AS n FROM approvals").get()!.n,
+      0,
+    );
+    process.env.RESUME_SMTP_PROVIDER = "qq";
     assert.equal(
       (
         await request("send", {

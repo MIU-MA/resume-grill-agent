@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { NativeView } from "./views.js";
 import { RevisionChanges } from "../panel/ui/RevisionChanges.js";
-import { turnCardSelector } from "./card-model.js";
+import { turnCardSelector, viewReference } from "./card-model.js";
+import {
+  applicationStatusLabel,
+  batchItemLabel,
+} from "../presentation/application-status.js";
 declare const __NATIVE_CSS__: string;
 export const inject = ["slots", "remote", "remote.commands", "sessions"];
 type Action = (input: unknown) => Promise<NativeView | null>;
@@ -23,6 +27,7 @@ function NativeCard({
   ask: Props["ask"];
   openFile: Props["openFile"];
 }) {
+  const lock = useRef(true);
   const [view, setView] = useState(initial),
     [busy, setBusy] = useState(true),
     [error, setError] = useState(""),
@@ -32,7 +37,7 @@ function NativeCard({
     [confirmation, setConfirmation] = useState("");
   useEffect(() => {
     let live = true;
-    void act({ action: "restore" })
+    void act({ action: "restore", reference: viewReference(initial) })
       .then((value) => {
         if (live && value) setView(value);
       })
@@ -40,30 +45,43 @@ function NativeCard({
         if (live) setError(e instanceof Error ? e.message : "无法恢复卡片。");
       })
       .finally(() => {
-        if (live) setBusy(false);
+        if (live) {
+          lock.current = false;
+          setBusy(false);
+        }
       });
     return () => {
       live = false;
     };
   }, []);
   const run = async (input: unknown) => {
-    if (busy) return;
+    if (lock.current) return;
+    lock.current = true;
     setBusy(true);
     setError("");
     try {
       const value = await act(input);
       if (value) setView(value);
+      setSelected((items) =>
+        value?.kind === "goal"
+          ? items.filter((id) =>
+              value.candidates.some((candidate) => candidate.jobId === id),
+            )
+          : [],
+      );
       setAccepted([]);
       setAck(false);
       setConfirmation("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "操作失败。");
     } finally {
+      lock.current = false;
       setBusy(false);
     }
   };
   const question = async (text: string) => {
-    if (busy) return;
+    if (lock.current) return;
+    lock.current = true;
     setBusy(true);
     setError("");
     try {
@@ -71,6 +89,7 @@ function NativeCard({
     } catch (e) {
       setError(e instanceof Error ? e.message : "未能提交给助手。");
     } finally {
+      lock.current = false;
       setBusy(false);
     }
   };
@@ -112,6 +131,7 @@ function NativeCard({
                     jobId: view.jobId,
                     proposalId: view.proposal!.id,
                     accepted,
+                    ...(view.goalId ? { goalId: view.goalId } : {}),
                   })
                 }
               >
@@ -125,7 +145,7 @@ function NativeCard({
                 disabled={busy}
                 onClick={() =>
                   void question(
-                    `请用 resume_grill_review_context 读取简历 ${view.resumeId} 和岗位 ${view.jobId}，依据原文给出逐条建议，调用 resume_grill_propose_resume_changes 保存并展示核对卡。不要代我接受修改或发送邮件。`,
+                    `请用 resume_grill_review_context 读取简历 ${view.resumeId} 和岗位 ${view.jobId}${view.goalId ? `，保留 goalId ${view.goalId}` : ""}，依据原文给出逐条建议，调用 resume_grill_propose_resume_changes 保存并展示核对卡。不要代我接受修改或发送邮件。`,
                   )
                 }
               >
@@ -140,11 +160,20 @@ function NativeCard({
                 action: "review",
                 resumeId: view.resumeId,
                 jobId: view.jobId,
+                ...(view.goalId ? { goalId: view.goalId } : {}),
               })
             }
           >
             重新读取建议
           </button>
+          {view.goalId && (
+            <button
+              disabled={busy}
+              onClick={() => void run({ action: "goal", goalId: view.goalId })}
+            >
+              返回岗位清单
+            </button>
+          )}
         </>
       )}
       {view.kind === "application" && (
@@ -156,17 +185,7 @@ function NativeCard({
             <dt>主题</dt>
             <dd>{view.application.subject}</dd>
             <dt>状态</dt>
-            <dd>
-              {
-                {
-                  prepared: "待确认，未发送",
-                  simulated: "附件已检查，未发送",
-                  sending: "发送中，先核对结果",
-                  sent: "SMTP 已接受",
-                  uncertain: "结果待核对，不要重发",
-                }[view.application.status]
-              }
-            </dd>
+            <dd>{applicationStatusLabel[view.application.status]}</dd>
           </dl>
           <p className="rg-pre rg-mail">{view.application.body}</p>
           <button
@@ -288,6 +307,7 @@ function NativeCard({
                     action: "review",
                     resumeId: view.goal.resumeId,
                     jobId: c.jobId,
+                    goalId: view.goal.id,
                   })
                 }
               >
@@ -324,11 +344,7 @@ function NativeCard({
               <strong>
                 {view.jobs.find((j) => j.id === item.jobId)?.role ?? "岗位"}
               </strong>
-              <p>
-                {item.status === "prepared"
-                  ? "简历和邮件已准备，尚未发送"
-                  : item.reason}
-              </p>
+              <p>{batchItemLabel(item)}</p>
               {item.applicationId && (
                 <button
                   disabled={busy}
@@ -425,6 +441,7 @@ export function TurnCards(props: any) {
 }
 function Summary({ block }: any) {
   const view = block?.meta?.resumeGrill;
+  if (block?.isError) return <span>求职操作未完成，展开调用查看原因。</span>;
   return (
     <span>
       {view ? "求职核对卡已显示在本轮回答下方。" : "正在准备求职资料…"}
@@ -452,7 +469,7 @@ function CommandSummary({ node }: any) {
   return (
     <p>
       {view?.kind === "application"
-        ? `投递记录已更新：${{ prepared: "待确认，未发送", simulated: "附件已检查，未发送", sent: "SMTP 已接受", sending: "发送中，先核对结果", uncertain: "结果待核对" }[view.application.status as string]}`
+        ? `投递记录已更新：${applicationStatusLabel[view.application.status as keyof typeof applicationStatusLabel] ?? "状态待核对"}`
         : "求职资料已更新。"}
     </p>
   );

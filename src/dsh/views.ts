@@ -1,6 +1,6 @@
 import { Workspace, type Job, type Resume } from "../service.js";
 import type { TailoringPlan } from "../domain/resume-tailoring.js";
-import { Tasks, type Goal, type Batch } from "../tasks.js";
+import { Tasks, type Goal } from "../tasks.js";
 import { smtpConfigured } from "../smtp.js";
 export type Proposal = {
   id: string;
@@ -19,6 +19,7 @@ export function reviewView(
   resumeId: string,
   jobId: string,
   proposalId?: string,
+  goalId?: string,
 ) {
   const resume = workspace.store.get<Resume>("resume", resumeId),
     job = workspace.store.get<Job>("job", jobId);
@@ -29,6 +30,8 @@ export function reviewView(
         .find((p) => p.resumeId === resumeId && p.jobId === jobId);
   if (proposal && (proposal.resumeId !== resumeId || proposal.jobId !== jobId))
     throw new Error("建议与简历或岗位不一致。");
+  if (goalId && workspace.store.get<Goal>("goal", goalId).resumeId !== resumeId)
+    throw new Error("目标与当前简历不一致。");
   return {
     v: 1 as const,
     kind: "review" as const,
@@ -36,6 +39,7 @@ export function reviewView(
     jobId,
     sourceText: resume.text,
     job,
+    ...(goalId ? { goalId } : {}),
     ...(proposal ? { proposal } : {}),
   };
 }
@@ -65,7 +69,7 @@ export function batchView(workspace: Workspace, id: string) {
   return {
     v: 1 as const,
     kind: "batch" as const,
-    batch: workspace.store.get<Batch>("batch", id),
+    batch: new Tasks(workspace).batchSnapshot(id),
     jobs: workspace.store
       .list<Job>("job")
       .map(({ id, role, company }) => ({ id, role, company })),
@@ -97,6 +101,7 @@ export function viewFor(
       args.resumeId,
       args.jobId,
       operation === "propose_resume_changes" ? value.id : undefined,
+      args.goalId,
     );
   if (
     operation === "preview_application" ||

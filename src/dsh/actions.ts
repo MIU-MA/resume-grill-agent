@@ -10,6 +10,7 @@ import {
 } from "./views.js";
 import { Tasks, type Goal } from "../tasks.js";
 import { smtpConfigured } from "../smtp.js";
+import { viewReference } from "./card-model.js";
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("workspace") }).strict(),
   z.object({ action: z.literal("goal"), goalId: z.string() }).strict(),
@@ -18,6 +19,7 @@ const actionSchema = z.discriminatedUnion("action", [
       action: z.literal("review"),
       resumeId: z.string(),
       jobId: z.string(),
+      goalId: z.string().optional(),
     })
     .strict(),
   z.object({ action: z.literal("application"), id: z.string() }).strict(),
@@ -29,6 +31,7 @@ const actionSchema = z.discriminatedUnion("action", [
       jobId: z.string(),
       proposalId: z.string(),
       accepted: z.array(z.string()),
+      goalId: z.string().optional(),
     })
     .strict(),
   z
@@ -55,7 +58,13 @@ export async function humanAction(workspace: Workspace, value: unknown) {
   if (input.action === "workspace") return workspaceView(workspace);
   if (input.action === "goal") return goalView(workspace, input.goalId);
   if (input.action === "review")
-    return reviewView(workspace, input.resumeId, input.jobId);
+    return reviewView(
+      workspace,
+      input.resumeId,
+      input.jobId,
+      undefined,
+      input.goalId,
+    );
   if (input.action === "application")
     return applicationView(workspace, input.id);
   if (input.action === "batch-view") return batchView(workspace, input.id);
@@ -72,6 +81,7 @@ export async function humanAction(workspace: Workspace, value: unknown) {
       input.resumeId,
       input.jobId,
       input.proposalId,
+      input.goalId,
     );
     const latest = workspace.store
       .list<{ id: string; resumeId: string; jobId: string }>("proposal")
@@ -80,23 +90,24 @@ export async function humanAction(workspace: Workspace, value: unknown) {
       throw new Error("建议已更新，请重新核对再选择。");
     if (!view.job.recipient)
       throw new Error("尚无明确招聘邮箱，请先让助手核对投递渠道。");
-    const goal =
-      workspace.store
-        .list<Goal>("goal")
-        .find(
-          (g) =>
-            g.resumeId === input.resumeId &&
-            g.directions.length === 1 &&
-            g.directions[0] === view.job.role &&
-            !g.cities.length &&
-            !g.exclude.length &&
-            !g.skipAppliedCompanies,
-        ) ??
-      new Tasks(workspace).saveGoal({
-        resumeId: input.resumeId,
-        directions: [view.job.role],
-        skipAppliedCompanies: false,
-      });
+    const goal = input.goalId
+      ? workspace.store.get<Goal>("goal", input.goalId)
+      : (workspace.store
+          .list<Goal>("goal")
+          .find(
+            (g) =>
+              g.resumeId === input.resumeId &&
+              g.directions.length === 1 &&
+              g.directions[0] === view.job.role &&
+              !g.cities.length &&
+              !g.exclude.length &&
+              !g.skipAppliedCompanies,
+          ) ??
+        new Tasks(workspace).saveGoal({
+          resumeId: input.resumeId,
+          directions: [view.job.role],
+          skipAppliedCompanies: false,
+        }));
     const batch = await new Tasks(workspace).prepareBatch(goal.id, [
       {
         jobId: input.jobId,
@@ -105,7 +116,12 @@ export async function humanAction(workspace: Workspace, value: unknown) {
       },
     ]);
     const item = batch.items[0];
-    if (!item.applicationId) throw new Error(item.reason ?? "邮件未准备。");
+    if (!item?.applicationId)
+      throw new Error(
+        batch.status === "preparing"
+          ? "这批投递正在准备，请稍后核对结果。"
+          : (item?.reason ?? "邮件未准备。"),
+      );
     return applicationView(workspace, item.applicationId);
   }
   if (input.action === "check") {
@@ -140,19 +156,19 @@ export async function cardAction(
     const saved = workspace.store
       .list<{ id: string; reference: unknown }>("dsh-card")
       .find((item) => item.id === id);
-    return saved ? humanAction(workspace, saved.reference) : null;
+    const reference = saved?.reference ?? value.reference;
+    if (!reference) return null;
+    const parsed = actionSchema.parse(reference);
+    if (
+      !["workspace", "goal", "review", "application", "batch-view"].includes(
+        parsed.action,
+      )
+    )
+      throw new Error("恢复引用只能查询记录。");
+    return humanAction(workspace, parsed);
   }
   const view = await humanAction(workspace, value);
-  const reference =
-    view.kind === "application"
-      ? { action: "application", id: view.application.id }
-      : view.kind === "review"
-        ? { action: "review", resumeId: view.resumeId, jobId: view.jobId }
-        : view.kind === "goal"
-          ? { action: "goal", goalId: view.goal.id }
-          : view.kind === "batch"
-            ? { action: "batch-view", id: view.batch.id }
-            : { action: "workspace" };
+  const reference = viewReference(view);
   if (reference) workspace.store.put("dsh-card", { id, reference });
   return view;
 }

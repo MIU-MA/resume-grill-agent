@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { join, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { Store } from "../src/store.js";
@@ -39,6 +39,129 @@ const page = (
     `<html><title>${company}</title><script type="application/ld+json">${JSON.stringify({ "@type": "JobPosting", title: role, hiringOrganization: { name: company }, description: jd })}</script><h1>${role}</h1><p>招聘邮箱：<a href="mailto:${email}">${email}</a></p></html>`,
     "https://example.com/jobs/1",
   );
+
+test("临时文件错误修复后可重试失败批次，并复用原批次编号", async (t) => {
+  const f = await setup(t),
+    tasks = new Tasks(f.workspace);
+  const goal = tasks.saveGoal({ resumeId: f.resume.id, directions: ["Go"] });
+  const job = f.workspace.addJob({
+    company: "演示",
+    role: "Go",
+    jd: "负责 Go API 开发与测试。",
+    sourceUrl: "https://example.com/retry",
+    recipient: "hr@example.com",
+  });
+  const sections = f.workspace.reviewContext(f.resume.id, job.id).sections;
+  const version = await f.workspace.saveVersion(
+    f.resume.id,
+    job.id,
+    {
+      company: "",
+      role: "",
+      sectionOrder: sections.map((s) => s.id),
+      changes: [],
+      highlights: [],
+      gaps: [],
+    },
+    [],
+  );
+  const bytes = await readFile(version.pdf!);
+  await rm(version.pdf!);
+  const failed = await tasks.prepareBatch(goal.id, [
+    { jobId: job.id, keepOriginal: true },
+  ]);
+  assert.equal(failed.items[0].status, "blocked");
+  await writeFile(version.pdf!, bytes);
+  const retry = await tasks.prepareBatch(goal.id, [
+    { jobId: job.id, keepOriginal: true },
+  ]);
+  assert.equal(retry.id, failed.id);
+  assert.equal(retry.items[0].status, "prepared");
+  assert.equal(f.workspace.history().length, 1);
+});
+
+test("不同任务实例并发准备相同批次都等待最终结果，不返回中间态", async (t) => {
+  const f = await setup(t),
+    tasks = new Tasks(f.workspace),
+    goal = tasks.saveGoal({ resumeId: f.resume.id, directions: ["Go"] });
+  const job = f.workspace.addJob({
+    company: "演示",
+    role: "Go",
+    jd: "负责 Go API 开发与测试。",
+    sourceUrl: "https://example.com/concurrent",
+    recipient: "hr@example.com",
+  });
+  const results = await Promise.all([
+    tasks.prepareBatch(goal.id, [{ jobId: job.id, keepOriginal: true }]),
+    new Tasks(f.workspace).prepareBatch(goal.id, [
+      { jobId: job.id, keepOriginal: true },
+    ]),
+  ]);
+  assert.equal(results[0].id, results[1].id);
+  assert.ok(
+    results.every(
+      (b) => b.status === "prepared" && b.items[0].status === "prepared",
+    ),
+  );
+  assert.equal(f.workspace.history().length, 1);
+});
+
+test("所选岗位顺序改变仍复用同一准备批次", async (t) => {
+  const f = await setup(t),
+    tasks = new Tasks(f.workspace),
+    goal = tasks.saveGoal({ resumeId: f.resume.id, directions: ["Go"] });
+  const jobs = ["a", "b"].map((key) =>
+    f.workspace.addJob({
+      company: "演示",
+      role: "Go",
+      jd: "负责 Go API 开发与测试。",
+      sourceUrl: `https://example.com/order/${key}`,
+      recipient: "hr@example.com",
+    }),
+  );
+  const choices = jobs.map((job) => ({ jobId: job.id, keepOriginal: true }));
+  const first = await tasks.prepareBatch(goal.id, choices),
+    second = await tasks.prepareBatch(goal.id, [...choices].reverse());
+  assert.equal(first.id, second.id);
+  assert.equal(f.workspace.history().length, 2);
+  assert.equal(f.store.list("batch").length, 1);
+});
+
+test("失败的详情请求也计入十页预算，并标记部分读取", async (t) => {
+  const f = await setup(t);
+  let reads = 0;
+  const tasks = new Tasks(f.workspace, async (url) => {
+    reads++;
+    if (url.includes("/detail/")) throw new Error("详情读取失败");
+    return {
+      ...page("产品经理"),
+      url,
+      links: [0, 1].map((i) => ({
+        url: `https://example.com/detail/${reads}/${i}`,
+        kind: "job" as const,
+        label: "Go 开发",
+        sourceUrl: url,
+      })),
+    };
+  });
+  const goal = tasks.saveGoal({
+    resumeId: f.resume.id,
+    directions: ["Go"],
+    sources: Array.from(
+      { length: 6 },
+      (_, i) => `https://example.com/list/${i}`,
+    ),
+  });
+  const result = await tasks.discover(goal.id);
+  assert.equal(reads, 10);
+  assert.equal(result.status, "partial");
+  const one = tasks.saveGoal({
+    resumeId: f.resume.id,
+    directions: ["Go"],
+    sources: ["https://example.com/list/single"],
+  });
+  assert.equal((await tasks.discover(one.id)).status, "partial");
+});
 
 test("真实 HTML 提取按全栈别名筛选，排除条件及来源失败可追溯", async (t) => {
   const f = await setup(t);

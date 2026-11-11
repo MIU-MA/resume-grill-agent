@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { Workspace, type Resume } from "../service.js";
 import { Tasks, type Goal } from "../tasks.js";
+import { smtpConfigured } from "../smtp.js";
 
 export async function startPanel(workspace: Workspace, port = 4319) {
   const tasks = new Tasks(workspace);
@@ -111,8 +112,8 @@ export async function startPanel(workspace: Workspace, port = 4319) {
             ),
             sendingEnabled:
               process.env.RESUME_ALLOW_SEND === "1" &&
-              !!process.env.RESUME_SMTP_ADDRESS &&
-              !!process.env.RESUME_SMTP_CODE,
+              !!workspace.send &&
+              smtpConfigured(),
           });
         const asset = url.pathname.match(/^\/api\/pdf\/([a-f0-9-]+)$/);
         if (req.method === "GET" && asset) {
@@ -255,8 +256,8 @@ export async function startPanel(workspace: Workspace, port = 4319) {
             .parse(input);
           if (
             process.env.RESUME_ALLOW_SEND !== "1" ||
-            !process.env.RESUME_SMTP_ADDRESS ||
-            !process.env.RESUME_SMTP_CODE
+            !workspace.send ||
+            !smtpConfigured()
           )
             throw new Error("未配置真实发件邮箱；不会自动改为模拟投递。");
           workspace.approve(p.id, p.digest);

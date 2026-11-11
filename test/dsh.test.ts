@@ -8,6 +8,8 @@ import { Workspace } from "../src/service.js";
 import { mount } from "../src/dsh/host.js";
 import { humanAction, cardAction } from "../src/dsh/actions.js";
 import { turnCardSelector } from "../src/dsh/card-model.js";
+import { Tasks } from "../src/tasks.js";
+import { batchView } from "../src/dsh/views.js";
 
 async function setup(t: any) {
   const home = await mkdtemp(join(tmpdir(), "resume-dsh-test-")),
@@ -63,6 +65,111 @@ async function setup(t: any) {
   const proposal = workspace.propose(resume.id, job.id, plan);
   return { workspace, store, resume, job, proposal, sends: () => sends };
 }
+
+test("从岗位清单进入核对后仍保留城市与排除条件，不另建宽松目标", async (t) => {
+  const f = await setup(t),
+    tasks = new Tasks(f.workspace);
+  const goal = tasks.saveGoal({
+    resumeId: f.resume.id,
+    directions: ["Go"],
+    cities: ["杭州"],
+    exclude: ["外包"],
+  });
+  const view = await humanAction(f.workspace, {
+    action: "review",
+    resumeId: f.resume.id,
+    jobId: f.job.id,
+    goalId: goal.id,
+  });
+  assert.equal((view as any).goalId, goal.id);
+  await assert.rejects(
+    humanAction(f.workspace, {
+      action: "prepare",
+      resumeId: f.resume.id,
+      jobId: f.job.id,
+      proposalId: f.proposal.id,
+      accepted: [],
+      goalId: goal.id,
+    }),
+    /城市/,
+  );
+  assert.equal(f.store.list("goal").length, 1);
+  assert.equal(f.workspace.history().length, 0);
+  const excluded = tasks.saveGoal({
+    resumeId: f.resume.id,
+    directions: ["Go"],
+    exclude: ["演示公司"],
+  });
+  await assert.rejects(
+    humanAction(f.workspace, {
+      action: "prepare",
+      resumeId: f.resume.id,
+      jobId: f.job.id,
+      proposalId: f.proposal.id,
+      accepted: [],
+      goalId: excluded.id,
+    }),
+    /排除/,
+  );
+});
+
+test("批次展示读取当前投递状态，不能把已发或待核对邮件标成未发送", async (t) => {
+  const f = await setup(t),
+    tasks = new Tasks(f.workspace),
+    goal = tasks.saveGoal({ resumeId: f.resume.id, directions: ["Go"] });
+  const batch = await tasks.prepareBatch(goal.id, [
+    { jobId: f.job.id, keepOriginal: true },
+  ]);
+  const application = f.workspace.preview(batch.items[0].applicationId!);
+  for (const status of ["sent", "sending", "uncertain"] as const) {
+    f.store.put("application", { ...application, status });
+    assert.equal(
+      (batchView(f.workspace, batch.id).batch.items[0] as any)
+        .applicationStatus,
+      status,
+    );
+  }
+  assert.equal(f.sends(), 0);
+});
+
+test("首次恢复预览卡也读取当前状态，回退引用只允许查询", async (t) => {
+  const f = await setup(t);
+  const prepared = await humanAction(f.workspace, {
+    action: "prepare",
+    resumeId: f.resume.id,
+    jobId: f.job.id,
+    proposalId: f.proposal.id,
+    accepted: [],
+  });
+  if (prepared.kind !== "application") throw new Error("未生成邮件");
+  await f.workspace.execute(prepared.application.id, true);
+  const view = await cardAction(f.workspace, "session-new", "preview-tool", {
+    action: "restore",
+    reference: { action: "application", id: prepared.application.id },
+  });
+  assert.equal(view?.kind, "application");
+  if (view?.kind === "application")
+    assert.equal(view.application.status, "simulated");
+  await assert.rejects(
+    cardAction(f.workspace, "session-new", "bad-reference", {
+      action: "restore",
+      reference: {
+        action: "send",
+        id: prepared.application.id,
+        digest: prepared.application.digest,
+        acknowledged: true,
+        confirmation: "发送",
+      },
+    }),
+    /查询/,
+  );
+  assert.equal(f.workspace.history().length, 1);
+  assert.equal(f.sends(), 0);
+  assert.equal(
+    f.store.db.prepare("SELECT COUNT(*) AS n FROM approvals").get()!.n,
+    0,
+  );
+});
 test("DSH 原生工具与人类命令分离，输出核对 metadata；无发信权限时不能绕过", async (t) => {
   const f = await setup(t),
     tools = new Map<string, any>(),
@@ -101,10 +208,15 @@ test("DSH 原生工具与人类命令分离，输出核对 metadata；无发信�
     false,
   );
   const review = tools.get("resume_grill_propose_resume_changes");
+  const goal = new Tasks(f.workspace).saveGoal({
+    resumeId: f.resume.id,
+    directions: ["Go"],
+  });
   const args = {
     resumeId: f.resume.id,
     jobId: f.job.id,
     plan: f.proposal.plan,
+    goalId: goal.id,
   };
   const result = await review.execute(args, {
     signal: new AbortController().signal,
@@ -113,6 +225,7 @@ test("DSH 原生工具与人类命令分离，输出核对 metadata；无发信�
   assert.equal(meta.kind, "review");
   assert.equal(meta.proposal.id, result.id);
   assert.equal(meta.sourceText, f.resume.text);
+  assert.equal(meta.goalId, goal.id);
   await assert.rejects(
     tools
       .get("resume_grill_execute_application")

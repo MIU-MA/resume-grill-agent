@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
-import type { Workspace, Resume, Job } from "./service.js";
+import type { Workspace, Resume, Job, Application } from "./service.js";
 import { readCareerPage } from "./careers/public-page.js";
 import { sourceUrlSchema, type CareerPage } from "./careers/contracts.js";
 import { crawlCareerSites } from "./careers/sites.js";
@@ -50,6 +50,7 @@ export type BatchItem = {
   jobId: string;
   status: "prepared" | "blocked" | "already_sent";
   applicationId?: string;
+  applicationStatus?: Application["status"];
   reason?: string;
 };
 export type Batch = {
@@ -69,6 +70,8 @@ export const batchChoice = z
   .strict();
 const normalized = (s: string) =>
   s.normalize("NFKC").replace(/\s/g, "").toLowerCase();
+
+const pendingBatches = new Map<string, Promise<Batch>>();
 
 export class Tasks {
   constructor(
@@ -198,13 +201,13 @@ export class Tasks {
         const host = new URL(source.url).hostname.replace(/^www\./, "");
         const sameHost = (url: string) =>
           new URL(url).hostname.replace(/^www\./, "") === host;
+        pages++;
         const page = await this.read(
           source.url,
           0,
           Math.min(deadline, Date.now() + 6000),
           sameHost,
         );
-        pages++;
         source.status = "read";
         consume(page);
         for (const link of (page.links ?? [])
@@ -222,13 +225,13 @@ export class Tasks {
           )
             break;
           try {
+            pages++;
             const detail = await this.read(
               link.url,
               0,
               Math.min(deadline, Date.now() + 6000),
               sameHost,
             );
-            pages++;
             consume(detail);
           } catch (error) {
             run.notes.push(
@@ -242,9 +245,10 @@ export class Tasks {
       }
       store.put("search", run);
     }
-    run.status = run.sources.some((source) => source.status !== "read")
-      ? "partial"
-      : "complete";
+    run.status =
+      run.notes.length || run.sources.some((source) => source.status !== "read")
+        ? "partial"
+        : "complete";
     run.notes.push(
       "仅使用公开网页实际提取的 JD；不把搜索摘要或招聘入口当成具体岗位。动态列表及登录页可能无法读取。",
     );
@@ -279,28 +283,78 @@ export class Tasks {
         "岗位不能重复",
       )
       .parse(choices);
+    const requestHash = createHash("sha256")
+      .update(
+        JSON.stringify({
+          goalId,
+          selected: selected
+            .map((choice) => ({
+              ...choice,
+              accepted: [...new Set(choice.accepted)].sort(),
+            }))
+            .sort((a, b) => a.jobId.localeCompare(b.jobId)),
+        }),
+      )
+      .digest("hex");
+    const key = JSON.stringify([this.workspace.store.home, requestHash]);
+    const pending = pendingBatches.get(key);
+    if (pending) return pending;
+    const task = this.buildBatch(goalId, selected, requestHash);
+    pendingBatches.set(key, task);
+    try {
+      return await task;
+    } finally {
+      if (pendingBatches.get(key) === task) pendingBatches.delete(key);
+    }
+  }
+  batchSnapshot(id: string) {
+    const batch = this.workspace.store.get<Batch>("batch", id);
+    return {
+      ...batch,
+      items: batch.items.map((item) => ({
+        ...item,
+        ...(item.applicationId
+          ? {
+              applicationStatus: this.workspace.preview(item.applicationId)
+                .status,
+            }
+          : {}),
+      })),
+    };
+  }
+  private async buildBatch(
+    goalId: string,
+    selected: z.infer<typeof batchChoice>[],
+    requestHash: string,
+  ) {
     const store = this.workspace.store,
       goal = store.get<Goal>("goal", goalId),
       source = store.get<Resume>("resume", goal.resumeId);
-    const requestHash = createHash("sha256")
-      .update(JSON.stringify({ goalId, selected }))
-      .digest("hex");
-    const existing = store
-      .list<Batch & { requestHash: string }>("batch")
-      .find((item) => item.requestHash === requestHash);
-    if (existing) return existing;
-    const batch: Batch & { requestHash: string } = {
-      requestHash,
-      id: randomUUID(),
-      goalId,
-      createdAt: Date.now(),
-      status: "preparing",
-      items: [],
-    };
-    store.put("batch", batch);
+    const { batch, owned } = store.transaction(() => {
+      const existing = store
+        .list<Batch & { requestHash: string }>("batch")
+        .find((item) => item.requestHash === requestHash);
+      if (existing && existing.status !== "needs_input")
+        return { batch: existing, owned: false };
+      const batch: Batch & { requestHash: string } = existing ?? {
+        requestHash,
+        id: randomUUID(),
+        goalId,
+        createdAt: Date.now(),
+        status: "preparing",
+        items: [],
+      };
+      batch.status = "preparing";
+      store.put("batch", batch);
+      return { batch, owned: true };
+    });
+    if (!owned) return batch;
     for (const choice of selected) {
+      const previous = batch.items.find((item) => item.jobId === choice.jobId);
+      if (previous && previous.status !== "blocked") continue;
       const item: BatchItem = { jobId: choice.jobId, status: "blocked" };
-      batch.items.push(item);
+      if (previous) batch.items[batch.items.indexOf(previous)] = item;
+      else batch.items.push(item);
       try {
         const job = store.get<Job>("job", choice.jobId);
         if (this.applied(job, goal)) {

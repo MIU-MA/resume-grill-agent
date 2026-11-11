@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api, type Snapshot } from "./api.js";
 import type { Goal, SearchRun, Batch } from "../../tasks.js";
 import { RevisionChanges } from "./RevisionChanges.js";
+import { batchItemLabel } from "../../presentation/application-status.js";
 const terms = (value: string) =>
   value
     .split(/[,，、\n]/)
@@ -333,16 +334,19 @@ export function GoalWorkbench({
         )}
         {batch && (
           <aside className="batch-results">
-            <h2>本批待执行</h2>
+            <h2>本批准备结果</h2>
             {batch.items.map((item) => (
               <div key={item.jobId}>
                 <strong>
                   {data.jobs.find((j) => j.id === item.jobId)?.role}
                 </strong>
                 <p>
-                  {item.status === "prepared"
-                    ? "简历与邮件已准备"
-                    : item.reason}
+                  {batchItemLabel({
+                    ...item,
+                    applicationStatus: data.applications.find(
+                      (application) => application.id === item.applicationId,
+                    )?.status,
+                  })}
                 </p>
                 {item.applicationId && (
                   <button onClick={() => onOpen(item.applicationId!)}>
