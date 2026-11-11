@@ -1,0 +1,19 @@
+# DSH overlay: export RESUME_AGENT_ROOT and RESUME_AGENT_HOME as absolute paths.
+# Load with dsh <profile> --patch <absolute-path-to-this-file>.
+- insert:
+    - id: mcp-resume-grill
+      name: "@deepseek-ai/dsh-mcp-client"
+      config:
+        serverName: resume_grill
+        transport: stdio
+        command: !!js process.env.RESUME_NODE || 'node'
+        args:
+          - !!js process.env.RESUME_AGENT_ROOT + '/dist/adapters/cli/main.js'
+          - serve
+        cwd: !!js process.env.RESUME_AGENT_ROOT
+        env:
+          RESUME_AGENT_HOME: !!js process.env.RESUME_AGENT_HOME
+          RESUME_ALLOW_SEND: "0"
+        startupTimeoutMs: 30000
+        toolCallTimeoutMs: 60000
+        failOnStartupError: true

@@ -8,14 +8,17 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "build": "tsc && node scripts/build-panel.mjs && node scripts/build-dsh.mjs",
-    "start": "node dist/cli.js serve",
+    "build": "node scripts/build/index.mjs",
+    "start": "node dist/adapters/cli/main.js serve",
     "pretest": "npm run build",
-    "test": "tsx --test test/*.test.ts",
+    "test": "tsx --test \"tests/**/*.test.ts\"",
     "check": "tsc --noEmit",
     "demo": "tsx examples/demo.ts",
-    "panel": "node dist/cli.js panel",
-    "prepanel": "npm run build"
+    "panel": "node dist/adapters/cli/main.js panel",
+    "prepanel": "npm run build",
+    "package:plugin": "npm run build && node scripts/release/package.mjs",
+    "verify:panel": "node scripts/verify/panel.mjs",
+    "verify:dsh": "node scripts/verify/dsh-native.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -42,17 +45,17 @@
     "tsx": "^4.23.13",
     "typescript": "~6.0.2"
   },
-  "main": "./dist/dsh/host.js",
+  "main": "./dist/adapters/dsh/host.js",
   "exports": {
-    ".": "./dist/dsh/host.js",
-    "./client": "./dist/dsh/client.js",
-    "./locale/*.json": "./integrations/dsh/locale/*.json",
-    "./icon": "./integrations/dsh/icon.svg",
+    ".": "./dist/adapters/dsh/host.js",
+    "./client": "./dist/adapters/dsh/client.js",
+    "./locale/*.json": "./plugin/locale/*.json",
+    "./icon": "./plugin/icon.svg",
     "./package.json": "./package.json"
   },
   "dsh": {
     "bundle": {
-      "patch": "./integrations/dsh/cordis.patch.yml"
+      "patch": "./plugin/cordis.patch.yml"
     },
     "client": {
       "platform": "web",
@@ -65,10 +68,13 @@
   "files": [
     "dist",
     "assets",
-    "integrations/dsh",
+    "plugin",
     "skills",
+    "docs",
+    "examples/dsh-mcp.patch.yml",
     "LICENSE",
     "THIRD_PARTY.md",
     "README.md"
-  ]
+  ],
+  "description": "在 DSH 对话中读取岗位、核对简历并确认邮箱投递。"
 }

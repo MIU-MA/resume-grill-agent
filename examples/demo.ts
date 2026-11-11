@@ -1,8 +1,8 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { Store } from "../src/store.js";
-import { Workspace } from "../src/service.js";
+import { Store } from "../src/infrastructure/sqlite-store.js";
+import { Workspace } from "../src/core/workspace.js";
 
 const home = await mkdtemp(join(tmpdir(), "resume-agent-demo-"));
 const store = new Store(home),
