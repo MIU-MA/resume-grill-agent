@@ -55,6 +55,191 @@ test("并行准备相同内容只生成一条投递记录", async (t) => {
   );
 });
 
+test("修改邮件冻结新预览，沿用原附件，旧确认及旧预览不能发送", async (t) => {
+  let sent = 0;
+  const f = await fixture(t, async () => {
+    sent++;
+  });
+  const original = f.application,
+    bytes = await readFile(original.attachment);
+  f.workspace.approve(original.id, original.digest);
+  // The source PDF can change after preparation; editing must use the frozen copy.
+  await writeFile(f.version.pdf!, "changed source");
+  const revised = await f.workspace.reviseApplication(
+    original.id,
+    original.digest,
+    {
+      recipient: "recruit@example.com",
+      subject: "修改后的主题",
+      body: "修改后的正文。",
+    },
+  );
+  assert.notEqual(revised.id, original.id);
+  assert.notEqual(revised.digest, original.digest);
+  assert.equal(revised.revisedFrom, original.id);
+  assert.equal(revised.attachmentHash, original.attachmentHash);
+  assert.deepEqual(await readFile(revised.attachment), bytes);
+  assert.equal(f.workspace.preview(original.id).body, original.body);
+  assert.equal(f.workspace.preview(original.id).status, "superseded");
+  assert.equal(f.workspace.latestApplication(original.id).id, revised.id);
+  assert.equal(
+    f.store.db.prepare("SELECT COUNT(*) AS n FROM approvals").get()!.n,
+    0,
+  );
+  assert.throws(
+    () => f.workspace.approve(original.id, original.digest),
+    /改变/,
+  );
+  await assert.rejects(f.workspace.execute(original.id, false), /重复发送/);
+  const previous = process.env.RESUME_ALLOW_SEND;
+  process.env.RESUME_ALLOW_SEND = "1";
+  try {
+    await assert.rejects(f.workspace.execute(revised.id, false), /确认/);
+    assert.equal(sent, 0);
+    f.workspace.approve(revised.id, revised.digest);
+    assert.equal((await f.workspace.execute(revised.id, false)).status, "sent");
+    assert.equal(sent, 1);
+  } finally {
+    if (previous === undefined) delete process.env.RESUME_ALLOW_SEND;
+    else process.env.RESUME_ALLOW_SEND = previous;
+  }
+});
+
+test("保存未改邮件不创建记录，错误摘要、空正文、换行主题及已执行邮件被拒绝", async (t) => {
+  const f = await fixture(t),
+    original = f.application;
+  const mail = {
+    recipient: original.recipient,
+    subject: original.subject,
+    body: original.body,
+  };
+  assert.equal(
+    (await f.workspace.reviseApplication(original.id, original.digest, mail))
+      .id,
+    original.id,
+  );
+  await assert.rejects(
+    f.workspace.reviseApplication(original.id, "stale", mail),
+    /改变/,
+  );
+  for (const change of [
+    { body: "   " },
+    { subject: "Hi\r\nBcc: bad@example.com" },
+    { recipient: "not an email" },
+  ])
+    await assert.rejects(
+      f.workspace.reviseApplication(original.id, original.digest, {
+        ...mail,
+        ...change,
+      }),
+    );
+  for (const status of ["sending", "sent", "uncertain"] as const) {
+    f.store.put("application", { ...original, status });
+    await assert.rejects(
+      f.workspace.reviseApplication(original.id, original.digest, {
+        ...mail,
+        body: "新正文",
+      }),
+      /改变/,
+    );
+  }
+  assert.equal(f.workspace.history().length, 1);
+});
+
+test("并发编辑只有一个结果生效，回改原文也生成可追溯的新预览", async (t) => {
+  const f = await fixture(t),
+    original = f.application;
+  const mail = {
+    recipient: original.recipient,
+    subject: original.subject,
+    body: "新的正文",
+  };
+  const results = await Promise.allSettled([
+    f.workspace.reviseApplication(original.id, original.digest, mail),
+    f.workspace.reviseApplication(original.id, original.digest, {
+      ...mail,
+      body: "另一个正文",
+    }),
+  ]);
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+  assert.equal(results.filter((r) => r.status === "rejected").length, 1);
+  const winner = f.workspace.latestApplication(original.id);
+  const reverted = await f.workspace.reviseApplication(
+    winner.id,
+    winner.digest,
+    {
+      recipient: original.recipient,
+      subject: original.subject,
+      body: original.body,
+    },
+  );
+  assert.equal(reverted.status, "prepared");
+  assert.notEqual(reverted.id, original.id);
+  assert.equal(f.workspace.latestApplication(original.id).id, reverted.id);
+  assert.equal(f.workspace.history().length, 3);
+  const second = new Store(f.home);
+  try {
+    assert.equal(
+      new Workspace(second).latestApplication(original.id).id,
+      reverted.id,
+    );
+  } finally {
+    second.close();
+  }
+});
+
+test("修改与发送并发时，只有一方可以生效", async (t) => {
+  let sent = 0;
+  const f = await fixture(t, async () => {
+    sent++;
+  });
+  const original = f.application;
+  const previous = process.env.RESUME_ALLOW_SEND;
+  process.env.RESUME_ALLOW_SEND = "1";
+  f.workspace.approve(original.id, original.digest);
+  try {
+    const [edit, send] = await Promise.allSettled([
+      f.workspace.reviseApplication(original.id, original.digest, {
+        recipient: original.recipient,
+        subject: original.subject,
+        body: "并发修改。",
+      }),
+      f.workspace.execute(original.id, false),
+    ]);
+    assert.equal(
+      [edit, send].filter((result) => result.status === "fulfilled").length,
+      1,
+    );
+    if (edit.status === "fulfilled") {
+      assert.equal(sent, 0);
+      assert.equal(f.workspace.preview(original.id).status, "superseded");
+      assert.equal(edit.value.status, "prepared");
+    } else {
+      assert.equal(sent, 1);
+      assert.equal(f.workspace.preview(original.id).status, "sent");
+      assert.equal(f.workspace.history().length, 1);
+    }
+  } finally {
+    if (previous === undefined) delete process.env.RESUME_ALLOW_SEND;
+    else process.env.RESUME_ALLOW_SEND = previous;
+  }
+});
+
+test("冻结附件损坏时不能通过编辑生成新预览", async (t) => {
+  const f = await fixture(t),
+    original = f.application;
+  await writeFile(original.attachment, "broken PDF");
+  await assert.rejects(
+    f.workspace.reviseApplication(original.id, original.digest, {
+      recipient: original.recipient,
+      subject: original.subject,
+      body: "新正文",
+    }),
+    /附件校验/,
+  );
+  assert.equal(f.workspace.history().length, 1);
+});
+
 async function fixture(t: any, sender?: any) {
   const home = await mkdtemp(join(tmpdir(), "resume-agent-test-"));
   const store = new Store(home),

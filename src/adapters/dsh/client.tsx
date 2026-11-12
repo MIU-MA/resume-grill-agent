@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { NativeView } from "./views.js";
+import { ApplicationReview } from "./ApplicationReview.js";
 import { RevisionChanges } from "../../shared/ui/RevisionChanges.js";
 import { turnCardSelector, viewReference } from "./card-model.js";
 import {
@@ -32,9 +33,7 @@ function NativeCard({
     [busy, setBusy] = useState(true),
     [error, setError] = useState(""),
     [accepted, setAccepted] = useState<string[]>([]),
-    [selected, setSelected] = useState<string[]>([]),
-    [ack, setAck] = useState(false),
-    [confirmation, setConfirmation] = useState("");
+    [selected, setSelected] = useState<string[]>([]);
   useEffect(() => {
     let live = true;
     void act({ action: "restore", reference: viewReference(initial) })
@@ -55,7 +54,7 @@ function NativeCard({
     };
   }, []);
   const run = async (input: unknown) => {
-    if (lock.current) return;
+    if (lock.current) return false;
     lock.current = true;
     setBusy(true);
     setError("");
@@ -70,10 +69,10 @@ function NativeCard({
           : [],
       );
       setAccepted([]);
-      setAck(false);
-      setConfirmation("");
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "操作失败。");
+      return false;
     } finally {
       lock.current = false;
       setBusy(false);
@@ -177,98 +176,13 @@ function NativeCard({
         </>
       )}
       {view.kind === "application" && (
-        <>
-          <h3>核对投递 · {view.job.role}</h3>
-          <dl>
-            <dt>收件人</dt>
-            <dd>{view.application.recipient}</dd>
-            <dt>主题</dt>
-            <dd>{view.application.subject}</dd>
-            <dt>状态</dt>
-            <dd>{applicationStatusLabel[view.application.status]}</dd>
-          </dl>
-          <p className="rg-pre rg-mail">{view.application.body}</p>
-          <button
-            disabled={busy}
-            onClick={() => openFile(view.application.attachment)}
-          >
-            打开实际 PDF 附件
-          </button>
-          <details>
-            <summary>附件校验与发送回执</summary>
-            <p className="rg-pre">
-              附件 SHA-256：{view.application.attachmentHash}
-            </p>
-            {view.application.receipt && (
-              <p className="rg-pre">
-                {JSON.stringify(view.application.receipt, null, 2)}
-              </p>
-            )}
-          </details>
-          {["prepared", "simulated"].includes(view.application.status) && (
-            <>
-              <button
-                disabled={busy}
-                onClick={() =>
-                  void run({ action: "check", id: view.application.id })
-                }
-              >
-                检查附件，不发信
-              </button>
-              <label className="rg-check">
-                <input
-                  type="checkbox"
-                  checked={ack}
-                  disabled={busy}
-                  onChange={(e) => setAck(e.target.checked)}
-                />
-                我已核对收件人、邮件正文和实际附件
-              </label>
-              <label>
-                输入“发送”确认
-                <input
-                  value={confirmation}
-                  disabled={busy || !view.sendingEnabled}
-                  onChange={(e) => setConfirmation(e.target.value)}
-                  autoComplete="off"
-                />
-              </label>
-              <button
-                disabled={
-                  busy ||
-                  !view.sendingEnabled ||
-                  !ack ||
-                  confirmation !== "发送"
-                }
-                onClick={() =>
-                  void run({
-                    action: "send",
-                    id: view.application.id,
-                    digest: view.application.digest,
-                    acknowledged: true,
-                    confirmation,
-                  })
-                }
-              >
-                确认并真实发送
-              </button>
-              {!view.sendingEnabled && (
-                <p className="rg-note">
-                  未启用真实发送。需在插件进程配置发件邮箱及
-                  RESUME_ALLOW_SEND=1。
-                </p>
-              )}
-            </>
-          )}
-          <button
-            disabled={busy}
-            onClick={() =>
-              void run({ action: "application", id: view.application.id })
-            }
-          >
-            核对最新状态
-          </button>
-        </>
+        <ApplicationReview
+          key={`${view.application.id}:${view.application.status}`}
+          view={view}
+          busy={busy}
+          run={run}
+          openFile={openFile}
+        />
       )}
       {view.kind === "goal" && (
         <>
@@ -484,6 +398,7 @@ export function apply(ctx: any) {
     "propose_resume_changes",
     "prepare_application",
     "preview_application",
+    "revise_application",
     "prepare_application_batch",
   ];
   const controls = (sessionId: string) => ({

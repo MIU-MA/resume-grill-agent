@@ -7,6 +7,7 @@ export const applicationStatusLabel: Record<Application["status"], string> = {
   sending: "发送中，先核对结果",
   sent: "SMTP 已接受",
   uncertain: "结果待核对，不要重发",
+  superseded: "已被新预览替代，不能发送",
 };
 export function batchItemLabel(item: BatchItem) {
   if (item.applicationStatus && item.applicationStatus !== "prepared")

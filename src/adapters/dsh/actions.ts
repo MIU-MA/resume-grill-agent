@@ -11,6 +11,7 @@ import {
 import { Tasks, type Goal } from "../../core/tasks.js";
 import { smtpConfigured } from "../../infrastructure/smtp.js";
 import { viewReference } from "./card-model.js";
+import { applicationMail } from "../../domain/application-mail.js";
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("workspace") }).strict(),
   z.object({ action: z.literal("goal"), goalId: z.string() }).strict(),
@@ -23,6 +24,14 @@ const actionSchema = z.discriminatedUnion("action", [
     })
     .strict(),
   z.object({ action: z.literal("application"), id: z.string() }).strict(),
+  z
+    .object({
+      action: z.literal("revise"),
+      id: z.string(),
+      digest: z.string(),
+      ...applicationMail.shape,
+    })
+    .strict(),
   z.object({ action: z.literal("batch-view"), id: z.string() }).strict(),
   z
     .object({
@@ -67,6 +76,11 @@ export async function humanAction(workspace: Workspace, value: unknown) {
     );
   if (input.action === "application")
     return applicationView(workspace, input.id);
+  if (input.action === "revise") {
+    const { id, digest, action: _, ...mail } = input;
+    const application = await workspace.reviseApplication(id, digest, mail);
+    return applicationView(workspace, application.id);
+  }
   if (input.action === "batch-view") return batchView(workspace, input.id);
   if (input.action === "batch") {
     const batch = await new Tasks(workspace).prepareBatch(

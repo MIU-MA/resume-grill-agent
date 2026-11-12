@@ -314,15 +314,15 @@ export class Tasks {
     const batch = this.workspace.store.get<Batch>("batch", id);
     return {
       ...batch,
-      items: batch.items.map((item) => ({
-        ...item,
-        ...(item.applicationId
-          ? {
-              applicationStatus: this.workspace.preview(item.applicationId)
-                .status,
-            }
-          : {}),
-      })),
+      items: batch.items.map((item) => {
+        if (!item.applicationId) return item;
+        const current = this.workspace.latestApplication(item.applicationId);
+        return {
+          ...item,
+          applicationId: current.id,
+          applicationStatus: current.status,
+        };
+      }),
     };
   }
   private async buildBatch(

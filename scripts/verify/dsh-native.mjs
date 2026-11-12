@@ -142,6 +142,54 @@ try {
   await page.getByText("hr@example.com", { exact: true }).waitFor();
   assert.equal(workspace.history().length, 1);
   assert.equal(workspace.history()[0].status, "prepared");
+  const original = workspace.history()[0];
+  await page.getByLabel("我已核对收件人、邮件正文和实际附件").check();
+  await page.getByRole("button", { name: "修改邮件", exact: true }).click();
+  await page.getByLabel("收件邮箱", { exact: true }).fill("edited@example.com");
+  await page.getByLabel("主题", { exact: true }).fill("应聘 Go 开发 · 已核对");
+  await page
+    .getByLabel("正文", { exact: true })
+    .fill(
+      "您好：\n\n我参与过 Go API 开发与测试，附件是我的简历。\n\n感谢查看。",
+    );
+  assert.equal(
+    await page
+      .getByRole("button", { name: "核对最新状态", exact: true })
+      .isDisabled(),
+    true,
+  );
+  assert.equal(
+    await page
+      .getByRole("button", { name: "确认并真实发送", exact: true })
+      .count(),
+    0,
+  );
+  const frozenBytes = await readFile(original.attachment);
+  await writeFile(original.attachment, "damaged test attachment");
+  await page.getByRole("button", { name: "保存邮件", exact: true }).click();
+  await card.getByRole("alert").filter({ hasText: "附件校验失败" }).waitFor();
+  assert.equal(
+    await page.getByLabel("收件邮箱", { exact: true }).inputValue(),
+    "edited@example.com",
+  );
+  assert.equal(workspace.history().length, 1, "保存失败不得生成新投递");
+  await writeFile(original.attachment, frozenBytes);
+  await page.getByRole("button", { name: "保存邮件", exact: true }).click();
+  await page.getByText("edited@example.com", { exact: true }).waitFor();
+  const revised = workspace.history()[0];
+  assert.notEqual(revised.id, original.id);
+  assert.equal(revised.revisedFrom, original.id);
+  assert.equal(revised.attachmentHash, original.attachmentHash);
+  assert.equal(workspace.preview(original.id).status, "superseded");
+  assert.equal(
+    await page.getByLabel("我已核对收件人、邮件正文和实际附件").isChecked(),
+    false,
+  );
+  await page.getByRole("button", { name: "修改邮件", exact: true }).click();
+  await page.getByLabel("主题", { exact: true }).fill("取消后不应保存");
+  await page.getByRole("button", { name: "取消修改", exact: true }).click();
+  assert.equal(workspace.history().length, 2);
+  await page.getByText(revised.subject, { exact: true }).waitFor();
   const output = resolve(".resume-agent/verification");
   await mkdir(output, { recursive: true });
   await page.screenshot({
@@ -165,9 +213,11 @@ try {
   );
   // A replayed tool card starts from its committed proposal; re-read the live record explicitly.
   await page.reload();
-  await page.getByText("hr@example.com", { exact: true }).waitFor();
-  assert.equal(workspace.history().length, 1, "重放卡片不得产生重复投递");
+  await page.getByText("edited@example.com", { exact: true }).waitFor();
+  await page.getByText("附件已检查，未发送", { exact: true }).waitFor();
+  assert.equal(workspace.history().length, 2, "重放卡片不得产生重复投递");
   await page.setViewportSize({ width: 430, height: 900 });
+  await page.getByRole("button", { name: "修改邮件", exact: true }).click();
   assert.ok(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -177,6 +227,7 @@ try {
     path: join(output, "dsh-native-mobile.png"),
     fullPage: true,
   });
+  await page.getByRole("button", { name: "取消修改", exact: true }).click();
   assert.deepEqual(errors, []);
   await page.setViewportSize({ width: 1440, height: 1050 });
   await page
@@ -195,7 +246,7 @@ try {
       runtime: "installed DSH",
       model: "deterministic local test adapter; zero external model calls",
       verified:
-        "installed bundle → native tool → persisted metadata → React card → human command → PDF/mail → attachment check → replay; no mail sent",
+        "installed bundle → native tool → React card → edit/cancel email → immutable PDF snapshot → attachment check → replay → mobile editor; no mail sent",
       screenshots: output,
     }),
   );

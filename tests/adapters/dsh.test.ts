@@ -170,6 +170,59 @@ test("首次恢复预览卡也读取当前状态，回退引用只允许查询",
     0,
   );
 });
+test("卡片编辑后恢复新邮件，批次打开最新预览，且不创建发送确认", async (t) => {
+  const f = await setup(t),
+    tasks = new Tasks(f.workspace);
+  const goal = tasks.saveGoal({ resumeId: f.resume.id, directions: ["Go"] });
+  const batch = await tasks.prepareBatch(goal.id, [
+    { jobId: f.job.id, keepOriginal: true },
+  ]);
+  const original = f.workspace.preview(batch.items[0].applicationId!);
+  const view = await cardAction(f.workspace, "edit-session", "edit-card", {
+    action: "revise",
+    id: original.id,
+    digest: original.digest,
+    recipient: "edited@example.com",
+    subject: "新主题",
+    body: "新正文。",
+  });
+  assert.equal(view?.kind, "application");
+  if (view?.kind !== "application") throw new Error("未返回新邮件");
+  const restored = await cardAction(f.workspace, "edit-session", "edit-card", {
+    action: "restore",
+    reference: { action: "application", id: original.id },
+  });
+  if (restored?.kind !== "application") throw new Error("无法恢复新邮件");
+  assert.equal(restored.application.id, view.application.id);
+  assert.equal(restored.application.recipient, "edited@example.com");
+  const snapshot = batchView(f.workspace, batch.id).batch.items[0];
+  assert.equal(snapshot.applicationId, view.application.id);
+  assert.equal(snapshot.applicationStatus, "prepared");
+  assert.equal(f.sends(), 0);
+  assert.equal(
+    f.store.db.prepare("SELECT COUNT(*) AS n FROM approvals").get()!.n,
+    0,
+  );
+  await assert.rejects(
+    cardAction(f.workspace, "edit-session", "edit-card", {
+      action: "revise",
+      id: original.id,
+      digest: original.digest,
+      recipient: "stale@example.com",
+      subject: "旧卡片",
+      body: "不应生效。",
+    }),
+    /改变/,
+  );
+  const unchanged = await cardAction(f.workspace, "edit-session", "edit-card", {
+    action: "restore",
+  });
+  assert.equal(
+    unchanged?.kind === "application" && unchanged.application.id,
+    view.application.id,
+  );
+});
+
 test("DSH 原生工具与人类命令分离，输出核对 metadata；无发信权限时不能绕过", async (t) => {
   const f = await setup(t),
     tools = new Map<string, any>(),
@@ -200,7 +253,7 @@ test("DSH 原生工具与人类命令分离，输出核对 metadata；无发信�
     },
     f.workspace,
   );
-  assert.equal(tools.size, 14);
+  assert.equal(tools.size, 15);
   assert.equal(commands.size, 1);
   assert.ok(prompt.text.includes("核对卡"));
   assert.equal(

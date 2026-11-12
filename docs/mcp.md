@@ -18,6 +18,8 @@ DSH 原生插件之外，也可按宿主的 MCP 格式指向同一套服务，�
 
 流程：`import_resume → save_search_goal → discover_jobs / add_job → goal_candidates → review_context → propose_resume_changes → prepare_application_batch`。单份投递可用 `save_resume_version → prepare_application`；用户选择修改并核对实际附件后才能发送。
 
+修改未发送邮件用 `revise_application`，传入当前 `id`、`digest` 和新的收件人、主题、正文。新预览沿用原冻结附件，旧预览标为 `superseded`，旧确认失效；新邮件仍须人工核对和确认。
+
 `npm run panel` 启动可选本机 React 面板，默认端口 4319，仅监听回环地址并校验会话和请求来源。MCP／面板默认目录是当前目录下的 `.resume-agent`；与 DSH 原生版共用资料时，显式指定相同 `RESUME_AGENT_HOME`。这不是公网或多用户部署方案。
 
 通用 MCP 真实发信除邮箱环境配置外，还要人工确认当前内容摘要。用户可在交互终端运行：

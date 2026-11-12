@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Workspace } from "./workspace.js";
-import { Tasks, goalInput, batchChoice } from "./tasks.js";
+import { Tasks, goalInput, batchChoice, type Batch } from "./tasks.js";
+import { applicationMail } from "../domain/application-mail.js";
 export type Operation = {
   name: string;
   description: string;
@@ -58,7 +59,10 @@ export function operations(workspace: Workspace) {
     "prepare_application_batch",
     "用户核对修改后，一次准备所选岗位的专属简历和邮件。每项要提供已查看的 proposalId 与接受项，或用户明确选择 keepOriginal。只准备，不批准或发送；逐项报告阻塞原因。",
     { goalId: z.string(), choices: z.array(batchChoice).min(1).max(20) },
-    (args) => tasks.prepareBatch(args.goalId, args.choices),
+    async (args) => {
+      const batch = await tasks.prepareBatch(args.goalId, args.choices);
+      return tasks.batchSnapshot(batch.id);
+    },
   );
   tool(
     "import_resume",
@@ -142,6 +146,12 @@ export function operations(workspace: Workspace) {
       ),
   );
   tool(
+    "revise_application",
+    "修改未发送邮件的收件人、主题和正文，沿用已冻结的 PDF。传入当前预览 digest；保存新预览并停用旧预览及其确认，不批准或发送。",
+    { id: z.string(), digest: z.string(), ...applicationMail.shape },
+    ({ id, digest, ...mail }) => workspace.reviseApplication(id, digest, mail),
+  );
+  tool(
     "preview_application",
     "向用户完整展示收件人、正文、附件及 digest。确认由人工 CLI 完成，不能由模型自行生成批准。",
     { id: z.string() },
@@ -170,7 +180,9 @@ export function operations(workspace: Workspace) {
       jobs: workspace.store.list("job"),
       goals: workspace.store.list("goal"),
       searches: workspace.store.list("search"),
-      batches: workspace.store.list("batch"),
+      batches: workspace.store
+        .list<Batch>("batch")
+        .map((batch) => tasks.batchSnapshot(batch.id)),
     }),
     true,
   );

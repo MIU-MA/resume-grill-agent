@@ -6,6 +6,7 @@ export const statusLabel: Record<string, string> = {
   sending: "发送中／需核对",
   sent: "已提交邮箱",
   uncertain: "结果待核对",
+  superseded: "已被新预览替代",
 };
 export function ApplicationPanel({
   job,
@@ -16,6 +17,7 @@ export function ApplicationPanel({
   onPrepare,
   onCheck,
   onSend,
+  onOpen,
 }: {
   job?: Job;
   resume?: Resume;
@@ -29,6 +31,7 @@ export function ApplicationPanel({
   }) => Promise<void>;
   onCheck: () => void;
   onSend: () => void;
+  onOpen: (id: string) => void;
 }) {
   const [checked, setChecked] = useState(false),
     [confirmation, setConfirmation] = useState("");
@@ -94,6 +97,14 @@ export function ApplicationPanel({
             <dd>{resume.name} · PDF</dd>
           </dl>
           <p className="pre mail-body">{application.body}</p>
+          {application.status === "superseded" && application.replacedBy && (
+            <button
+              disabled={busy}
+              onClick={() => onOpen(application.replacedBy!)}
+            >
+              打开修改后的邮件
+            </button>
+          )}
           {application.receipt && (
             <aside>
               <h3>邮箱服务回执</h3>

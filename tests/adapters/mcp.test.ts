@@ -41,7 +41,7 @@ test(
     try {
       await connect();
       const tools = await client!.listTools();
-      assert.equal(tools.tools.length, 14);
+      assert.equal(tools.tools.length, 15);
       assert.ok(
         tools.tools
           .find((tool) => tool.name === "execute_application")
@@ -123,8 +123,21 @@ test(
         (await call("preview_application", { id: draft.id })).digest,
         draft.digest,
       );
+      const revised = await call("revise_application", {
+        id: draft.id,
+        digest: draft.digest,
+        recipient: "edited@example.com",
+        subject: "新的主题",
+        body: "核对后的正文。",
+      });
+      assert.notEqual(revised.digest, draft.digest);
+      assert.equal(revised.attachmentHash, draft.attachmentHash);
       assert.equal(
-        (await call("execute_application", { id: draft.id, dryRun: true }))
+        (await call("preview_application", { id: draft.id })).status,
+        "superseded",
+      );
+      assert.equal(
+        (await call("execute_application", { id: revised.id, dryRun: true }))
           .status,
         "simulated",
       );

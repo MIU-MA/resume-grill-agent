@@ -14,7 +14,7 @@ import { basename, extname, join } from "node:path";
 import { packageRoot } from "../../shared/package-paths.js";
 import { z } from "zod";
 import { Workspace, type Resume } from "../../core/workspace.js";
-import { Tasks, type Goal } from "../../core/tasks.js";
+import { Tasks, type Goal, type Batch } from "../../core/tasks.js";
 import { smtpConfigured } from "../../infrastructure/smtp.js";
 
 export async function startPanel(workspace: Workspace, port = 4319) {
@@ -104,7 +104,9 @@ export async function startPanel(workspace: Workspace, port = 4319) {
             proposals: workspace.store.list("proposal"),
             goals: workspace.store.list("goal"),
             searches: workspace.store.list("search"),
-            batches: workspace.store.list("batch"),
+            batches: workspace.store
+              .list<Batch>("batch")
+              .map((batch) => tasks.batchSnapshot(batch.id)),
             goalCandidates: Object.fromEntries(
               workspace.store
                 .list<Goal>("goal")

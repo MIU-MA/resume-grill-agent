@@ -253,6 +253,7 @@ export function App() {
                 resume={resume}
                 application={application}
                 enabled={data.sendingEnabled}
+                onOpen={setApplication}
                 busy={busy}
                 onPrepare={async (input) => {
                   await run(async () => {

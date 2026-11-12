@@ -105,7 +105,8 @@ export function viewFor(
     );
   if (
     operation === "preview_application" ||
-    operation === "prepare_application"
+    operation === "prepare_application" ||
+    operation === "revise_application"
   )
     return applicationView(workspace, value.id);
   if (

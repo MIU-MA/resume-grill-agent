@@ -34,6 +34,8 @@ dsh plugin --profile desktop add 'link:C:/path/resume-grill-agent'
 
 在对话中提供简历路径和方向。助手调用 `resume_grill_*` 工具后，回答下方显示岗位和修改核对卡；勾选修改并准备邮件，核对收件人、正文和实际附件。城市与排除条件会保留，缺信息时显示原因。点击“请助手给出修改建议／分析所选岗位”会请求模型，其他按钮直接执行本地操作。
 
+未发送邮件可点“修改邮件”，直接编辑收件人、主题和正文。保存后生成新预览，沿用已冻结的 PDF；旧预览及其发送确认失效，批次打开修改后的邮件。编辑期间不提供发送操作，保存失败保留输入。已发送、发送中或结果待核对的邮件不能编辑。
+
 在启动 DSH 的环境中配置 `RESUME_SMTP_ADDRESS`、`RESUME_SMTP_CODE`、`RESUME_SMTP_PROVIDER`（qq／163／126）和 `RESUME_ALLOW_SEND=1`，再重启进程。当前没有原生邮箱设置页；未配置时卡片禁用发送。用户勾选核对、输入“发送”后才能提交；助手不能批准自己发信。
 
 资料默认在 `DSH_HOME/storages/resume-grill`，通常为 `%USERPROFILE%/.dsh/storages/resume-grill`；`RESUME_AGENT_HOME` 可指定其他绝对目录。恢复卡片重新读取当前状态，不保存批准。新 PDF 不保留原布局和照片；`sent` 只表示 SMTP 接受，回复同步和已读追踪尚未实现。

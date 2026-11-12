@@ -1,9 +1,13 @@
 import { randomUUID, createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, unlink } from "node:fs/promises";
 import { resolve, basename, extname } from "node:path";
 import { z } from "zod";
 import { Store } from "../infrastructure/sqlite-store.js";
 import { readResume, renderPdf } from "../infrastructure/documents.js";
+import {
+  applicationMail,
+  type ApplicationMail,
+} from "../domain/application-mail.js";
 import {
   tailoringSections,
   groundedTailoringSchema,
@@ -42,7 +46,10 @@ export type Application = {
   attachmentHash: string;
   digest: string;
   messageId: string;
-  status: "prepared" | "simulated" | "sending" | "sent" | "uncertain";
+  status:
+    "prepared" | "simulated" | "sending" | "sent" | "uncertain" | "superseded";
+  revisedFrom?: string;
+  replacedBy?: string;
   createdAt: number;
   receipt?: SmtpReceipt;
 };
@@ -187,15 +194,7 @@ export class Workspace {
     subject: string,
     body: string,
   ) {
-    z.object({
-      recipient: z.email(),
-      subject: z
-        .string()
-        .min(1)
-        .max(200)
-        .refine((v) => !/[\r\n]/.test(v)),
-      body: z.string().min(1).max(20000),
-    }).parse({ recipient, subject, body });
+    const mail = applicationMail.parse({ recipient, subject, body });
     const job = this.store.get<Job>("job", jobId),
       resume = this.store.get<Resume>("resume", resumeId);
     if (resume.jobId !== job.id || !resume.pdf || !resume.pdfHash)
@@ -203,49 +202,136 @@ export class Workspace {
     const bytes = await readFile(resume.pdf);
     if (hash(bytes) !== resume.pdfHash)
       throw new Error("附件已改变，请重新生成版本。");
+    return this.freezeApplication(job, resumeId, bytes, mail);
+  }
+  /** A new preview always uses the already-frozen PDF, never a mutable source file. */
+  async reviseApplication(id: string, digest: string, input: ApplicationMail) {
+    const mail = applicationMail.parse(input),
+      original = this.preview(id);
+    this.requireEditable(original, digest);
+    const bytes = await readFile(original.attachment);
+    if (hash(bytes) !== original.attachmentHash)
+      throw new Error("附件校验失败，已阻止修改。");
+    if (
+      mail.recipient === original.recipient &&
+      mail.subject === original.subject &&
+      mail.body === original.body
+    )
+      return this.store.transaction(() => {
+        const current = this.preview(id);
+        this.requireEditable(current, digest);
+        return current;
+      });
+    return this.freezeApplication(
+      this.store.get<Job>("job", original.jobId),
+      original.resumeId,
+      bytes,
+      mail,
+      original,
+    );
+  }
+  private requireEditable(item: Application, digest: string) {
+    if (
+      item.digest !== digest ||
+      !["prepared", "simulated"].includes(item.status)
+    )
+      throw new Error("邮件内容或状态已改变，请重新打开最新预览。");
+  }
+  private async freezeApplication(
+    job: Job,
+    resumeId: string,
+    bytes: Uint8Array,
+    mail: ApplicationMail,
+    original?: Application,
+  ) {
+    const attachmentHash = hash(bytes);
     const digest = hash(
       JSON.stringify({
         job,
         resumeId,
-        recipient,
-        subject,
-        body,
-        attachmentHash: resume.pdfHash,
+        ...mail,
+        attachmentHash,
+        ...(original ? { revisedFrom: original.id } : {}),
       }),
     );
     const existing = this.store
       .list<Application>("application")
       .find((item) => item.digest === digest);
-    if (existing) return existing;
+    if (existing && !original) return existing;
     const id = randomUUID(),
       attachment = resolve(this.store.home, `${id}-attachment.pdf`);
     await writeFile(attachment, bytes, { flag: "wx", mode: 0o600 });
     const application: Application = {
       id,
-      jobId,
+      jobId: job.id,
       resumeId,
-      recipient,
-      subject,
-      body,
+      ...mail,
       attachment,
-      attachmentHash: hash(bytes),
+      attachmentHash,
       digest,
       messageId: `<${id}@resume-grill.local>`,
       status: "prepared",
       createdAt: Date.now(),
+      ...(original ? { revisedFrom: original.id } : {}),
     };
-    return this.store.transaction(() => {
-      const concurrent = this.store
-        .list<Application>("application")
-        .find((item) => item.digest === digest);
-      if (concurrent) return concurrent;
-      this.store.put("application", application);
-      this.store.event(id, "prepared", "投递内容及附件已冻结。");
-      return application;
-    });
+    let persisted = false;
+    try {
+      return this.store.transaction(() => {
+        if (original)
+          this.requireEditable(this.preview(original.id), original.digest);
+        const concurrent = this.store
+          .list<Application>("application")
+          .find((item) => item.digest === digest);
+        if (concurrent) return concurrent;
+        this.store.put("application", application);
+        this.store.event(id, "prepared", "投递内容及附件已冻结。");
+        if (original) {
+          this.store.put("application", {
+            ...original,
+            status: "superseded",
+            replacedBy: id,
+          });
+          this.store.db
+            .prepare("DELETE FROM approvals WHERE application_id=?")
+            .run(original.id);
+          this.store.event(
+            original.id,
+            "superseded",
+            `邮件已修改，新预览：${id}`,
+          );
+          this.store.event(
+            id,
+            "revised",
+            `从预览 ${original.id} 修改，沿用已核对的 PDF。`,
+          );
+        }
+        persisted = true;
+        return application;
+      });
+    } finally {
+      if (!persisted) await unlink(attachment);
+    }
   }
   preview(id: string) {
     return this.store.get<Application>("application", id);
+  }
+  latestApplication(id: string): Application {
+    const seen = new Set<string>();
+    let current = this.preview(id);
+    while (current.status === "superseded") {
+      if (seen.has(current.id) || !current.replacedBy)
+        throw new Error("邮件修改记录不完整，请核对投递记录。");
+      seen.add(current.id);
+      const next = this.preview(current.replacedBy);
+      if (
+        next.revisedFrom !== current.id ||
+        next.jobId !== current.jobId ||
+        next.resumeId !== current.resumeId
+      )
+        throw new Error("邮件修改记录不一致，请核对投递记录。");
+      current = next;
+    }
+    return current;
   }
   approve(id: string, digest: string) {
     const item = this.preview(id);
