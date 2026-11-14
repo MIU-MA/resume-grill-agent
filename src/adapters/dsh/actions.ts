@@ -7,14 +7,76 @@ import {
   goalView,
   reviewView,
   workspaceView,
+  resumeView,
 } from "./views.js";
-import { Tasks, type Goal } from "../../core/tasks.js";
-import { smtpConfigured } from "../../infrastructure/smtp.js";
+import { Tasks, goalInput, type Goal } from "../../core/tasks.js";
+import { mailSendingEnabled } from "../../infrastructure/smtp.js";
 import { viewReference } from "./card-model.js";
 import { applicationMail } from "../../domain/application-mail.js";
+import { Careers } from "../../core/careers.js";
+import { sourceUrlSchema } from "../../infrastructure/careers/contracts.js";
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("workspace") }).strict(),
+  z.object({ action: z.literal("resume"), id: z.string() }).strict(),
+  z
+    .object({
+      action: z.literal("create-resume"),
+      name: z.string(),
+      text: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("rename-resume"),
+      id: z.string(),
+      name: z.string(),
+    })
+    .strict(),
+  z.object({ action: z.literal("duplicate-resume"), id: z.string() }).strict(),
+  z.object({ action: z.literal("trash-resume"), id: z.string() }).strict(),
+  z.object({ action: z.literal("restore-resume"), id: z.string() }).strict(),
+  z
+    .object({
+      action: z.literal("save-resume"),
+      resumeId: z.string(),
+      jobId: z.string().optional(),
+      text: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("save-version"),
+      resumeId: z.string(),
+      jobId: z.string(),
+      proposalId: z.string(),
+      accepted: z.array(z.string()),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("scan-site"),
+      url: sourceUrlSchema,
+      keywords: z.array(z.string().min(1).max(80)).max(8).default([]),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("read-job"),
+      url: sourceUrlSchema,
+      resumeId: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("update-jd"),
+      id: z.string(),
+      resumeId: z.string(),
+      jd: z.string().min(1).max(20000),
+    })
+    .strict(),
+  z.object({ action: z.literal("import"), path: z.string().min(1) }).strict(),
   z.object({ action: z.literal("goal"), goalId: z.string() }).strict(),
+  z.object({ action: z.literal("discover"), goal: goalInput }).strict(),
   z
     .object({
       action: z.literal("review"),
@@ -62,10 +124,88 @@ const actionSchema = z.discriminatedUnion("action", [
     .strict(),
 ]);
 /** Human command surface only. This function is never registered as an agent tool. */
-export async function humanAction(workspace: Workspace, value: unknown) {
+export async function humanAction(
+  workspace: Workspace,
+  value: unknown,
+  tasks = new Tasks(workspace),
+) {
   const input = actionSchema.parse(value);
   if (input.action === "workspace") return workspaceView(workspace);
+  if (input.action === "resume") return resumeView(workspace, input.id);
+  if (input.action === "create-resume")
+    return resumeView(
+      workspace,
+      (await workspace.createResume(input.name, input.text)).id,
+    );
+  if (input.action === "rename-resume") {
+    workspace.renameResume(input.id, input.name);
+    return workspaceView(workspace);
+  }
+  if (input.action === "duplicate-resume") {
+    return resumeView(workspace, workspace.duplicateResume(input.id).id);
+  }
+  if (input.action === "trash-resume") {
+    workspace.trashResume(input.id);
+    return workspaceView(workspace);
+  }
+  if (input.action === "restore-resume") {
+    workspace.restoreResume(input.id);
+    return workspaceView(workspace);
+  }
+  if (input.action === "save-resume") {
+    const version = await workspace.saveEditedResume(
+      input.resumeId,
+      input.text,
+      input.jobId,
+    );
+    return resumeView(workspace, version.id);
+  }
+  if (input.action === "scan-site") {
+    await new Careers(workspace).scan(input.url, input.keywords);
+    return workspaceView(workspace);
+  }
+  if (input.action === "read-job") {
+    const job = await new Careers(workspace).read(input.url);
+    return input.resumeId
+      ? reviewView(workspace, input.resumeId, job.id)
+      : workspaceView(workspace);
+  }
+  if (input.action === "update-jd") {
+    const old = workspace.store.get<any>("job", input.id);
+    const { id, ...data } = old;
+    const job = workspace.addJob({ ...data, jd: input.jd });
+    return reviewView(workspace, input.resumeId, job.id);
+  }
+  if (input.action === "save-version") {
+    const view = reviewView(
+      workspace,
+      input.resumeId,
+      input.jobId,
+      input.proposalId,
+    );
+    const latest = workspace.store
+      .list<{ id: string; resumeId: string; jobId: string }>("proposal")
+      .find((p) => p.resumeId === input.resumeId && p.jobId === input.jobId);
+    if (latest?.id !== input.proposalId)
+      throw new Error("建议已更新，请重新核对。");
+    const version = await workspace.saveVersion(
+      input.resumeId,
+      input.jobId,
+      view.proposal!.plan,
+      input.accepted,
+    );
+    return resumeView(workspace, version.id);
+  }
+  if (input.action === "import") {
+    await workspace.importResume(input.path);
+    return workspaceView(workspace);
+  }
   if (input.action === "goal") return goalView(workspace, input.goalId);
+  if (input.action === "discover") {
+    const goal = tasks.saveGoal(input.goal);
+    await tasks.discover(goal.id);
+    return goalView(workspace, goal.id);
+  }
   if (input.action === "review")
     return reviewView(
       workspace,
@@ -143,11 +283,7 @@ export async function humanAction(workspace: Workspace, value: unknown) {
     return applicationView(workspace, input.id);
   }
   // One immutable preview, checked before the one-use approval is created.
-  if (
-    process.env.RESUME_ALLOW_SEND !== "1" ||
-    !workspace.send ||
-    !smtpConfigured()
-  )
+  if (!mailSendingEnabled(workspace))
     throw new Error("未启用真实发送或邮箱配置不完整。");
   workspace.approve(input.id, input.digest);
   await workspace.execute(input.id, false);
@@ -174,9 +310,14 @@ export async function cardAction(
     if (!reference) return null;
     const parsed = actionSchema.parse(reference);
     if (
-      !["workspace", "goal", "review", "application", "batch-view"].includes(
-        parsed.action,
-      )
+      ![
+        "workspace",
+        "goal",
+        "review",
+        "application",
+        "batch-view",
+        "resume",
+      ].includes(parsed.action)
     )
       throw new Error("恢复引用只能查询记录。");
     return humanAction(workspace, parsed);

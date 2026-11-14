@@ -113,6 +113,110 @@ test("从岗位清单进入核对后仍保留城市与排除条件，不另建�
   );
 });
 
+test("侧栏查找直接产生岗位清单，空结果保留读取失败原因", async (t) => {
+  const f = await setup(t);
+  const tasks = new Tasks(f.workspace, async (url) => ({
+    url,
+    company: "检索公司",
+    role: "数据分析师",
+    jobDescription: "招聘数据分析师，工作地点杭州，使用 SQL 分析数据。",
+    emails: [],
+    links: [],
+  }));
+  const view = await humanAction(
+    f.workspace,
+    {
+      action: "discover",
+      goal: {
+        resumeId: f.resume.id,
+        directions: ["数据分析"],
+        cities: ["杭州"],
+        sources: ["https://example.com/jobs"],
+      },
+    },
+    tasks,
+  );
+  assert.equal(view.kind, "goal");
+  if (view.kind !== "goal") throw new Error("没有岗位清单");
+  assert.equal(view.candidates.length, 1);
+  assert.equal(view.candidates[0].job.role, "数据分析师");
+  assert.equal(view.search?.status, "complete");
+  const failed = await humanAction(
+    f.workspace,
+    {
+      action: "discover",
+      goal: {
+        resumeId: f.resume.id,
+        directions: ["设计师"],
+        sources: ["https://example.com/jobs"],
+      },
+    },
+    new Tasks(f.workspace, async () => {
+      throw new Error("页面需要登录");
+    }),
+  );
+  if (failed.kind !== "goal") throw new Error("没有读取结果");
+  assert.equal(failed.candidates.length, 0);
+  assert.match(failed.search!.sources[0].error!, /需要登录/);
+  assert.equal(f.sends(), 0);
+});
+
+test("上传简历可读取正文，无邮箱可独立保存岗位版，更新 JD 不复用旧建议", async (t) => {
+  const f = await setup(t);
+  f.store.put("job", { ...f.job, recipient: undefined });
+  const original = await humanAction(f.workspace, {
+    action: "resume",
+    id: f.resume.id,
+  });
+  assert.equal(original.kind, "resume");
+  if (original.kind !== "resume") throw new Error("简历不可查看");
+  assert.equal(original.resume.text, f.resume.text);
+  assert.equal(original.resume.original, f.resume.original);
+  const saved = await humanAction(f.workspace, {
+    action: "save-version",
+    resumeId: f.resume.id,
+    jobId: f.job.id,
+    proposalId: f.proposal.id,
+    accepted: [],
+  });
+  if (saved.kind !== "resume") throw new Error("没有岗位版");
+  assert.ok(saved.resume.pdf);
+  assert.equal(saved.resume.parentId, f.resume.id);
+  assert.equal(f.workspace.history().length, 0);
+  const changed = await humanAction(f.workspace, {
+    action: "update-jd",
+    id: f.job.id,
+    resumeId: f.resume.id,
+    jd: "Go API 开发，额外负责自动化测试。",
+  });
+  if (changed.kind !== "review") throw new Error("没有新岗位上下文");
+  assert.notEqual(changed.jobId, f.job.id);
+  assert.equal(changed.proposal, undefined);
+  await assert.rejects(
+    humanAction(f.workspace, {
+      action: "save-version",
+      resumeId: f.resume.id,
+      jobId: changed.jobId,
+      proposalId: f.proposal.id,
+      accepted: [],
+    }),
+    /不一致/,
+  );
+  const manual = await humanAction(f.workspace, {
+    action: "save-resume",
+    resumeId: f.resume.id,
+    jobId: changed.jobId,
+    text: f.resume.text + "\n参与接口联调。",
+  });
+  if (manual.kind !== "resume") throw new Error("未保存修改稿");
+  assert.equal(manual.resume.jobId, changed.jobId);
+  assert.equal(
+    f.workspace.store.get<any>("resume", f.resume.id).text,
+    f.resume.text,
+  );
+  assert.equal(f.sends(), 0);
+});
+
 test("批次展示读取当前投递状态，不能把已发或待核对邮件标成未发送", async (t) => {
   const f = await setup(t),
     tasks = new Tasks(f.workspace),
@@ -253,7 +357,7 @@ test("DSH 原生工具与人类命令分离，输出核对 metadata；无发信�
     },
     f.workspace,
   );
-  assert.equal(tools.size, 15);
+  assert.equal(tools.size, 17);
   assert.equal(commands.size, 1);
   assert.ok(prompt.text.includes("核对卡"));
   assert.equal(
@@ -293,6 +397,16 @@ test("DSH 原生工具与人类命令分离，输出核对 metadata；无发信�
     f.store.db.prepare("SELECT COUNT(*) AS n FROM approvals").get()!.n,
     0,
   );
+  const notices: any[] = [];
+  const prepared = await commands.get("resume-grill").handler({
+    rawInput: JSON.stringify({action: "prepare", resumeId: f.resume.id, jobId: f.job.id, proposalId: result.id, accepted: []}),
+    agent: {id: "session-command", inject: (message: unknown) => notices.push(message)},
+    signal: new AbortController().signal,
+  });
+  assert.equal(prepared.kind, "success");
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].source.kind, "resume-grill");
+  assert.equal(notices[0].source.plugin, undefined, "DSH v4 不接受旧 plugin 来源包装");
   for (const dispose of disposers.reverse()) dispose();
   assert.equal(tools.size, 0);
   assert.equal(commands.size, 0);

@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
-import type { Workspace, Resume, Job, Application } from "./workspace.js";
+import type { Workspace, Job, Application } from "./workspace.js";
 import { readCareerPage } from "../infrastructure/careers/public-page.js";
 import {
   sourceUrlSchema,
@@ -83,7 +83,7 @@ export class Tasks {
   ) {}
   saveGoal(value: unknown) {
     const data = goalInput.parse(value);
-    this.workspace.store.get<Resume>("resume", data.resumeId);
+    this.workspace.resume(data.resumeId);
     const goal = { ...data, id: randomUUID(), createdAt: Date.now() };
     this.workspace.store.put("goal", goal);
     return goal;
@@ -332,7 +332,7 @@ export class Tasks {
   ) {
     const store = this.workspace.store,
       goal = store.get<Goal>("goal", goalId),
-      source = store.get<Resume>("resume", goal.resumeId);
+      source = this.workspace.resume(goal.resumeId);
     const { batch, owned } = store.transaction(() => {
       const existing = store
         .list<Batch & { requestHash: string }>("batch")
@@ -408,8 +408,8 @@ export class Tasks {
           new Set(choice.accepted),
         );
         const version =
-          store
-            .list<Resume>("resume")
+          this.workspace
+            .listResumes()
             .find(
               (item) =>
                 item.parentId === goal.resumeId &&

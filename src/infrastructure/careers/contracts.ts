@@ -21,6 +21,13 @@ export const sourceUrlSchema = z
   }, "请填写官网招聘页面的 HTTPS 地址");
 
 export type EmailCandidate = { email: string; context: string };
+export type CareerDiscovery = {
+  links: CareerLink[];
+  pagesRead: number;
+  notes: string[];
+  pages?: CareerPage[];
+  listingRead?: boolean;
+};
 export type CareerLink = {
   url: string;
   label: string;

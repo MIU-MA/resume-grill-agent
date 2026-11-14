@@ -8,7 +8,7 @@ src/
   domain/               简历与岗位匹配的纯规则
   infrastructure/       SQLite、文档、SMTP、招聘页读取
   adapters/
-    dsh/                原生插件、命令和对话卡片
+    dsh/                原生插件、侧栏、邮箱设置与对话卡片
     mcp/                MCP 协议入口
     cli/                命令行入口
     panel/              可选面板的 HTTP 与 React 界面

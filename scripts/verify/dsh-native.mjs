@@ -38,6 +38,14 @@ const run = (script, extra = {}) =>
     p.on("error", reject);
     p.on("exit", (code) => (code === 0 ? done(out) : reject(new Error(out))));
   });
+async function openSettings(page) {
+  const direct = page.getByRole("button", { name: "设置", exact: true });
+  if (await direct.isVisible()) await direct.click();
+  else {
+    await page.getByRole("button", { name: "账号菜单", exact: true }).click();
+    await page.getByRole("menuitem", { name: /^设置/ }).click();
+  }
+}
 try {
   await run("& $env:DSH_COMMAND plugin --profile web add $env:RG_PACKAGE", {
     RG_PACKAGE: process.env.RESUME_PLUGIN_SPEC ?? `link:${root}`,
@@ -83,7 +91,7 @@ try {
   await writeFile(
     fixture,
     `export const name='resume-native-test';export const inject=['llm','workspaceRegistry'];
- export async function apply(ctx){await ctx.workspaceRegistry.create(${JSON.stringify(home)},'演示求职');const seen=new Set();const adapter={providerInfo:p=>({id:p,name:'本地验证（不调用模型）'}),providerRetryPolicy:()=>undefined,imageRequestPricing:()=>undefined,listModels:async p=>[{provider:p,id:'local',name:'本地验证（不调用模型）'}],resolveModel:async(p,m)=>({provider:p,id:m,name:'本地验证（不调用模型）',inputModalities:['text']}),async prepareCall(p,m){return{model:await this.resolveModel(p,m),stream:o=>this.stream(o)}},async *stream(options){options.signal?.throwIfAborted();if(!seen.has(options.sessionId)){seen.add(options.sessionId);const block={type:'tool-call',id:'native-review-1',name:'resume_grill_propose_resume_changes',arguments:${JSON.stringify(JSON.stringify(args))}};yield{type:'block-start',index:0,blockType:'tool-call'};yield{type:'tool-call-delta',index:0,id:block.id,name:block.name,argumentsDelta:block.arguments};yield{type:'block-end',index:0,block};yield{type:'finish',reason:{kind:'tool-calls'}}}else{yield{type:'block-start',index:0,blockType:'text'};yield{type:'text-delta',index:0,text:'请在上面的求职卡片中核对。'};yield{type:'block-end',index:0,block:{type:'text',text:'请在上面的求职卡片中核对。'}};yield{type:'finish',reason:{kind:'stop'}}}}};ctx.effect(()=>ctx.llm.registerAdapter(['resume-native-test'],adapter));}
+ export async function apply(ctx){await ctx.workspaceRegistry.create(${JSON.stringify(home)},'演示求职');const seen=new Map();const adapter={providerInfo:p=>({id:p,name:'本地验证（不调用模型）'}),providerRetryPolicy:()=>undefined,imageRequestPricing:()=>undefined,listModels:async p=>[{provider:p,id:'local',name:'本地验证（不调用模型）'}],resolveModel:async(p,m)=>({provider:p,id:m,name:'本地验证（不调用模型）',inputModalities:['text']}),async prepareCall(p,m){return{model:await this.resolveModel(p,m),stream:o=>this.stream(o)}},async *stream(options){options.signal?.throwIfAborted();const count=seen.get(options.sessionId)||0;seen.set(options.sessionId,count+1);if(count%2===0){const block={type:'tool-call',id:'native-review-'+count,name:'resume_grill_propose_resume_changes',arguments:JSON.stringify({...${JSON.stringify(args)},jobId:options.messages.filter(m=>m.role==='user').flatMap(m=>m.content).filter(p=>p.type==='text').map(p=>p.text).reverse().find(t=>t.includes('resume_grill_review_context'))?.match(/与岗位 ([a-f0-9-]+)/)?.[1]||${JSON.stringify(job.id)}})};yield{type:'block-start',index:0,blockType:'tool-call'};yield{type:'tool-call-delta',index:0,id:block.id,name:block.name,argumentsDelta:block.arguments};yield{type:'block-end',index:0,block};yield{type:'finish',reason:{kind:'tool-calls'}}}else{yield{type:'block-start',index:0,blockType:'text'};yield{type:'text-delta',index:0,text:'请在上面的求职卡片中核对。'};yield{type:'block-end',index:0,block:{type:'text',text:'请在上面的求职卡片中核对。'}};yield{type:'finish',reason:{kind:'stop'}}}}};ctx.effect(()=>ctx.llm.registerAdapter(['resume-native-test'],adapter));}
  `,
   );
   const patch = join(home, "verify.patch.yml");
@@ -238,19 +246,319 @@ try {
     path: join(output, "dsh-native-attachment.png"),
     fullPage: true,
   });
+  await page.getByRole("button", { name: "求职", exact: true }).click();
+  const workbench = page.getByRole("region", {
+    name: "求职工作台",
+    exact: true,
+  });
+  await workbench.getByText("演示简历.txt", { exact: true }).waitFor();
+  await workbench.getByLabel("选择简历文件", { exact: true }).setInputFiles({
+    name: "侧栏上传.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("演示用户\n项目经历\n- 参与 Go API 开发与测试。"),
+  });
+  await workbench.getByText("侧栏上传.txt", { exact: true }).waitFor();
+  assert.equal(store.list("resume").filter((item) => !item.parentId).length, 2);
+  await workbench
+    .locator("article")
+    .filter({ hasText: "侧栏上传.txt" })
+    .getByRole("button", { name: "查看 / 修改简历", exact: true })
+    .click();
+  await workbench.getByLabel("简历正文", { exact: true }).waitFor();
+  assert.match(
+    await workbench.getByLabel("简历正文", { exact: true }).inputValue(),
+    /Go API/,
+  );
+  await workbench
+    .getByRole("button", { name: "返回清单", exact: true })
+    .click();
+  await workbench.getByLabel("查找简历", { exact: true }).fill("侧栏上传");
+  const uploadedRow = workbench
+    .locator("article")
+    .filter({ has: page.getByText("侧栏上传.txt", { exact: true }) });
+  await uploadedRow
+    .getByRole("button", { name: "重命名", exact: true })
+    .click();
+  await workbench
+    .getByLabel("简历名称", { exact: true })
+    .fill("侧栏上传-已改名");
+  await workbench
+    .getByRole("button", { name: "保存名称", exact: true })
+    .click();
+  await workbench.getByText("侧栏上传-已改名", { exact: true }).waitFor();
+  await workbench
+    .getByLabel("查找简历", { exact: true })
+    .fill("完全不存在的简历");
+  await workbench
+    .getByText("没有找到匹配的简历，可以更换关键词。", { exact: true })
+    .waitFor();
+  await workbench
+    .getByLabel("查找简历", { exact: true })
+    .fill("侧栏上传-已改名");
+  await workbench
+    .locator("article")
+    .filter({ has: page.getByText("侧栏上传-已改名", { exact: true }) })
+    .getByRole("button", { name: "复制", exact: true })
+    .click();
+  await workbench
+    .getByRole("region", { name: "简历查看与编辑", exact: true })
+    .waitFor();
+  await workbench
+    .getByRole("button", { name: "返回清单", exact: true })
+    .click();
+  const copyName = "侧栏上传-已改名-副本.txt";
+  const copyRow = workbench
+    .locator("article")
+    .filter({ has: page.getByText(copyName, { exact: true }) });
+  await copyRow.getByRole("button", { name: "删除", exact: true }).click();
+  await workbench
+    .getByRole("button", { name: "撤销删除", exact: true })
+    .click();
+  await copyRow.getByRole("button", { name: "删除", exact: true }).click();
+  await workbench.getByLabel("简历范围", { exact: true }).selectOption("trash");
+  await copyRow.getByRole("button", { name: "恢复简历", exact: true }).click();
+  await workbench.getByText("回收站为空。", { exact: true }).waitFor();
+  await workbench.getByLabel("简历范围", { exact: true }).selectOption("all");
+  await copyRow
+    .getByRole("button", { name: "查看 / 修改简历", exact: true })
+    .waitFor();
+  await workbench
+    .getByRole("button", { name: "新建简历", exact: true })
+    .click();
+  await workbench
+    .getByLabel("新简历名称", { exact: true })
+    .fill("文字整理简历");
+  await workbench
+    .getByLabel("新简历内容", { exact: true })
+    .fill("演示用户\n项目经历\n- 参与 Go API 开发与测试。");
+  await workbench
+    .getByRole("button", { name: "保存新简历", exact: true })
+    .click();
+  await workbench
+    .getByRole("region", { name: "简历查看与编辑", exact: true })
+    .waitFor();
+  await workbench
+    .getByRole("button", { name: "返回清单", exact: true })
+    .click();
+  await workbench.getByRole("button", { name: "总览", exact: true }).click();
+  await workbench
+    .getByRole("region", { name: "求职总览", exact: true })
+    .waitFor();
+  await workbench
+    .getByRole("button", { name: "管理简历库", exact: true })
+    .click();
+  await workbench.getByRole("button", { name: "岗位", exact: true }).click();
+  await workbench.getByText("Go 开发", { exact: true }).waitFor();
+  await workbench
+    .getByLabel("官网岗位关键词", { exact: true })
+    .fill("数据分析");
+  assert.equal(
+    await workbench
+      .getByRole("button", { name: "实时拉取岗位", exact: true })
+      .isEnabled(),
+    true,
+  );
+  workspace.addJob({
+    company: "新增岗位公司",
+    role: "数据分析师",
+    jd: "数据分析师，负责 SQL 数据分析。",
+    sourceUrl: "https://example.com/data",
+  });
+  await workbench
+    .getByRole("button", { name: "刷新求职资料", exact: true })
+    .click();
+  await workbench.getByText("数据分析师", { exact: true }).waitFor();
+  await workbench.getByRole("button", { name: /^待确认/ }).click();
+  await workbench.getByText("edited@example.com", { exact: true }).waitFor();
+  await workbench
+    .getByRole("button", { name: "查看邮件与附件", exact: true })
+    .click();
+  await workbench
+    .getByRole("button", { name: "修改邮件", exact: true })
+    .waitFor();
+  assert.equal(workspace.history().length, 2);
+  await page.screenshot({
+    path: join(output, "dsh-workbench.png"),
+    fullPage: true,
+  });
+  await openSettings(page);
+  await page.getByText("求职邮箱", { exact: true }).click();
+  const mailSettings = page.getByRole("region", { name: "求职邮箱设置" });
+  await mailSettings
+    .getByLabel("发件邮箱", { exact: true })
+    .fill("demo@qq.com");
+  await mailSettings
+    .getByLabel("SMTP 授权码", { exact: true })
+    .fill("fake-local-verification-code");
+  await mailSettings
+    .getByRole("button", { name: "保存邮箱设置", exact: true })
+    .click();
+  await mailSettings
+    .getByText("已保存。新设置立即生效。", { exact: true })
+    .waitFor();
+  assert.equal(
+    await mailSettings.getByLabel("SMTP 授权码", { exact: true }).inputValue(),
+    "",
+  );
+  assert.ok(
+    !(await page.locator("body").innerText()).includes(
+      "fake-local-verification-code",
+    ),
+  );
+  await page.screenshot({
+    path: join(output, "dsh-mail-settings.png"),
+    fullPage: true,
+  });
+  await page.reload();
+  await openSettings(page);
+  await page.getByText("求职邮箱", { exact: true }).click();
+  await mailSettings
+    .getByText("此邮箱的授权码已保存。", { exact: false })
+    .waitFor();
+  assert.equal(
+    await mailSettings.getByLabel("发件邮箱", { exact: true }).inputValue(),
+    "demo@qq.com",
+  );
+  await mailSettings
+    .getByRole("button", { name: "移除授权码", exact: true })
+    .click();
+  await mailSettings
+    .getByText("授权码已移除，发送已停用。", { exact: true })
+    .waitFor();
+  await page.keyboard.press("Escape");
   await page.getByText("插件", { exact: true }).first().click();
   await page.getByText("求职助手", { exact: true }).first().waitFor();
+  await page.getByRole("button", { name: "求职", exact: true }).click();
+  await page.getByRole("region", { name: "求职工作台", exact: true }).waitFor();
+  await page.getByRole("button", { name: "求职工作台", exact: true }).click();
+  const full = page
+    .locator('[data-global-panel="true"]')
+    .getByRole("region", { name: "求职工作台", exact: true });
+  await full.getByText("侧栏上传-已改名", { exact: true }).waitFor();
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('[data-global-panel="true"] .rg-workbench');
+    return panel && panel.getBoundingClientRect().width > 850;
+  });
+  await page.screenshot({path: join(output, "dsh-resume-library.png"), fullPage: true});
+  await full.getByRole("button", {name: "总览", exact: true}).click();
+  await full.getByRole("region", {name: "求职总览", exact: true}).waitFor();
+  await page.screenshot({path: join(output, "dsh-workspace-overview.png"), fullPage: true});
+  await full.getByRole("button", { name: "岗位", exact: true }).click();
+  await full
+    .getByLabel("用于核对的简历", { exact: true })
+    .selectOption(resume.id);
+  await full
+    .locator("article")
+    .filter({ has: page.getByText("Go 开发", { exact: true }) })
+    .getByRole("button", { name: "核对简历", exact: true })
+    .click();
+  await full.getByLabel("接受这条修改", { exact: true }).check();
+  await full
+    .getByRole("button", { name: "根据当前 JD 重新生成建议", exact: true })
+    .click();
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll(
+        '[data-global-panel="true"] input[type="checkbox"]:checked',
+      ).length === 0,
+  );
+  assert.equal(
+    store.list("proposal").length,
+    2,
+    "点击生成建议必须实际通过宿主工具保存并刷新卡片",
+  );
+  await full
+    .getByLabel("岗位 JD", { exact: true })
+    .fill("演示公司招聘 Go 开发，负责 Go API 开发与测试，以及接口联调。");
+  await full
+    .getByRole("button", { name: "更新 JD，重新匹配", exact: true })
+    .click();
+  for (let i = 0; i < 150 && store.list("proposal").length < 3; i++)
+    await new Promise((done) => setTimeout(done, 100));
+  await full.getByLabel("接受这条修改", { exact: true }).waitFor();
+  assert.equal(store.list("proposal").length, 3, "更新 JD 后直接生成独立建议");
+  assert.notEqual(store.list("proposal")[0].jobId, job.id);
+  assert.equal(
+    await full.getByLabel("接受这条修改", { exact: true }).isChecked(),
+    false,
+  );
+  await full
+    .getByRole("button", { name: "保存所选修改为岗位版 PDF", exact: true })
+    .click();
+  await full
+    .getByRole("region", { name: "简历查看与编辑", exact: true })
+    .waitFor();
+  await full.getByRole("button", { name: "返回清单", exact: true }).click();
+  if (process.env.RESUME_VERIFY_LIVE === "1") {
+    await full.getByRole("button", { name: "岗位", exact: true }).click();
+    await full.getByLabel("官网岗位关键词", { exact: true }).fill("AI应用");
+    await full
+      .getByRole("button", { name: "实时拉取岗位", exact: true })
+      .click();
+    await full
+      .getByRole("button", { name: "读取 JD 并修改简历", exact: true })
+      .first()
+      .waitFor({ timeout: 90000 });
+    console.log(
+      JSON.stringify({
+        liveSource: "Tencent official",
+        rows: await full
+          .getByRole("button", { name: "读取 JD 并修改简历", exact: true })
+          .count(),
+      }),
+    );
+    await full
+      .getByRole("button", { name: "读取 JD 并修改简历", exact: true })
+      .first()
+      .click();
+    await full
+      .getByLabel("岗位 JD", { exact: true })
+      .waitFor({ timeout: 60000 });
+    assert.ok(
+      (await full.getByLabel("岗位 JD", { exact: true }).inputValue()).length >
+        50,
+    );
+    const text = full.getByLabel("岗位版简历正文", { exact: true });
+    await text.fill((await text.inputValue()) + "\n参与接口联调。");
+    await full
+      .getByRole("button", { name: "保存手动修改", exact: true })
+      .click();
+    await full
+      .getByRole("region", { name: "简历查看与编辑", exact: true })
+      .waitFor();
+    assert.match(
+      await full.getByLabel("简历正文", { exact: true }).inputValue(),
+      /接口联调/,
+    );
+    assert.equal(
+      workspace.history().length,
+      2,
+      "实时查看和改简历不能准备或发送邮件",
+    );
+  }
+  await page.screenshot({
+    path: join(output, "dsh-workspace-full.png"),
+    fullPage: true,
+  });
+  assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({
       passed: true,
       runtime: "installed DSH",
       model: "deterministic local test adapter; zero external model calls",
       verified:
-        "installed bundle → native tool → React card → edit/cancel email → immutable PDF snapshot → attachment check → replay → mobile editor; no mail sent",
+        "resume create/upload/search/rename/copy/trash/undo/restore → overview → native PDF; email edit → model regeneration → JD update → independent PDF; live official jobs optional; no mail sent",
       screenshots: output,
     }),
   );
 } catch (error) {
+  if (store)
+    console.error(
+      JSON.stringify({
+        proposalCount: store.list("proposal").length,
+        applicationCount: store.list("application").length,
+      }),
+    );
   if (browser) {
     const p = browser.contexts()[0]?.pages()[0];
     if (p) {

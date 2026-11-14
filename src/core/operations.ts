@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Workspace } from "./workspace.js";
 import { Tasks, goalInput, batchChoice, type Batch } from "./tasks.js";
 import { applicationMail } from "../domain/application-mail.js";
+import { Careers } from "./careers.js";
 export type Operation = {
   name: string;
   description: string;
@@ -36,6 +37,34 @@ export function operations(workspace: Workspace) {
       readOnly,
     });
   };
+  tool(
+    "read_recruiting_site",
+    "实时读取指定招聘官网的岗位列表。复用静态、官网公开接口和隔离浏览器读取；保留来源、读取时间及失败原因，不读取预置岗位快照。",
+    { url: z.string(), keywords: z.array(z.string()).max(8).default([]) },
+    async (args) => {
+      const scan = await new Careers(workspace).scan(args.url, args.keywords);
+      return {
+        id: scan.id,
+        url: scan.url,
+        fetchedAt: scan.fetchedAt,
+        error: scan.error,
+        pagesRead: scan.result?.pagesRead,
+        notes: scan.result?.notes,
+        links: scan.result?.links,
+        positions: scan.result?.pages?.map((page) => ({
+          url: page.url,
+          company: page.company,
+          role: page.role,
+        })),
+      };
+    },
+  );
+  tool(
+    "read_job_detail",
+    "实时读取具体岗位完整 JD，保存为独立岗位；随后结合用户选定简历调用 review_context，不用旧 JD 的建议。",
+    { url: z.string() },
+    (args) => new Careers(workspace).read(args.url),
+  );
   tool(
     "save_search_goal",
     "记住用户明确指定的主简历、岗位方向、城市及排除项。sources 可省略，使用内置官网；不要擅自填写偏好。",
@@ -176,7 +205,7 @@ export function operations(workspace: Workspace) {
     "读取简历、岗位、已保存求职目标、查找结果与准备批次，重启后可继续使用已有资料。",
     {},
     () => ({
-      resumes: workspace.store.list("resume"),
+      resumes: workspace.listResumes(),
       jobs: workspace.store.list("job"),
       goals: workspace.store.list("goal"),
       searches: workspace.store.list("search"),

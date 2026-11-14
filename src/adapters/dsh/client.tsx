@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { NativeView } from "./views.js";
 import { ApplicationReview } from "./ApplicationReview.js";
+import { nativeControls } from "./controls.js";
+import { notifyWorkspaceChanged } from "./updates.js";
+import { onWorkspaceChanged } from "./updates.js";
+import { ResumeDocument } from "./ResumeDocument.js";
+import { JobRevision } from "./JobRevision.js";
+import { registerWorkbench } from "./workbench.js";
 import { RevisionChanges } from "../../shared/ui/RevisionChanges.js";
 import { turnCardSelector, viewReference } from "./card-model.js";
 import {
@@ -8,7 +14,18 @@ import {
   batchItemLabel,
 } from "../../shared/presentation/application-status.js";
 declare const __NATIVE_CSS__: string;
-export const inject = ["slots", "remote", "remote.commands", "sessions"];
+export const inject = [
+  "slots",
+  "remote",
+  "remote.commands",
+  "remote.credentials",
+  "sessions",
+  "sidebarRight",
+  "sidebarRightTabs",
+  "configForms",
+  "layout",
+  "fileUpload",
+];
 type Action = (input: unknown) => Promise<NativeView | null>;
 type Props = {
   callId: string;
@@ -17,23 +34,30 @@ type Props = {
   ask: (text: string) => Promise<unknown>;
   openFile: (path: string) => void;
 };
-function NativeCard({
+function reviewRequest(view: Extract<NativeView, { kind: "review" }>) {
+  return `请调用 resume_grill_review_context 读取简历 ${view.resumeId} 与岗位 ${view.jobId}${view.goalId ? `，保留 goalId ${view.goalId}` : ""}，基于当前 JD 和简历原文生成逐条修改，并调用 resume_grill_propose_resume_changes 保存新建议。不得编造经历、替我接受修改、准备或发送邮件。`;
+}
+export function NativeCard({
   initial,
   act,
   ask,
   openFile,
+  sessionId,
 }: {
   initial: NativeView;
   act: Action;
   ask: Props["ask"];
   openFile: Props["openFile"];
+  sessionId?: string;
 }) {
   const lock = useRef(true);
   const [view, setView] = useState(initial),
-    [busy, setBusy] = useState(true),
+    [working, setBusy] = useState(true),
+    [requesting, setRequesting] = useState(false),
     [error, setError] = useState(""),
     [accepted, setAccepted] = useState<string[]>([]),
     [selected, setSelected] = useState<string[]>([]);
+  const busy = working || requesting;
   useEffect(() => {
     let live = true;
     void act({ action: "restore", reference: viewReference(initial) })
@@ -53,6 +77,36 @@ function NativeCard({
       live = false;
     };
   }, []);
+  useEffect(() => {
+    if (!sessionId || view.kind !== "review") return;
+    return onWorkspaceChanged(sessionId, ({ error }) => {
+      if (error) {
+        setError(error);
+        setRequesting(false);
+        return;
+      }
+      void act({
+        action: "review",
+        resumeId: view.resumeId,
+        jobId: view.jobId,
+        ...(view.goalId ? { goalId: view.goalId } : {}),
+      })
+        .then((value) => {
+          setRequesting(false);
+          if (
+            value?.kind === "review" &&
+            value.proposal?.id !== view.proposal?.id
+          ) {
+            setView(value);
+            setAccepted([]);
+          }
+        })
+        .catch((e) => {
+          setRequesting(false);
+          setError(e instanceof Error ? e.message : "建议读取失败");
+        });
+    });
+  }, [sessionId, view]);
   const run = async (input: unknown) => {
     if (lock.current) return false;
     lock.current = true;
@@ -69,8 +123,13 @@ function NativeCard({
           : [],
       );
       setAccepted([]);
+      if ((input as any)?.action === "update-jd" && value?.kind === "review") {
+        setRequesting(true);
+        await ask(reviewRequest(value));
+      }
       return true;
     } catch (e) {
+      setRequesting(false);
       setError(e instanceof Error ? e.message : "操作失败。");
       return false;
     } finally {
@@ -82,10 +141,12 @@ function NativeCard({
     if (lock.current) return;
     lock.current = true;
     setBusy(true);
+    setRequesting(view.kind === "review");
     setError("");
     try {
       await ask(text);
     } catch (e) {
+      setRequesting(false);
       setError(e instanceof Error ? e.message : "未能提交给助手。");
     } finally {
       lock.current = false;
@@ -95,12 +156,23 @@ function NativeCard({
   return (
     <section className="rg-native" aria-label="Resume Grill 求职卡片">
       <style>{__NATIVE_CSS__}</style>
+      {view.kind === "resume" && (
+        <ResumeDocument
+          key={view.resume.id}
+          resume={view.resume}
+          busy={busy}
+          run={run}
+          openFile={openFile}
+        />
+      )}
       {view.kind === "review" && (
         <>
           <h3>
             {view.job.role} · {view.job.company || "公司待核对"}
           </h3>
           <p>按岗位核对简历</p>
+          {requesting && <p role="status">正在通过当前会话生成建议，完成后会在这里更新。</p>}
+          <JobRevision key={view.jobId} view={view} busy={busy} run={run} />
           <details>
             <summary>岗位要求与来源</summary>
             <a href={view.job.sourceUrl} target="_blank" rel="noreferrer">
@@ -125,6 +197,25 @@ function NativeCard({
                 disabled={busy}
                 onClick={() =>
                   void run({
+                    action: "save-version",
+                    resumeId: view.resumeId,
+                    jobId: view.jobId,
+                    proposalId: view.proposal!.id,
+                    accepted,
+                  })
+                }
+              >
+                保存所选修改为岗位版 PDF
+              </button>
+              {!view.job.recipient && (
+                <p className="rg-note">
+                  此岗位没有公开投递邮箱。可保存岗位版 PDF，再通过上方官网申请。
+                </p>
+              )}
+              <button
+                disabled={busy || !view.job.recipient}
+                onClick={() =>
+                  void run({
                     action: "prepare",
                     resumeId: view.resumeId,
                     jobId: view.jobId,
@@ -144,7 +235,7 @@ function NativeCard({
                 disabled={busy}
                 onClick={() =>
                   void question(
-                    `请用 resume_grill_review_context 读取简历 ${view.resumeId} 和岗位 ${view.jobId}${view.goalId ? `，保留 goalId ${view.goalId}` : ""}，依据原文给出逐条建议，调用 resume_grill_propose_resume_changes 保存并展示核对卡。不要代我接受修改或发送邮件。`,
+                    reviewRequest(view),
                   )
                 }
               >
@@ -152,6 +243,16 @@ function NativeCard({
               </button>
             </>
           )}
+          <button
+            disabled={busy}
+            onClick={() =>
+              void question(
+                reviewRequest(view),
+              )
+            }
+          >
+            根据当前 JD 重新生成建议
+          </button>
           <button
             disabled={busy}
             onClick={() =>
@@ -231,6 +332,27 @@ function NativeCard({
           ))}
           {!view.candidates.length && (
             <p>尚无符合规则的岗位，可让助手继续读取其他来源。</p>
+          )}
+          {view.search && (
+            <details open={!view.candidates.length}>
+              <summary>本次读取范围与结果</summary>
+              {view.search.sources.map((source) => (
+                <p key={source.url} className="rg-note">
+                  {source.url} ·{" "}
+                  {source.status === "read"
+                    ? "已读取"
+                    : source.status === "failed"
+                      ? "读取失败"
+                      : "未读取"}
+                  {source.error ? `：${source.error}` : ""}
+                </p>
+              ))}
+              {view.search.notes.map((note, index) => (
+                <p key={index} className="rg-note">
+                  {note}
+                </p>
+              ))}
+            </details>
           )}
           <button
             disabled={busy || !selected.length}
@@ -333,6 +455,7 @@ export function Card(props: Props) {
       act={(input) => props.act({ ...(input as object), cardId: props.callId })}
       ask={props.ask}
       openFile={props.openFile}
+      sessionId={(props as any).sessionId}
     />
   );
 }
@@ -340,6 +463,10 @@ export function TurnCards(props: any) {
   const turn = typeof props.turn === "number" ? props.turn : props.turn?.turn;
   const select = useMemo(() => turnCardSelector(turn), [turn]);
   const cards = props.useChat(select);
+  useEffect(() => {
+    if (cards.length && props.sessionId)
+      notifyWorkspaceChanged(props.sessionId);
+  }, [cards, props.sessionId]);
   return (
     <>
       {cards.map((block: any) => (
@@ -371,6 +498,7 @@ function CommandSummary({ node }: any) {
   }
   if (input.action === "restore" && node.outcome?.kind === "success")
     return null;
+  if (input.surface === "workbench") return null;
   if (!node.outcome) return <span>正在处理求职操作…</span>;
   if (node.outcome.kind === "error")
     return <p role="alert">求职操作未完成：{node.outcome.text}</p>;
@@ -389,7 +517,10 @@ function CommandSummary({ node }: any) {
   );
 }
 export function apply(ctx: any) {
+  registerWorkbench(ctx, NativeCard);
   const tools = [
+    "read_recruiting_site",
+    "read_job_detail",
     "list_workspace",
     "save_search_goal",
     "discover_jobs",
@@ -401,26 +532,7 @@ export function apply(ctx: any) {
     "revise_application",
     "prepare_application_batch",
   ];
-  const controls = (sessionId: string) => ({
-    act: async (input: unknown) => {
-      const response = await ctx.remote.commands.execute(
-        sessionId,
-        `/resume-grill ${JSON.stringify(input)}`,
-        [],
-      );
-      if (!response.ok) throw new Error(response.error.message);
-      const result = response.value?.result;
-      if (!result || result.kind !== "success")
-        throw new Error(result?.text ?? "未收到操作结果。");
-      return JSON.parse(result.text);
-    },
-    ask: async (text: string) => {
-      const conversation = ctx.sessions.scope(sessionId)?.get("conversation");
-      if (!conversation)
-        throw new Error("当前会话无法提交，请在输入框向助手说明目标。");
-      return conversation.send(text);
-    },
-  });
+  const controls = (sessionId: string) => nativeControls(ctx, sessionId);
   for (const tool of tools)
     ctx.slots.inject("tool.call.toolview", () =>
       ctx.slots.register(

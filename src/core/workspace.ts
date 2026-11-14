@@ -26,6 +26,9 @@ export type Resume = {
   jobId?: string;
   pdf?: string;
   pdfHash?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  deletedAt?: number;
 };
 export type Job = {
   id: string;
@@ -47,7 +50,12 @@ export type Application = {
   digest: string;
   messageId: string;
   status:
-    "prepared" | "simulated" | "sending" | "sent" | "uncertain" | "superseded";
+    | "prepared"
+    | "simulated"
+    | "sending"
+    | "sent"
+    | "uncertain"
+    | "superseded";
   revisedFrom?: string;
   replacedBy?: string;
   createdAt: number;
@@ -71,7 +79,78 @@ export class Workspace {
   constructor(
     readonly store: Store,
     readonly send?: Send,
+    readonly sendEnabled?: () => boolean,
   ) {}
+  listResumes(deleted = false) {
+    return this.store
+      .list<Resume>("resume")
+      .filter((item) => Boolean(item.deletedAt) === deleted)
+      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  }
+  resume(id: string) {
+    const item = this.store.get<Resume>("resume", id);
+    if (item.deletedAt) throw new Error("这份简历已移到回收站，请先恢复。");
+    return item;
+  }
+  renameResume(id: string, name: string) {
+    const item = this.resume(id);
+    name = z.string().trim().min(1).max(160).parse(name);
+    const next = { ...item, name, updatedAt: Date.now() };
+    this.store.put("resume", next);
+    return next;
+  }
+  duplicateResume(id: string) {
+    const item = this.resume(id),
+      now = Date.now();
+    const copy: Resume = {
+      ...item,
+      id: randomUUID(),
+      parentId: item.id,
+      name: `${item.name.replace(/\.[^.]+$/, "").slice(0, 140)}-副本${item.pdf ? ".pdf" : extname(item.original)}`,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.store.put("resume", copy);
+    return copy;
+  }
+  trashResume(id: string) {
+    const item = this.resume(id);
+    // Versions and sent attachments may share the original. Keep bytes and
+    // immutable references; only hide this record from active selections.
+    this.store.put("resume", {
+      ...item,
+      deletedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  }
+  restoreResume(id: string) {
+    const item = this.store.get<Resume>("resume", id);
+    const { deletedAt, ...restored } = item;
+    const next = { ...restored, updatedAt: Date.now() };
+    this.store.put("resume", next);
+    return next;
+  }
+  async createResume(name: string, text: string) {
+    name = z.string().trim().min(1).max(160).parse(name);
+    text = z.string().trim().min(1).max(30000).parse(text);
+    const id = randomUUID(),
+      pdf = resolve(this.store.home, `${id}.pdf`),
+      bytes = await renderPdf(text);
+    await writeFile(pdf, bytes, { flag: "wx", mode: 0o600 });
+    const now = Date.now();
+    const item: Resume = {
+      id,
+      name,
+      text,
+      original: pdf,
+      pdf,
+      pdfHash: hash(bytes),
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.store.put("resume", item);
+    return item;
+  }
   async importResume(path: string) {
     const { text, bytes } = await readResume(path),
       id = randomUUID();
@@ -80,7 +159,15 @@ export class Workspace {
       `${id}${extname(path).toLowerCase()}`,
     );
     await writeFile(original, bytes, { flag: "wx", mode: 0o600 });
-    const resume: Resume = { id, name: basename(path), text, original };
+    const now = Date.now();
+    const resume: Resume = {
+      id,
+      name: basename(path),
+      text,
+      original,
+      createdAt: now,
+      updatedAt: now,
+    };
     this.store.put("resume", resume);
     return resume;
   }
@@ -120,7 +207,7 @@ export class Workspace {
     return job;
   }
   reviewContext(resumeId: string, jobId: string) {
-    const resume = this.store.get<Resume>("resume", resumeId),
+    const resume = this.resume(resumeId),
       job = this.store.get<Job>("job", jobId);
     return {
       resumeId,
@@ -139,7 +226,7 @@ export class Workspace {
     proposed: unknown,
     accepted: string[],
   ) {
-    const source = this.store.get<Resume>("resume", resumeId),
+    const source = this.resume(resumeId),
       job = this.store.get<Job>("job", jobId);
     const plan = groundedTailoringSchema(source.text, job.jd).parse(proposed);
     const keys = new Set(plan.changes.map(tailoringChangeKey));
@@ -164,6 +251,8 @@ export class Workspace {
       jobId,
       pdf,
       pdfHash: hash(bytes),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
     this.store.put("resume", version);
     return {
@@ -174,7 +263,7 @@ export class Workspace {
     };
   }
   propose(resumeId: string, jobId: string, value: unknown) {
-    const resume = this.store.get<Resume>("resume", resumeId),
+    const resume = this.resume(resumeId),
       job = this.store.get<Job>("job", jobId);
     const plan = groundedTailoringSchema(resume.text, job.jd).parse(value);
     const proposal = {
@@ -187,6 +276,31 @@ export class Workspace {
     this.store.put("proposal", proposal);
     return proposal;
   }
+  async saveEditedResume(resumeId: string, text: string, jobId?: string) {
+    z.string().trim().min(1).max(30000).parse(text);
+    const source = this.resume(resumeId);
+    const job = jobId ? this.store.get<Job>("job", jobId) : undefined;
+    const id = randomUUID(),
+      pdf = resolve(this.store.home, `${id}.pdf`),
+      bytes = await renderPdf(text);
+    await writeFile(pdf, bytes, { flag: "wx", mode: 0o600 });
+    const version: Resume = {
+      id,
+      name: job
+        ? `${job.role}-修改稿.pdf`
+        : `${source.name.replace(/\.[^.]+$/, "")}-修改稿.pdf`,
+      text,
+      original: source.original,
+      parentId: source.id,
+      ...(jobId ? { jobId } : {}),
+      pdf,
+      pdfHash: hash(bytes),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    this.store.put("resume", version);
+    return version;
+  }
   async prepare(
     jobId: string,
     resumeId: string,
@@ -196,7 +310,7 @@ export class Workspace {
   ) {
     const mail = applicationMail.parse({ recipient, subject, body });
     const job = this.store.get<Job>("job", jobId),
-      resume = this.store.get<Resume>("resume", resumeId);
+      resume = this.resume(resumeId);
     if (resume.jobId !== job.id || !resume.pdf || !resume.pdfHash)
       throw new Error("请先为这个岗位保存简历版本。");
     const bytes = await readFile(resume.pdf);
@@ -363,7 +477,12 @@ export class Workspace {
       });
       return this.preview(id);
     }
-    if (process.env.RESUME_ALLOW_SEND !== "1" || !this.send)
+    if (
+      !(this.sendEnabled
+        ? this.sendEnabled()
+        : process.env.RESUME_ALLOW_SEND === "1") ||
+      !this.send
+    )
       throw new Error("真实发送尚未启用。");
     this.store.transaction(() => {
       const current = this.preview(id);

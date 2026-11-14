@@ -1,7 +1,9 @@
 import { Workspace, type Job, type Resume } from "../../core/workspace.js";
 import type { TailoringPlan } from "../../domain/resume-tailoring.js";
-import { Tasks, type Goal } from "../../core/tasks.js";
-import { smtpConfigured } from "../../infrastructure/smtp.js";
+import { Tasks, type Goal, type SearchRun } from "../../core/tasks.js";
+import { mailSendingEnabled } from "../../infrastructure/smtp.js";
+import { careerSites } from "../../infrastructure/careers/sites.js";
+import type { CareerScan } from "../../core/careers.js";
 export type Proposal = {
   id: string;
   resumeId: string;
@@ -9,11 +11,19 @@ export type Proposal = {
   plan: TailoringPlan;
 };
 export type NativeView =
+  | ReturnType<typeof resumeView>
   | ReturnType<typeof reviewView>
   | ReturnType<typeof applicationView>
   | ReturnType<typeof goalView>
   | ReturnType<typeof batchView>
   | ReturnType<typeof workspaceView>;
+export function resumeView(workspace: Workspace, id: string) {
+  return {
+    v: 1 as const,
+    kind: "resume" as const,
+    resume: workspace.resume(id),
+  };
+}
 export function reviewView(
   workspace: Workspace,
   resumeId: string,
@@ -21,7 +31,7 @@ export function reviewView(
   proposalId?: string,
   goalId?: string,
 ) {
-  const resume = workspace.store.get<Resume>("resume", resumeId),
+  const resume = workspace.resume(resumeId),
     job = workspace.store.get<Job>("job", jobId);
   const proposal = proposalId
     ? workspace.store.get<Proposal>("proposal", proposalId)
@@ -51,10 +61,7 @@ export function applicationView(workspace: Workspace, id: string) {
     kind: "application" as const,
     application,
     job,
-    sendingEnabled:
-      process.env.RESUME_ALLOW_SEND === "1" &&
-      !!workspace.send &&
-      smtpConfigured(),
+    sendingEnabled: mailSendingEnabled(workspace),
   };
 }
 export function goalView(workspace: Workspace, goalId: string) {
@@ -63,6 +70,9 @@ export function goalView(workspace: Workspace, goalId: string) {
     kind: "goal" as const,
     goal: workspace.store.get<Goal>("goal", goalId),
     candidates: new Tasks(workspace).candidates(goalId),
+    search: workspace.store
+      .list<SearchRun>("search")
+      .find((run) => run.goalId === goalId),
   };
 }
 export function batchView(workspace: Workspace, id: string) {
@@ -76,17 +86,75 @@ export function batchView(workspace: Workspace, id: string) {
   };
 }
 export function workspaceView(workspace: Workspace) {
+  const resumes = workspace.store
+    .list<Resume>("resume")
+    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  const summarizeResume = (resume: Resume) => {
+    const job = resume.jobId
+      ? workspace.store.get<Job>("job", resume.jobId)
+      : undefined;
+    return {
+      id: resume.id,
+      name: resume.name,
+      parentId: resume.parentId,
+      pdf: resume.pdf,
+      original: resume.original,
+      createdAt: resume.createdAt,
+      updatedAt: resume.updatedAt,
+      deletedAt: resume.deletedAt,
+      summary: resume.text.slice(0, 160),
+      parentName: resumes.find((item) => item.id === resume.parentId)?.name,
+      job: job
+        ? { id: job.id, role: job.role, company: job.company }
+        : undefined,
+    };
+  };
   return {
     v: 1 as const,
     kind: "workspace" as const,
-    resumes: workspace.store
-      .list<Resume>("resume")
-      .filter((r) => !r.parentId)
-      .map(({ id, name }) => ({ id, name })),
+    resumes: resumes.filter((item) => !item.deletedAt).map(summarizeResume),
+    deletedResumes: resumes
+      .filter((item) => item.deletedAt)
+      .map(summarizeResume),
     jobs: workspace.store
       .list<Job>("job")
+      .filter(
+        (job, index, all) =>
+          index ===
+          all.findIndex(
+            (other) =>
+              other.sourceUrl === job.sourceUrl && other.role === job.role,
+          ),
+      )
       .map(({ id, role, company }) => ({ id, role, company })),
     goals: workspace.store.list<Goal>("goal"),
+    sites: [
+      ...new Map(
+        careerSites.map(({ company, url }) => [url, { company, url }]),
+      ).values(),
+    ],
+    scans: workspace.store
+      .list<CareerScan>("career-scan")
+      .filter(
+        (scan, index, all) =>
+          index === all.findIndex((other) => other.url === scan.url),
+      )
+      .map((scan) => ({
+        ...scan,
+        result: scan.result
+          ? {
+              ...scan.result,
+              pages: scan.result.pages?.map((page) => ({
+                ...page,
+                jobDescription: undefined,
+                jobs: undefined,
+              })),
+            }
+          : undefined,
+      })),
+    applications: workspace
+      .history()
+      .filter((item) => item.status !== "superseded"),
   };
 }
 export function viewFor(
@@ -116,4 +184,8 @@ export function viewFor(
   if (operation === "prepare_application_batch")
     return batchView(workspace, value.id);
   if (operation === "list_workspace") return workspaceView(workspace);
+  if (operation === "read_recruiting_site" || operation === "read_job_detail")
+    return workspaceView(workspace);
+  if (operation === "add_job" || operation === "import_resume")
+    return workspaceView(workspace);
 }
