@@ -1,0 +1,28 @@
+# Optional browser tools for one dedicated recruiting session.
+# Set RESUME_BROWSER_MCP_ENTRY to chrome-devtools-mcp's installed bin .js file,
+# RESUME_BROWSER_EXECUTABLE to Chrome/Edge, RESUME_BROWSER_PROFILE to a dedicated directory.
+- insert:
+    - id: recruiting-browser
+      name: "@deepseek-ai/dsh-mcp-client"
+      config:
+        serverName: recruiting_browser
+        transport: stdio
+        command: !!js process.env.RESUME_NODE || process.execPath
+        args:
+          - !!js process.env.RESUME_BROWSER_MCP_ENTRY
+          - !!js >-
+            '--executablePath=' + process.env.RESUME_BROWSER_EXECUTABLE
+          - !!js >-
+            '--userDataDir=' + process.env.RESUME_BROWSER_PROFILE
+          - !!js >-
+            '--workspace=' + process.env.RESUME_AGENT_HOME
+          - --no-usage-statistics
+          - --no-performance-crux
+          - --no-javascript-evaluation
+          - --no-file-navigations
+          - --no-category-emulation
+          - --no-category-performance
+          - --no-category-network
+          - --no-category-memory
+        failOnStartupError: true
+        toolCallTimeoutMs: 60000

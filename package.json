@@ -18,7 +18,8 @@
     "prepanel": "npm run build",
     "package:plugin": "npm run build && node scripts/release/package.mjs",
     "verify:panel": "node scripts/verify/panel.mjs",
-    "verify:dsh": "node scripts/verify/dsh-native.mjs"
+    "verify:dsh": "node scripts/verify/dsh-native.mjs",
+    "verify:browser": "node scripts/verify/dsh-browser.mjs"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "3.19.0",
@@ -42,6 +43,7 @@
     "@types/nodemailer": "^8.0.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "chrome-devtools-mcp": "1.13.0",
     "esbuild": "0.28.2",
     "tsx": "^4.23.13",
     "typescript": "~6.0.2"
@@ -78,7 +80,8 @@
     "examples/dsh-mcp.patch.yml",
     "LICENSE",
     "THIRD_PARTY.md",
-    "README.md"
+    "README.md",
+    "examples/dsh-browser.patch.yml"
   ],
   "description": "在 DSH 对话中读取岗位、核对简历并确认邮箱投递。"
 }

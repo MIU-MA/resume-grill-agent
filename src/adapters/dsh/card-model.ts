@@ -1,21 +1,27 @@
 import type { NativeView } from "./views.js";
 export function viewReference(view: NativeView) {
-  return view.kind === "resume"
-    ? { action: "resume", id: view.resume.id }
-    : view.kind === "application"
-      ? { action: "application", id: view.application.id }
-      : view.kind === "review"
-        ? {
-            action: "review",
-            resumeId: view.resumeId,
-            jobId: view.jobId,
-            ...(view.goalId ? { goalId: view.goalId } : {}),
-          }
-        : view.kind === "goal"
-          ? { action: "goal", goalId: view.goal.id }
-          : view.kind === "batch"
-            ? { action: "batch-view", id: view.batch.id }
-            : { action: "workspace" };
+  return view.kind === "profile"
+    ? {
+        action: "profile",
+        resumeId: view.resume.id,
+        ...(view.jobId ? { jobId: view.jobId } : {}),
+      }
+    : view.kind === "resume"
+      ? { action: "resume", id: view.resume.id }
+      : view.kind === "application"
+        ? { action: "application", id: view.application.id }
+        : view.kind === "review"
+          ? {
+              action: "review",
+              resumeId: view.resumeId,
+              jobId: view.jobId,
+              ...(view.goalId ? { goalId: view.goalId } : {}),
+            }
+          : view.kind === "goal"
+            ? { action: "goal", goalId: view.goal.id }
+            : view.kind === "batch"
+              ? { action: "batch-view", id: view.batch.id }
+              : { action: "workspace" };
 }
 /** Read only the current turn's indexed tool results, keeping selector references stable. */
 export function turnCardSelector(turn: number) {

@@ -8,6 +8,7 @@ import {
   reviewView,
   workspaceView,
   resumeView,
+  profileView,
 } from "./views.js";
 import { Tasks, goalInput, type Goal } from "../../core/tasks.js";
 import { mailSendingEnabled } from "../../infrastructure/smtp.js";
@@ -15,9 +16,25 @@ import { viewReference } from "./card-model.js";
 import { applicationMail } from "../../domain/application-mail.js";
 import { Careers } from "../../core/careers.js";
 import { sourceUrlSchema } from "../../infrastructure/careers/contracts.js";
+import { ResumeProfiles } from "../../core/resume-profiles.js";
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("workspace") }).strict(),
   z.object({ action: z.literal("resume"), id: z.string() }).strict(),
+  z
+    .object({
+      action: z.literal("profile"),
+      resumeId: z.string(),
+      jobId: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("confirm-profile"),
+      id: z.string(),
+      data: z.unknown(),
+      jobId: z.string().optional(),
+    })
+    .strict(),
   z
     .object({
       action: z.literal("create-resume"),
@@ -132,6 +149,12 @@ export async function humanAction(
   const input = actionSchema.parse(value);
   if (input.action === "workspace") return workspaceView(workspace);
   if (input.action === "resume") return resumeView(workspace, input.id);
+  if (input.action === "profile")
+    return profileView(workspace, input.resumeId, input.jobId);
+  if (input.action === "confirm-profile") {
+    const profile = new ResumeProfiles(workspace).confirm(input.id, input.data);
+    return profileView(workspace, profile.resumeId, input.jobId);
+  }
   if (input.action === "create-resume")
     return resumeView(
       workspace,
@@ -317,6 +340,7 @@ export async function cardAction(
         "application",
         "batch-view",
         "resume",
+        "profile",
       ].includes(parsed.action)
     )
       throw new Error("恢复引用只能查询记录。");

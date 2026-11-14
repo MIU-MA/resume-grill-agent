@@ -5,6 +5,7 @@ import { nativeControls } from "./controls.js";
 import { notifyWorkspaceChanged } from "./updates.js";
 import { onWorkspaceChanged } from "./updates.js";
 import { ResumeDocument } from "./ResumeDocument.js";
+import { ResumeProfileEditor } from "./ResumeProfileEditor.js";
 import { JobRevision } from "./JobRevision.js";
 import { registerWorkbench } from "./workbench.js";
 import { RevisionChanges } from "../../shared/ui/RevisionChanges.js";
@@ -31,7 +32,7 @@ type Props = {
   callId: string;
   block: any;
   act: Action;
-  ask: (text: string) => Promise<unknown>;
+  ask: (text: string, browser?: boolean) => Promise<unknown>;
   openFile: (path: string) => void;
 };
 function reviewRequest(view: Extract<NativeView, { kind: "review" }>) {
@@ -137,14 +138,19 @@ export function NativeCard({
       setBusy(false);
     }
   };
-  const question = async (text: string) => {
+  const question = async (text: string, browser = false) => {
     if (lock.current) return;
     lock.current = true;
     setBusy(true);
     setRequesting(view.kind === "review");
     setError("");
     try {
-      await ask(text);
+      if (browser)
+        await act({
+          action: "browser-check",
+          ...(view.kind === "review" ? { resumeId: view.resumeId } : {}),
+        });
+      await ask(text, browser);
     } catch (e) {
       setRequesting(false);
       setError(e instanceof Error ? e.message : "未能提交给助手。");
@@ -165,14 +171,57 @@ export function NativeCard({
           openFile={openFile}
         />
       )}
+      {view.kind === "profile" && (
+        <ResumeProfileEditor
+          key={view.profile.id}
+          view={view}
+          busy={busy}
+          run={run}
+        />
+      )}
       {view.kind === "review" && (
         <>
           <h3>
             {view.job.role} · {view.job.company || "公司待核对"}
           </h3>
           <p>按岗位核对简历</p>
-          {requesting && <p role="status">正在通过当前会话生成建议，完成后会在这里更新。</p>}
+          {requesting && (
+            <p role="status">正在通过当前会话生成建议，完成后会在这里更新。</p>
+          )}
           <JobRevision key={view.jobId} view={view} busy={busy} run={run} />
+          <button
+            disabled={busy}
+            onClick={() =>
+              void run({
+                action: "profile",
+                resumeId: view.resumeId,
+                jobId: view.jobId,
+              })
+            }
+          >
+            {view.profile?.confirmedAt
+              ? "查看 / 修改已确认资料"
+              : "解析简历并核对资料"}
+          </button>
+          {!view.profile?.confirmedAt && (
+            <p className="rg-note">
+              先确认解析资料，再交给浏览器回填；换岗位可直接复用。
+            </p>
+          )}
+          <button
+            disabled={busy || !view.profile?.confirmedAt}
+            onClick={() =>
+              void question(
+                `请先调用 resume_grill_application_form_context，resumeId=${view.resumeId}，jobId=${view.jobId}。只使用当前会话中实际可用的浏览器工具，打开返回的官网地址并找到申请表；按页面能力选择先上传解析或逐项填写，再对照原文回读核对。没有工具、需要登录/验证码、必填资料缺失或社招/校招不匹配就明确停下。不要把项目经历当工作经历。不要用邮件工具，不要最终提交，不要代勾同意声明，不要把尚未执行的动作说成完成。`,
+                true,
+              )
+            }
+          >
+            交给浏览器填写官网
+          </button>
+          <p className="rg-note">
+            需要启用浏览器操作工具；填写和核对后停在提交前，遇到登录或验证码由你接手。
+          </p>
           <details>
             <summary>岗位要求与来源</summary>
             <a href={view.job.sourceUrl} target="_blank" rel="noreferrer">
@@ -233,11 +282,7 @@ export function NativeCard({
               <p>还没有这份简历的岗位修改建议。</p>
               <button
                 disabled={busy}
-                onClick={() =>
-                  void question(
-                    reviewRequest(view),
-                  )
-                }
+                onClick={() => void question(reviewRequest(view))}
               >
                 请助手给出修改建议
               </button>
@@ -245,11 +290,7 @@ export function NativeCard({
           )}
           <button
             disabled={busy}
-            onClick={() =>
-              void question(
-                reviewRequest(view),
-              )
-            }
+            onClick={() => void question(reviewRequest(view))}
           >
             根据当前 JD 重新生成建议
           </button>

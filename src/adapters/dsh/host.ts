@@ -10,6 +10,8 @@ import { workspaceView } from "./views.js";
 import { operations } from "../../core/operations.js";
 import { humanAction, cardAction } from "./actions.js";
 import { viewFor } from "./views.js";
+import { requireBrowserTools } from "./browser-tools.js";
+import { ResumeProfiles } from "../../core/resume-profiles.js";
 
 export const name = "resume-grill";
 export const Config = NativeConfig;
@@ -23,7 +25,10 @@ export const inject = [
   "fileUploads",
 ];
 type Context = {
-  tools: { register: (value: any) => () => void };
+  tools: {
+    register: (value: any) => () => void;
+    resolve?: (context: any) => Promise<any>;
+  };
   commands: { register: (value: any) => () => void };
   systemPrompt: { section: (value: any) => () => void };
   effect: (fn: () => () => void) => unknown;
@@ -103,13 +108,40 @@ export function mount(
           const { cardId, surface, ...input } = rawInput.trim()
             ? JSON.parse(rawInput)
             : { action: "workspace" };
+          if (input.action === "browser-check") {
+            if (typeof input.resumeId !== "string")
+              throw new Error("请先选择简历。");
+            new ResumeProfiles(workspace).confirmed(input.resumeId);
+            if (!ctx.tools.resolve)
+              throw new Error("当前 DSH 版本无法检查浏览器工具。");
+            const tools = await ctx.tools.resolve({
+              agent,
+              modelSelection: agent.model.current(),
+              signal,
+            });
+            try {
+              return {
+                kind: "success",
+                text: JSON.stringify({
+                  tools: requireBrowserTools([...tools.view(agent).keys()]),
+                }),
+              };
+            } finally {
+              tools.dispose();
+            }
+          }
           if (input.action === "import-upload") {
             const receiptId = z.string().min(1).max(300).parse(input.receiptId);
             if (!importUpload) throw new Error("当前宿主不支持文件上传。");
-            await importUpload(agent, receiptId);
+            const imported = (await importUpload(agent, receiptId)) as {
+              id: string;
+            };
             return {
               kind: "success",
-              text: JSON.stringify(workspaceView(workspace)),
+              text: JSON.stringify({
+                ...workspaceView(workspace),
+                importedResumeId: imported.id,
+              }),
             };
           }
           if (input.action === "test-mail") {

@@ -257,6 +257,15 @@ try {
     mimeType: "text/plain",
     buffer: Buffer.from("演示用户\n项目经历\n- 参与 Go API 开发与测试。"),
   });
+  await workbench
+    .getByRole("region", { name: "可复用的简历资料", exact: true })
+    .waitFor();
+  await workbench
+    .getByRole("button", { name: "确认并保存资料", exact: true })
+    .click();
+  await workbench
+    .getByRole("button", { name: "返回清单", exact: true })
+    .click();
   await workbench.getByText("侧栏上传.txt", { exact: true }).waitFor();
   assert.equal(store.list("resume").filter((item) => !item.parentId).length, 2);
   await workbench
@@ -436,13 +445,21 @@ try {
     .getByRole("region", { name: "求职工作台", exact: true });
   await full.getByText("侧栏上传-已改名", { exact: true }).waitFor();
   await page.waitForFunction(() => {
-    const panel = document.querySelector('[data-global-panel="true"] .rg-workbench');
+    const panel = document.querySelector(
+      '[data-global-panel="true"] .rg-workbench',
+    );
     return panel && panel.getBoundingClientRect().width > 850;
   });
-  await page.screenshot({path: join(output, "dsh-resume-library.png"), fullPage: true});
-  await full.getByRole("button", {name: "总览", exact: true}).click();
-  await full.getByRole("region", {name: "求职总览", exact: true}).waitFor();
-  await page.screenshot({path: join(output, "dsh-workspace-overview.png"), fullPage: true});
+  await page.screenshot({
+    path: join(output, "dsh-resume-library.png"),
+    fullPage: true,
+  });
+  await full.getByRole("button", { name: "总览", exact: true }).click();
+  await full.getByRole("region", { name: "求职总览", exact: true }).waitFor();
+  await page.screenshot({
+    path: join(output, "dsh-workspace-overview.png"),
+    fullPage: true,
+  });
   await full.getByRole("button", { name: "岗位", exact: true }).click();
   await full
     .getByLabel("用于核对的简历", { exact: true })
@@ -452,7 +469,22 @@ try {
     .filter({ has: page.getByText("Go 开发", { exact: true }) })
     .getByRole("button", { name: "核对简历", exact: true })
     .click();
+  await full
+    .getByRole("button", { name: "解析简历并核对资料", exact: true })
+    .click();
+  await full
+    .getByRole("button", { name: "确认并保存资料", exact: true })
+    .click();
+  await full.getByRole("button", { name: "回到当前岗位", exact: true }).click();
   await full.getByLabel("接受这条修改", { exact: true }).check();
+  await full
+    .getByRole("button", { name: "交给浏览器填写官网", exact: true })
+    .click();
+  await full
+    .getByRole("alert")
+    .filter({ hasText: "没有可用的浏览器填写工具" })
+    .waitFor();
+  assert.equal(store.list("proposal").length, 1, "缺浏览器时不能悄悄调用模型");
   await full
     .getByRole("button", { name: "根据当前 JD 重新生成建议", exact: true })
     .click();

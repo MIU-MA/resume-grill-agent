@@ -25,19 +25,16 @@ export function nativeControls(ctx: any, sessionId: string, surface?: string) {
         throw new Error(result?.text ?? "未收到操作结果。");
       return JSON.parse(result.text);
     },
-    ask: async (text: string) => {
+    ask: async (text: string, browser = false) => {
+      if (browser) ctx.layout.selectPanel(null);
       // A main panel unmounts the chat view. Retain and open its session while
       // submitting, rather than borrowing a scope that may be retiring.
-      return ctx.sessions.using(
-        sessionId,
-        { source: "gateway" },
-        async () => {
-          const conversation = ctx.sessions.scope(sessionId)?.get("conversation");
-          if (!conversation)
-            throw new Error("当前会话无法提交，请先打开一个会话。");
-          return conversation.send(text);
-        },
-      );
+      return ctx.sessions.using(sessionId, { source: "gateway" }, async () => {
+        const conversation = ctx.sessions.scope(sessionId)?.get("conversation");
+        if (!conversation)
+          throw new Error("当前会话无法提交，请先打开一个会话。");
+        return conversation.send(text);
+      });
     },
   };
 }

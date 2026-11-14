@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Workspace } from "./workspace.js";
 import { Tasks, goalInput, batchChoice, type Batch } from "./tasks.js";
 import { applicationMail } from "../domain/application-mail.js";
+import { applicationFormContext } from "./application-forms.js";
 import { Careers } from "./careers.js";
 export type Operation = {
   name: string;
@@ -37,6 +38,13 @@ export function operations(workspace: Workspace) {
       readOnly,
     });
   };
+  tool(
+    "application_form_context",
+    "读取用户选定简历和岗位的官网填写资料、原文证据及实际附件。由宿主已启用的浏览器工具读取字段、填写并回读核对；缺资料/登录/验证码时停下，禁止最终提交及代勾声明。不需要招聘邮箱，不准备邮件。",
+    { resumeId: z.string(), jobId: z.string() },
+    (args) => applicationFormContext(workspace, args.resumeId, args.jobId),
+    true,
+  );
   tool(
     "read_recruiting_site",
     "实时读取指定招聘官网的岗位列表。复用静态、官网公开接口和隔离浏览器读取；保留来源、读取时间及失败原因，不读取预置岗位快照。",

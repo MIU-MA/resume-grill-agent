@@ -168,7 +168,13 @@ function Workbench({
                 void run(async () => {
                   const value = await uploadResume(file);
                   setData(value);
-                  setResume(value.resumes[0]?.id ?? "");
+                  const importedId =
+                    value.importedResumeId ?? value.resumes[0]?.id;
+                  setResume(importedId ?? "");
+                  if (importedId)
+                    setDetail(
+                      await act({ action: "profile", resumeId: importedId }),
+                    );
                 })
               }
             />

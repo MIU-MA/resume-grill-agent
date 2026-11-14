@@ -50,7 +50,7 @@ dsh plugin --profile desktop add 'link:C:/path/resume-grill-agent'
 
 ## 招聘官网表单
 
-当前插件负责简历、JD、邮件和记录，没有启用浏览器填写器。DSH 侧栏 Browser 用于显示网页，本身不会提供点击、输入或上传工具。需要另行启用与本机 DSH 版本兼容的浏览器提供器，例如官方 [Chrome DevTools MCP 提供器](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/experimental/browser-use-chrome-devtools-mcp/README.md)，将登录、页面字段读取、资料填写、附件上传及填写结果核对串起来。官方提供器可启动独立浏览器或连接已有调试端点；不是直接接管任意正在使用的浏览器。
+岗位核对页提供“交给浏览器填写官网”试验入口，使用选定简历和岗位，填写后回读核对，停在提交前。DSH 侧栏 Browser 本身不会提供点击、输入或上传工具，仍须单独启用浏览器 MCP。当前本机旧版运行时使用通用 MCP 客户端对接 Chrome DevTools MCP；配置、验证范围及限制见 [官网填写试验](browser-forms.md)。新版官方浏览器提供器需按宿主版本另行接入，不能假设当前已安装。
 
 接入后仍需按实际网站验证经历分组、下拉框和附件字段，不能保证全部大厂通用。登录及验证码交给用户处理，最后提交留给用户确认。尚未连接和验证的功能不能显示为“已填写”。
 

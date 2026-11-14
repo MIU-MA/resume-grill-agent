@@ -134,6 +134,16 @@
   gap: 20px;
   margin: 18px 0;
 }
+.rg-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 20px;
+}
+@media (max-width: 700px) {
+  .rg-profile-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .rg-revision-grid section {
   min-width: 0;
 }

@@ -4,6 +4,7 @@ import { Tasks, type Goal, type SearchRun } from "../../core/tasks.js";
 import { mailSendingEnabled } from "../../infrastructure/smtp.js";
 import { careerSites } from "../../infrastructure/careers/sites.js";
 import type { CareerScan } from "../../core/careers.js";
+import { ResumeProfiles } from "../../core/resume-profiles.js";
 export type Proposal = {
   id: string;
   resumeId: string;
@@ -11,12 +12,26 @@ export type Proposal = {
   plan: TailoringPlan;
 };
 export type NativeView =
+  | ReturnType<typeof profileView>
   | ReturnType<typeof resumeView>
   | ReturnType<typeof reviewView>
   | ReturnType<typeof applicationView>
   | ReturnType<typeof goalView>
   | ReturnType<typeof batchView>
   | ReturnType<typeof workspaceView>;
+export function profileView(
+  workspace: Workspace,
+  resumeId: string,
+  jobId?: string,
+) {
+  return {
+    v: 1 as const,
+    kind: "profile" as const,
+    resume: workspace.resume(resumeId),
+    profile: new ResumeProfiles(workspace).draft(resumeId),
+    jobId,
+  };
+}
 export function resumeView(workspace: Workspace, id: string) {
   return {
     v: 1 as const,
@@ -33,6 +48,7 @@ export function reviewView(
 ) {
   const resume = workspace.resume(resumeId),
     job = workspace.store.get<Job>("job", jobId);
+  const profile = new ResumeProfiles(workspace).current(resumeId);
   const proposal = proposalId
     ? workspace.store.get<Proposal>("proposal", proposalId)
     : workspace.store
@@ -49,6 +65,7 @@ export function reviewView(
     jobId,
     sourceText: resume.text,
     job,
+    ...(profile ? {profile} : {}),
     ...(goalId ? { goalId } : {}),
     ...(proposal ? { proposal } : {}),
   };

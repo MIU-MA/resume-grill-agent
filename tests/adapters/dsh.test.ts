@@ -357,7 +357,7 @@ test("DSH 原生工具与人类命令分离，输出核对 metadata；无发信�
     },
     f.workspace,
   );
-  assert.equal(tools.size, 17);
+  assert.equal(tools.size, 18);
   assert.equal(commands.size, 1);
   assert.ok(prompt.text.includes("核对卡"));
   assert.equal(
@@ -380,6 +380,7 @@ test("DSH 原生工具与人类命令分离，输出核对 metadata；无发信�
   });
   const meta = review.output.presentationMeta(args, result).resumeGrill;
   assert.equal(meta.kind, "review");
+  assert.deepEqual(JSON.parse(JSON.stringify(meta)),meta,"卡片 metadata 必须能无损 JSON 序列化");
   assert.equal(meta.proposal.id, result.id);
   assert.equal(meta.sourceText, f.resume.text);
   assert.equal(meta.goalId, goal.id);

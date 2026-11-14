@@ -20,6 +20,12 @@ export function ResumeDocument({
       <h3>{resume.name}</h3>
       <button
         disabled={busy}
+        onClick={() => void run({ action: "profile", resumeId: resume.id })}
+      >
+        解析为可复用资料
+      </button>
+      <button
+        disabled={busy}
         onClick={() => openFile(resume.pdf ?? resume.original)}
       >
         查看原文件 / PDF
