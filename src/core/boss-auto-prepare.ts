@@ -29,7 +29,7 @@ export class BossAutoPrepare {
         .find((scan) => scan.resumeId === resumeId)
       : undefined;
     const found = readCurrent && boss.connected
-      ? { scan: await boss.read(resumeId) }
+      ? { scan: await boss.read(resumeId, query ?? previous?.requestedQuery ?? previous?.query) }
       : await boss.findForResume(resumeId, query, backend);
     if (!found.scan) return { directionNeededFor: resumeId };
     const scan = found.scan;

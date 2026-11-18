@@ -42,6 +42,7 @@ export type BossScan = {
   resumeId?: string;
   jobs: z.infer<typeof bossJob>[];
   query?: string;
+  requestedQuery?: string;
   state?: "ready" | "loading" | "empty" | "login" | "verification" | "unsupported";
   blocked?: string;
 };

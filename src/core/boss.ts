@@ -128,14 +128,15 @@ export class Boss {
       response == null ||
       (typeof response === "object" && !("jobs" in response))
     )
-      return this.read(resumeId);
+      return this.read(resumeId, keyword);
     return this.saveScan(readResult.parse(response), resumeId, keyword);
   }
-  async read(resumeId?: string) {
+  async read(resumeId?: string, requestedQuery?: string) {
     if (resumeId) this.workspace.resume(resumeId);
     return this.saveScan(
       readResult.parse(await this.gateway().request("/jobs")),
       resumeId,
+      requestedQuery,
     );
   }
   private saveScan(
@@ -148,7 +149,12 @@ export class Boss {
       : data.needsVerification
         ? "verification"
         : data.state;
-    const blocked =
+    const mismatched =
+      requestedQuery && state !== "login" && state !== "verification" &&
+      state !== "loading" && data.query && data.query !== requestedQuery;
+    const blocked = mismatched
+      ? "当前列表不是这次搜索的结果，请重新搜索。"
+      :
       state === "login"
         ? requestedQuery
           ? "请在浏览器登录，然后回来继续找岗位。"
@@ -162,12 +168,13 @@ export class Boss {
       id: randomUUID(),
       readId: data.readId ?? "",
       createdAt: Date.now(),
-      jobs: data.jobs,
+      jobs: mismatched ? [] : data.jobs,
       ...(resumeId ? { resumeId } : {}),
       ...(data.query || requestedQuery
         ? { query: data.query || requestedQuery }
         : {}),
-      ...(state ? { state } : {}),
+      ...(requestedQuery ? { requestedQuery } : {}),
+      ...(mismatched ? { state: "unsupported" } : state ? { state } : {}),
       ...(blocked ? { blocked } : {}),
     };
     this.workspace.store.put("boss-scan", scan);

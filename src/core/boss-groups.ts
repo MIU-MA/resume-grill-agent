@@ -129,29 +129,36 @@ export class BossGroups {
   }
   /** Human confirmation covers these exact frozen items, never future search results. */
   async start(id: string, digest: string) {
-    const g = this.get(id);
-    if (
-      g.status !== "prepared" ||
-      g.digest !== digest ||
-      g.expiresAt <= Date.now()
-    )
-      throw new Error("整批核对已过期或已经执行，请重新核对未执行岗位。");
+    const requireCurrent = () => {
+      const group = this.get(id);
+      if (
+        group.status !== "prepared" ||
+        group.digest !== digest ||
+        group.expiresAt <= Date.now()
+      )
+        throw new Error("整批核对已过期或已经执行，请重新核对未执行岗位。");
+      return group;
+    };
+    const review = requireCurrent();
     const deliveries = new BossDeliveries(this.workspace);
-    for (const i of g.items) {
+    for (const i of review.items) {
       const d = deliveries.get(i.deliveryId);
       if (d.status !== "prepared" || d.digest !== i.digest)
         throw new Error("其中的岗位已执行或附件已变化。");
       await deliveries.validate(d);
     }
-    this.workspace.store.transaction(() => {
-      if (
-        this.get(id).status !== "prepared" ||
-        this.list().some((o) => o.status === "running")
-      )
+    const g = this.workspace.store.transaction(() => {
+      const current = requireCurrent();
+      if (this.list().some((o) => o.status === "running"))
         throw new Error("已有批次执行中，或本批已确认。");
-      g.status = "running";
-      g.ownerPid = process.pid;
-      this.save(g);
+      for (const item of current.items) {
+        const d = deliveries.get(item.deliveryId);
+        if (d.status !== "prepared" || d.digest !== item.digest)
+          throw new Error("其中的岗位已执行或附件已变化。");
+      }
+      current.status = "running";
+      current.ownerPid = process.pid;
+      return this.save(current);
     });
     const control: Control = { stop: false };
     workers.set(key(this.workspace, id), control);

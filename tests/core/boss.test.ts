@@ -64,7 +64,7 @@ export async function fixture(t: any) {
     if (req.url === "/status")
       result = { ready: true, phase: "connected", backend: "ego" };
     if (req.url === "/jobs")
-      result = {
+      result = state.readResult ?? {
         readId: "snapshot",
         jobs: state.rows ?? [{ url, title: "Go开发", company: "演示" }],
         needsLogin: false,
@@ -564,6 +564,61 @@ test("一次搜索自动核对匹配 JD 并冻结投递，移出岗位后旧批�
     confirmation: "投递",
   }), /过期/);
   assert.equal(f.state.confirmations, undefined);
+});
+test("搜索等待中的旧关键词不能替换本轮关键词或准备附件", async (t) => {
+  const f = await fixture(t);
+  f.boss.connect(f.link);
+  const resume = await f.workspace.createResume("主简历", "求职意向：Go开发");
+  const input = { action: "boss-auto-prepare", resumeId: resume.id };
+  f.state.searchResult = {
+    state: "loading", query: "财务", jobs: [], message: "加载中",
+  };
+  const loading = await humanAction(f.workspace, input);
+  assert.equal(loading.kind === "boss" && loading.scans[0]?.requestedQuery, "Go开发");
+  f.state.readResult = {
+    state: "ready", query: "财务", readId: "stale",
+    jobs: [{ url: f.url, title: "财务", company: "演示" }],
+  };
+  const old = await humanAction(f.workspace, { ...input, readCurrent: true });
+  assert.equal(old.kind === "boss" && old.scans[0]?.requestedQuery, "Go开发");
+  assert.equal(old.kind === "boss" && old.scans[0]?.jobs.length, 0);
+  assert.deepEqual(f.requests, ["/search", "/jobs"]);
+
+  f.state.readResult = {
+    ...f.state.readResult, query: "Go开发", readId: "snapshot",
+    jobs: [{ url: f.url, title: "Go开发", company: "演示" }],
+  };
+  const current = await humanAction(f.workspace, { ...input, readCurrent: true });
+  assert.ok(current.kind === "boss" && current.groupFocus);
+  assert.deepEqual(f.requests.slice(2), ["/jobs", "/inspect-job", "/boss-batch/preview"]);
+  assert.equal(f.state.confirmations, undefined);
+});
+
+test("核对附件期间移出岗位，正在等待的旧确认不能开始投递", async (t) => {
+  const f = await twoDeliveries(t);
+  const groups = new BossGroups(f.workspace);
+  const group = await groups.prepare([f.a.id, f.b.id]);
+  let enter!: () => void, release!: () => void;
+  const entered = new Promise<void>((done) => { enter = done; });
+  const ready = new Promise<void>((done) => { release = done; });
+  const validate = BossDeliveries.prototype.validate;
+  t.mock.method(BossDeliveries.prototype, "validate", async function (this: BossDeliveries, item: typeof f.a) {
+    if (item.id === f.a.id && this.workspace === f.workspace) {
+      enter();
+      await ready;
+    }
+    await validate.call(this, item);
+  });
+  const pending = assert.rejects(groups.start(group.id, group.digest), /过期/);
+  try {
+    await entered;
+    await groups.removeItem(group.id, f.a.id);
+  } finally {
+    release();
+  }
+  await pending;
+  assert.equal(f.state.confirmations, undefined);
+  assert.equal(groups.get(group.id).expiresAt, 0);
 });
 test("整批一次人工确认，顺序发送各自图片；重复开始与重复岗位被拒绝", async (t) => {
   const f = await twoDeliveries(t),

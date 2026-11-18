@@ -131,7 +131,7 @@ export function BossWorkbench({
           disabled={busy}
           onClick={() => {
             resumeSearch(
-              scan?.blocked ? scan.query : undefined,
+              scan?.blocked ? scan.requestedQuery ?? scan.query : undefined,
               state === "verification" || state === "loading",
             );
           }}
