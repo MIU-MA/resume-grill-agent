@@ -27,27 +27,34 @@ export type NativeView =
   | ReturnType<typeof goalView>
   | ReturnType<typeof batchView>
   | ReturnType<typeof workspaceView>;
-export function bossView(workspace: Workspace) {
+export function bossView(
+  workspace: Workspace,
+  options: {
+    directionNeededFor?: string;
+    deliveryFocus?: string;
+    groupFocus?: string;
+    note?: string;
+  } = {},
+) {
+  const boss = new Boss(workspace);
+  const browserState = boss.browserState;
   return {
     v: 1 as const,
     kind: "boss" as const,
+    ...options,
     goals: workspace.store.list<Goal>("goal"),
     shortlists: workspace.store
       .list<BossShortlist>("boss-shortlist")
       .slice(0, 5),
     groups: new BossGroups(workspace).list(),
-    connected: new Boss(workspace).connected,
-    ...(new Boss(workspace).browserState
-      ? { browserState: new Boss(workspace).browserState! }
-      : {}),
+    connected: boss.connected,
+    browserPreference: boss.browserPreference,
+    ...(browserState ? { browserState } : {}),
     resumes: workspace.listResumes().map((r) => ({
       id: r.id,
       name: r.name,
       ...(r.jobId ? { jobId: r.jobId } : {}),
     })),
-    jobs: workspace.store
-      .list<Job>("job")
-      .map((j) => ({ id: j.id, url: j.sourceUrl })),
     scans: workspace.store.list<BossScan>("boss-scan").slice(0, 5),
     runs: workspace.store.list<BossRun>("boss-run"),
     deliveries: new BossDeliveries(workspace)

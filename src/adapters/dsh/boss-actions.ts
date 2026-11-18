@@ -5,6 +5,8 @@ import { Boss } from "../../core/boss.js";
 import { BossDeliveries } from "../../core/boss-deliveries.js";
 import { BossGroups } from "../../core/boss-groups.js";
 import { BossShortlists } from "../../core/boss-shortlists.js";
+import { BossAutoPrepare } from "../../core/boss-auto-prepare.js";
+import { bossBrowserChoice } from "../../domain/boss.js";
 
 export const bossActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("boss-check") }).strict(),
@@ -41,22 +43,52 @@ export const bossActionSchema = z.discriminatedUnion("action", [
     })
     .strict(),
   z.object({ action: z.literal("boss-group-pause"), id: z.uuid() }).strict(),
+  z.object({ action: z.literal("boss-group-view"), id: z.uuid() }).strict(),
+  z.object({
+    action: z.literal("boss-group-remove"),
+    id: z.uuid(),
+    deliveryId: z.uuid(),
+  }).strict(),
   z
     .object({ action: z.literal("boss-group-remaining"), id: z.uuid() })
     .strict(),
-  z.object({ action: z.literal("boss") }).strict(),
+  z.object({
+    action: z.literal("boss"),
+    deliveryFocus: z.uuid().optional(),
+    groupFocus: z.uuid().optional(),
+  }).strict().refine((input) => !(input.deliveryFocus && input.groupFocus)),
   z
     .object({ action: z.literal("boss-link"), link: z.string().max(2000) })
     .strict(),
   z.object({ action: z.literal("boss-unlink") }).strict(),
-  z.object({ action: z.literal("boss-connect") }).strict(),
+  z
+    .object({
+      action: z.literal("boss-connect"),
+      backend: bossBrowserChoice.optional(),
+    })
+    .strict(),
   z
     .object({
       action: z.literal("boss-search"),
       query: z.string().min(1).max(120),
     })
     .strict(),
-  z.object({ action: z.literal("boss-read") }).strict(),
+  z
+    .object({
+      action: z.literal("boss-find"),
+      resumeId: z.string().min(1),
+      query: z.string().trim().min(1).max(120).optional(),
+      backend: bossBrowserChoice.optional(),
+    })
+    .strict(),
+  z.object({ action: z.literal("boss-read"), resumeId: z.string().min(1).optional() }).strict(),
+  z.object({
+    action: z.literal("boss-auto-prepare"),
+    resumeId: z.string().min(1),
+    query: z.string().trim().min(1).max(120).optional(),
+    backend: bossBrowserChoice.optional(),
+    readCurrent: z.boolean().optional(),
+  }).strict(),
   z
     .object({
       action: z.literal("boss-detail"),
@@ -115,20 +147,27 @@ export async function bossAction(
     return bossView(workspace);
   }
   if (input.action === "boss-group-prepare") {
-    await groups.prepare(input.ids);
-    return bossView(workspace);
+    const group = await groups.prepare(input.ids);
+    return bossView(workspace, { groupFocus: group.id });
   }
   if (input.action === "boss-group-confirm") {
     await groups.start(input.id, input.digest);
-    return bossView(workspace);
+    return bossView(workspace, { groupFocus: input.id });
   }
   if (input.action === "boss-group-pause") {
     await groups.pause(input.id);
-    return bossView(workspace);
+    return bossView(workspace, { groupFocus: input.id });
+  }
+  if (input.action === "boss-group-view") {
+    return bossView(workspace, { groupFocus: groups.get(input.id).id });
+  }
+  if (input.action === "boss-group-remove") {
+    const group = await groups.removeItem(input.id, input.deliveryId);
+    return bossView(workspace, { groupFocus: group.id });
   }
   if (input.action === "boss-group-remaining") {
-    await groups.remaining(input.id);
-    return bossView(workspace);
+    const group = await groups.remaining(input.id);
+    return bossView(workspace, { groupFocus: group.id });
   }
   const deliveries = new BossDeliveries(workspace);
   if (input.action === "boss-save-review") {
@@ -137,30 +176,36 @@ export async function bossAction(
       action: "save-version",
     });
     if (saved?.kind !== "resume") throw new Error("未能保存岗位简历。");
-    await deliveries.prepare(saved.resume.id, input.jobId);
-    return bossView(workspace);
+    const delivery = await deliveries.prepare(saved.resume.id, input.jobId);
+    return bossView(workspace, { deliveryFocus: delivery.id });
   }
   if (input.action === "boss-prepare") {
-    await deliveries.prepare(input.resumeId, input.jobId);
-    return bossView(workspace);
+    const delivery = await deliveries.prepare(input.resumeId, input.jobId);
+    return bossView(workspace, { deliveryFocus: delivery.id });
   }
   if (input.action === "boss-delivery-refresh") {
     await deliveries.refresh(input.id);
-    return bossView(workspace);
+    return bossView(workspace, { deliveryFocus: input.id });
   }
   if (input.action === "boss-delivery-pause") {
     await deliveries.pause(input.id);
-    return bossView(workspace);
+    return bossView(workspace, { deliveryFocus: input.id });
   }
   if (input.action === "boss-preview") {
     await deliveries.preview(deliveries.get(input.id));
-    return bossView(workspace);
+    return bossView(workspace, { deliveryFocus: input.id });
   }
   if (input.action === "boss-confirm") {
     await deliveries.confirm(input.id, input.digest);
-    return bossView(workspace);
+    return bossView(workspace, { deliveryFocus: input.id });
   }
-  if (input.action === "boss") return bossView(workspace);
+  if (input.action === "boss") {
+    const { deliveryFocus, groupFocus } = input;
+    return bossView(workspace, {
+      ...(deliveryFocus && deliveries.list().some((d) => d.id === deliveryFocus) ? { deliveryFocus } : {}),
+      ...(groupFocus && groups.list().some((g) => g.id === groupFocus) ? { groupFocus } : {}),
+    });
+  }
   if (input.action === "boss-link") {
     boss.connect(input.link);
     try {
@@ -176,19 +221,29 @@ export async function bossAction(
     return bossView(workspace);
   }
   if (input.action === "boss-unlink") {
-    boss.disconnect();
+    await boss.browserDisconnect();
     return bossView(workspace);
   }
   if (input.action === "boss-connect") {
-    await boss.browserConnect();
+    await boss.browserConnect(input.backend);
     return bossView(workspace);
   }
   if (input.action === "boss-search") {
     await boss.search(input.query);
     return bossView(workspace);
   }
+  if (input.action === "boss-find") {
+    const result = await boss.findForResume(input.resumeId, input.query, input.backend);
+    return bossView(
+      workspace,
+      result.needsDirection ? { directionNeededFor: input.resumeId } : undefined,
+    );
+  }
+  if (input.action === "boss-auto-prepare") {
+    return bossView(workspace, await new BossAutoPrepare(workspace).run(input));
+  }
   if (input.action === "boss-read") {
-    await boss.read();
+    await boss.read(input.resumeId);
     return bossView(workspace);
   }
   if (input.action === "boss-detail") {

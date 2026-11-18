@@ -13,15 +13,18 @@ export function BossTaskPanel({
   openFile: (p: string) => void;
 }) {
   const [selected, setSelected] = useState<string[]>([]),
-    [ack, setAck] = useState<Record<string, boolean>>({}),
-    [text, setText] = useState<Record<string, string>>({});
+    [ack, setAck] = useState<Record<string, boolean>>({});
   const eligible = view.deliveries.filter((d) => d.status === "prepared"),
     ids = selected.filter((id) => eligible.some((d) => d.id === id));
+  const groups = view.groupFocus
+    ? view.groups.filter((g) => g.id === view.groupFocus)
+    : view.groups.filter((g) => g.expiresAt !== 0);
   return (
     <section aria-label="BOSS 整批任务">
-      <h4>整批核对</h4>
-      <p>每个岗位使用各自的简历图片；确认后顺序执行，遇到异常停止后续岗位。</p>
-      {eligible.map((d) => (
+      {!view.groupFocus && eligible.length >= 2 && (
+        <>
+        <h4>选择要一起投递的岗位</h4>
+        {eligible.map((d) => (
         <label key={d.id}>
           <input
             type="checkbox"
@@ -39,15 +42,17 @@ export function BossTaskPanel({
         </label>
       ))}
       <button
-        disabled={busy || !ids.length || ids.length > 10}
+        disabled={busy || ids.length < 2 || ids.length > 10}
         onClick={() => void run({ action: "boss-group-prepare", ids })}
       >
-        核对所选 {ids.length} 个岗位
+        核对所选岗位{ids.length ? `（${ids.length}）` : ""}
       </button>
-      {view.groups.map((g) => (
-        <article key={g.id}>
-          <h4>
-            整批任务 ·{" "}
+        </>
+      )}
+      {groups.map((g) => (
+        <details key={g.id} open={g.id === view.groupFocus || g.status === "running"}>
+          <summary>
+            {g.items.length} 个岗位 ·{" "}
             {
               {
                 prepared: "待确认",
@@ -56,12 +61,10 @@ export function BossTaskPanel({
                 finished: "已完成",
               }[g.status]
             }
-          </h4>
-          <p>
-            已完成 {g.items.filter((i) => i.state === "finished").length}/
-            {g.items.length} · 本次确认有效至{" "}
-            {new Date(g.expiresAt).toLocaleTimeString()}
-          </p>
+          </summary>
+          {g.status !== "prepared" && (
+            <p>已完成 {g.items.filter((i) => i.state === "finished").length}/{g.items.length}</p>
+          )}
           {g.items.map((i) => {
             const d = view.deliveries.find((d) => d.id === i.deliveryId);
             return (
@@ -69,6 +72,18 @@ export function BossTaskPanel({
                 <strong>
                   {d?.company} · {d?.role}
                 </strong>
+                {g.status === "prepared" && g.expiresAt > 0 && g.items.length > 1 && (
+                  <button
+                    disabled={busy}
+                    onClick={() => void run({
+                      action: "boss-group-remove",
+                      id: g.id,
+                      deliveryId: i.deliveryId,
+                    })}
+                  >
+                    移出本批
+                  </button>
+                )}
                 <p>
                   简历：{d?.resumeName} ·{" "}
                   {
@@ -98,7 +113,7 @@ export function BossTaskPanel({
               </section>
             );
           })}
-          <p>首次沟通由 BOSS 发送账号默认招呼；程序不会额外发送自定义文字。</p>
+          <p>确认后按顺序发出 BOSS 账号默认招呼和简历图片。</p>
           {g.error && <p role="alert">{g.error}</p>}
           {g.status === "prepared" ? (
             <>
@@ -113,22 +128,11 @@ export function BossTaskPanel({
                 />
                 已逐项核对全部公司、岗位、简历图片和默认招呼方式
               </label>
-              <label>
-                输入“投递”确认本批
-                <input
-                  disabled={busy}
-                  value={text[g.digest] ?? ""}
-                  onChange={(e) =>
-                    setText({ ...text, [g.digest]: e.target.value })
-                  }
-                />
-              </label>
               <button
                 disabled={
                   busy ||
                   !view.connected ||
                   !ack[g.digest] ||
-                  text[g.digest] !== "投递" ||
                   g.expiresAt <= Date.now()
                 }
                 onClick={() =>
@@ -141,14 +145,26 @@ export function BossTaskPanel({
                   })
                 }
               >
-                确认并顺序投递
+                确认投递 {g.items.length} 个岗位
               </button>
+              {g.expiresAt === 0 && <p>此批次已替换，请返回查看新批次。</p>}
+              {g.expiresAt > 0 && g.expiresAt <= Date.now() && (
+                <button
+                  disabled={busy}
+                  onClick={() => void run({
+                    action: "boss-group-prepare",
+                    ids: g.items.map((item) => item.deliveryId),
+                  })}
+                >
+                  重新核对本批
+                </button>
+              )}
             </>
           ) : (
             <>
               <button
                 disabled={busy}
-                onClick={() => void run({ action: "boss" })}
+                onClick={() => void run({ action: "boss-group-view", id: g.id })}
               >
                 更新任务进度
               </button>
@@ -175,7 +191,7 @@ export function BossTaskPanel({
                 )}
             </>
           )}
-        </article>
+        </details>
       ))}
     </section>
   );

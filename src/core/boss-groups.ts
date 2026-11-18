@@ -106,6 +106,27 @@ export class BossGroups {
       items,
     });
   }
+  async removeItem(id: string, deliveryId: string) {
+    const group = this.get(id);
+    if (
+      group.status !== "prepared" ||
+      group.expiresAt === 0 ||
+      group.items.length < 2 ||
+      !group.items.some((item) => item.deliveryId === deliveryId)
+    )
+      throw new Error("当前批次不能移出这个岗位。");
+    const next = await this.prepare(
+      group.items.filter((item) => item.deliveryId !== deliveryId)
+        .map((item) => item.deliveryId),
+    );
+    this.workspace.store.transaction(() => {
+      const current = this.get(id);
+      if (current.status !== "prepared" || current.expiresAt === 0)
+        throw new Error("原批次已经变化，请先查看当前状态。");
+      this.save({ ...current, expiresAt: 0 });
+    });
+    return next;
+  }
   /** Human confirmation covers these exact frozen items, never future search results. */
   async start(id: string, digest: string) {
     const g = this.get(id);

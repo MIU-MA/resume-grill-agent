@@ -5,6 +5,7 @@ import { nativeControls } from "./controls.js";
 import { notifyWorkspaceChanged, onWorkspaceChanged } from "./updates.js";
 import { ResumeDocument } from "./ResumeDocument.js";
 import { BossWorkbench } from "./BossWorkbench.js";
+import { bossUrl } from "../../domain/boss.js";
 import { ResumeProfileEditor } from "./ResumeProfileEditor.js";
 import { JobRevision } from "./JobRevision.js";
 import { registerWorkbench } from "./workbench.js";
@@ -63,6 +64,9 @@ export function NativeCard({
     [accepted, setAccepted] = useState<string[]>([]),
     [selected, setSelected] = useState<string[]>([]);
   const busy = working || requesting;
+  const bossReview = view.kind === "review" &&
+    hasCapability(view.capabilities, "boss") &&
+    bossUrl.safeParse(view.job.sourceUrl).success;
   useEffect(() => {
     let live = true;
     void act({ action: "restore", reference: viewReference(initial) })
@@ -237,7 +241,7 @@ export function NativeCard({
             <p role="status">正在通过当前会话生成建议，完成后会在这里更新。</p>
           )}
           <JobRevision key={view.jobId} view={view} busy={busy} run={run} />
-          {hasCapability(view.capabilities, "website") && view.formRun && (
+          {!bossReview && hasCapability(view.capabilities, "website") && view.formRun && (
             <section aria-label="官网填写进度">
               <h4>
                 官网填写 ·{" "}
@@ -278,7 +282,7 @@ export function NativeCard({
                 ))}
             </section>
           )}
-          {hasCapability(view.capabilities, "website") && (
+          {!bossReview && hasCapability(view.capabilities, "website") && (
             <>
               <button
                 disabled={busy}
@@ -315,13 +319,27 @@ export function NativeCard({
               </p>
             </>
           )}
-          <details>
+          {!bossReview && <details>
             <summary>岗位要求与来源</summary>
             <a href={view.job.sourceUrl} target="_blank" rel="noreferrer">
               招聘原文 ↗
             </a>
             <p className="rg-pre">{view.job.jd}</p>
-          </details>
+          </details>}
+          {bossReview && (
+            <button
+              disabled={busy}
+              onClick={() =>
+                void run({
+                  action: "boss-prepare",
+                  resumeId: view.resumeId,
+                  jobId: view.jobId,
+                })
+              }
+            >
+              用当前简历准备投递
+            </button>
+          )}
           {view.proposal ? (
             <>
               <RevisionChanges
@@ -349,10 +367,7 @@ export function NativeCard({
               >
                 保存所选修改为岗位版 PDF
               </button>
-              {hasCapability(view.capabilities, "boss") &&
-                view.job.sourceUrl.startsWith(
-                  "https://www.zhipin.com/job_detail/",
-                ) && (
+              {bossReview && (
                   <button
                     disabled={busy}
                     onClick={() =>
@@ -368,14 +383,14 @@ export function NativeCard({
                     保存所选修改并核对 BOSS 图片
                   </button>
                 )}
-              {hasCapability(view.capabilities, "mail") &&
+              {!bossReview && hasCapability(view.capabilities, "mail") &&
                 !view.job.recipient && (
                   <p className="rg-note">
                     此岗位没有公开投递邮箱。可保存岗位版
                     PDF，再通过上方官网申请。
                   </p>
                 )}
-              {hasCapability(view.capabilities, "mail") && (
+              {!bossReview && hasCapability(view.capabilities, "mail") && (
                 <button
                   disabled={busy || !view.job.recipient}
                   onClick={() =>
@@ -404,25 +419,26 @@ export function NativeCard({
               </button>
             </>
           )}
-          <button
-            disabled={busy}
-            onClick={() => void question(reviewRequest(view))}
-          >
-            根据当前 JD 重新生成建议
-          </button>
-          <button
-            disabled={busy}
-            onClick={() =>
-              void run({
-                action: "review",
-                resumeId: view.resumeId,
-                jobId: view.jobId,
-                ...(view.goalId ? { goalId: view.goalId } : {}),
-              })
-            }
-          >
-            重新读取建议
-          </button>
+          {view.proposal && (
+            <button disabled={busy} onClick={() => void question(reviewRequest(view))}>
+              重新生成建议
+            </button>
+          )}
+          {!bossReview && (
+            <button
+              disabled={busy}
+              onClick={() =>
+                void run({
+                  action: "review",
+                  resumeId: view.resumeId,
+                  jobId: view.jobId,
+                  ...(view.goalId ? { goalId: view.goalId } : {}),
+                })
+              }
+            >
+              重新读取建议
+            </button>
+          )}
           {view.goalId && (
             <button
               disabled={busy}

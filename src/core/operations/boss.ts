@@ -20,7 +20,7 @@ export function bossOperations(workspace: Workspace): OperationModule {
       );
       tool(
         "boss_search",
-        "在已连接且登录的 BOSS 页面搜索用户指定方向。只导航，不联系招聘方。",
+        "在已连接的 BOSS 页面搜索指定方向并读取当前结果；遇到登录、验证或加载先停下，不重复搜索，不联系招聘方。",
         { query: z.string().trim().min(1).max(120) },
         ({ query }) => new Boss(workspace).search(query),
       );

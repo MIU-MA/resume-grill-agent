@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { EventEmitter } from "node:events";
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +21,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BossWorkbench } from "../../src/adapters/dsh/BossWorkbench.js";
 import { bossView } from "../../src/adapters/dsh/views.js";
+import { BossExecutor } from "../../src/infrastructure/boss-executor/index.js";
+import type { BossBrowserReader } from "../../src/infrastructure/boss-executor/boss-reader.js";
 
 export async function fixture(t: any) {
   const home = await mkdtemp(join(tmpdir(), "boss-agent-test-")),
@@ -67,6 +70,16 @@ export async function fixture(t: any) {
         needsLogin: false,
         needsVerification: false,
       };
+    if (req.url === "/search") {
+      state.searched = JSON.parse(body).query;
+      result = {
+        state: "ready",
+        query: state.searched,
+        readId: "snapshot",
+        jobs: state.searchRows ?? [{ url, title: state.searched, company: "演示" }],
+      };
+      if (state.searchResult) result = state.searchResult;
+    }
     if (req.url === "/inspect-job")
       result = state.details?.[JSON.parse(body).url] ?? state.detail;
     if (
@@ -196,6 +209,137 @@ test("BOSS 接口限制本机来源，凭据仅在内存，读取真实快照核
   f.boss.disconnect();
   await assert.rejects(f.boss.status(), /先在/);
 });
+test("选简历找 BOSS 岗位只发送岗位方向，未知方向先询问", async (t) => {
+  const f = await fixture(t);
+  const clear = await f.workspace.createResume(
+    "简历",
+    "求职意向：数据分析实习\n邮箱：private@example.com\n教育经历\n统计学本科",
+  );
+  const unclear = await f.workspace.createResume("简历", "教育经历\n统计学本科");
+  f.boss.connect(f.link);
+
+  const waiting = await humanAction(f.workspace, {
+    action: "boss-find", resumeId: unclear.id,
+  });
+  assert.equal(waiting.kind === "boss" && waiting.directionNeededFor, unclear.id);
+  assert.deepEqual(f.requests, [], "未知方向不启动搜索");
+
+  const found = await humanAction(f.workspace, { action: "boss-find", resumeId: clear.id });
+  assert.equal(found.kind === "boss" && found.scans[0]?.resumeId, clear.id);
+  assert.equal(found.kind === "boss" && found.scans[0]?.jobs[0].title, "数据分析实习");
+  assert.equal(f.state.searched, "数据分析实习");
+  assert.deepEqual(f.requests, ["/search"]);
+
+  const manual = await humanAction(f.workspace, {
+    action: "boss-find", resumeId: unclear.id, query: "审计助理",
+  });
+  assert.equal(manual.kind === "boss" && manual.scans[0]?.resumeId, unclear.id);
+  assert.equal(f.state.searched, "审计助理");
+  assert.deepEqual(f.requests, ["/search", "/search"]);
+});
+test("DSH 没有 ego 时可从内置执行器改用 Chrome，继续读取和准备投递", async (t) => {
+  const f = await fixture(t);
+  const launches: string[] = [];
+  let closed = false;
+  let address = "https://www.zhipin.com/web/geek/jobs";
+  let state = "login",
+    query = "",
+    navigations = 0;
+  const page = Object.assign(new EventEmitter(), {
+    url: () => address,
+    isClosed: () => closed,
+    searchJobs: async (next: string) => {
+      navigations++;
+      assert.equal(next, "Go");
+      address = "https://www.zhipin.com/web/passport/zp/security.html";
+      state = "verification";
+      query = "";
+    },
+    evaluate: async () => ({
+      address,
+      state,
+      query,
+      jobs:
+        state === "ready"
+          ? [{ url: f.url, title: "Go开发", company: "演示", salary: "" }]
+          : [],
+    }),
+  });
+  const reader = {
+    isConnected: () => !closed,
+    openBossPage: async () => page,
+    withJobPage: async (
+      _url: string,
+      _page: unknown,
+      read: (target: unknown) => Promise<unknown>,
+    ) => read({ evaluate: async () => f.state.detail }),
+    close: async () => {
+      closed = true;
+    },
+  } as unknown as BossBrowserReader;
+  const executor = new BossExecutor(
+    join(f.home, "boss-executor"),
+    async (backend) => {
+      launches.push(backend);
+      if (backend !== "chrome") throw new Error("浏览器不可用");
+      return reader;
+    },
+  );
+  f.boss.useExecutor(executor);
+  assert.equal((await f.boss.status()).ready, false);
+  assert.deepEqual(launches, [], "被动查看状态不能启动浏览器");
+  const searchResume = await f.workspace.createResume("简历", "求职意向：Go");
+  const connected = await humanAction(f.workspace, {
+    action: "boss-find",
+    resumeId: searchResume.id,
+  });
+  assert.equal(connected.kind === "boss" && connected.connected, true);
+  assert.equal(connected.kind === "boss" && connected.scans[0]?.state, "login");
+  assert.deepEqual(launches, ["ego", "edge", "chrome"]);
+  assert.equal(connected.kind === "boss" && connected.browserPreference, "chrome");
+  assert.equal((await f.boss.status()).backend, "chrome");
+  assert.match((await f.boss.read()).blocked ?? "", /登录/);
+  assert.equal((await f.boss.search("Go")).state, "login");
+  assert.equal(navigations, 0);
+
+  state = "unsupported";
+  assert.equal((await f.boss.search("Go")).state, "verification");
+  assert.equal((await f.boss.search("Go")).state, "verification");
+  assert.equal((await f.boss.read()).state, "verification");
+  assert.equal(navigations, 1, "read/retry must not interrupt verification");
+
+  address = "https://www.zhipin.com/web/geek/jobs?city=100010000&query=Go";
+  state = "ready";
+  query = "Go";
+  const scan = await f.boss.search("Go");
+  assert.equal(scan.state, "ready");
+  assert.equal(navigations, 1, "same search reuses the page");
+  const job = await f.boss.detail(scan.id, f.url);
+  assert.equal(job.jd, "开发 Go 服务");
+  const resume = await f.workspace.createResume(
+    "演示简历",
+    "负责 Go 服务开发。",
+  );
+  const delivery = await new BossDeliveries(f.workspace).prepare(
+    resume.id,
+    job.id,
+  );
+  assert.equal(delivery.status, "prepared");
+  assert.equal(delivery.images.length, 1);
+  assert.deepEqual(await f.boss.recent(), []);
+  assert.equal(f.requests.length, 0);
+  const view = await humanAction(f.workspace, { action: "boss-unlink" });
+  assert.equal(view.kind === "boss" && view.connected, false);
+  assert.equal(new Boss(new Workspace(f.store)).browserPreference, "chrome");
+  assert.equal(closed, true);
+  await assert.rejects(
+    f.boss.browserConnect("edge"),
+    /无法启动 Microsoft Edge/,
+  );
+  assert.deepEqual(launches, ["ego", "edge", "chrome", "edge"]);
+  await executor.close();
+});
+
 test("逐岗位绑定 PDF 版本和实际图片，拒绝跨 JD、图片篡改及模型批准", async (t) => {
   const f = await fixture(t);
   f.boss.connect(f.link);
@@ -379,6 +523,48 @@ async function twoDeliveries(t: any) {
     b = await deliveries.prepare(resume.id, otherJob.id);
   return { ...f, deliveries, a, b, resume, job };
 }
+test("一次搜索自动核对匹配 JD 并冻结投递，移出岗位后旧批次不可确认", async (t) => {
+  const f = await fixture(t);
+  f.boss.connect(f.link);
+  const resume = await f.workspace.createResume("主简历", "求职意向：Go开发\n负责 Go 服务开发。");
+  const secondUrl = "https://www.zhipin.com/job_detail/second.html";
+  f.state.searchRows = [
+    { url: f.url, title: "Go开发", company: "演示" },
+    { url: secondUrl, title: "Go开发", company: "第二公司" },
+    { url: "https://www.zhipin.com/job_detail/unrelated.html", title: "财务", company: "第三公司" },
+  ];
+  f.state.details = { [secondUrl]: { ...f.state.detail, url: secondUrl, company: "第二公司" } };
+  const input = { action: "boss-auto-prepare", resumeId: resume.id };
+  f.state.searchResult = { state: "verification", jobs: [], message: "请完成安全验证" };
+  const blocked = await humanAction(f.workspace, input);
+  assert.equal(blocked.kind === "boss" && blocked.scans[0]?.state, "verification");
+  assert.deepEqual(f.requests, ["/search"]);
+
+  delete f.state.searchResult;
+  const view = await humanAction(f.workspace, input);
+  assert.equal(view.kind, "boss");
+  const group = view.groups.find((g) => g.id === view.groupFocus)!;
+  assert.equal(group.status, "prepared");
+  assert.equal(group.items.length, 2);
+  assert.ok(view.deliveries.every((d) => d.resumeId === resume.id && d.images.length > 0));
+  assert.deepEqual(f.requests.slice(1), [
+    "/search", "/inspect-job", "/inspect-job", "/boss-batch/preview", "/boss-batch/preview",
+  ]);
+  const updated = await humanAction(f.workspace, {
+    action: "boss-group-remove",
+    id: group.id,
+    deliveryId: group.items[1].deliveryId,
+  });
+  assert.equal(updated.kind === "boss" && updated.groups.find((g) => g.id === updated.groupFocus)?.items.length, 1);
+  await assert.rejects(humanAction(f.workspace, {
+    action: "boss-group-confirm",
+    id: group.id,
+    digest: group.digest,
+    acknowledged: true,
+    confirmation: "投递",
+  }), /过期/);
+  assert.equal(f.state.confirmations, undefined);
+});
 test("整批一次人工确认，顺序发送各自图片；重复开始与重复岗位被拒绝", async (t) => {
   const f = await twoDeliveries(t),
     groups = new BossGroups(f.workspace, 1, 3),
@@ -497,17 +683,18 @@ test("筛选复用目标、原文和职业别名，遵守读取预算且不发�
 test("BOSS 核对界面展示实际岗位与附件，恢复不创建确认", async (t) => {
   const f = await twoDeliveries(t),
     groups = new BossGroups(f.workspace);
-  await groups.prepare([f.a.id, f.b.id]);
+  const group = await groups.prepare([f.a.id, f.b.id]);
   const html = renderToStaticMarkup(
     createElement(BossWorkbench, {
-      view: bossView(f.workspace),
+      view: bossView(f.workspace, { groupFocus: group.id }),
       busy: false,
       run: async () => {},
       openFile: () => {},
     }),
   );
   assert.match(html, /第二公司/);
-  assert.match(html, /整批核对/);
+  assert.match(html, /确认投递 2 个岗位/);
+  assert.doesNotMatch(html, /找岗位并准备投递|输入.*投递.*确认本批/);
   assert.match(html, /查看该岗位 PDF/);
   assert.match(html, /查看第/);
   assert.match(html, /账号默认招呼/);

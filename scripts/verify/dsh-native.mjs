@@ -9,7 +9,7 @@ import { Store } from "../../dist/infrastructure/sqlite-store.js";
 import { Workspace } from "../../dist/core/workspace.js";
 
 // Uses the actual installed DSH runtime and a deterministic local LLM adapter.
-// No credentials, paid model requests, browser task automation or SMTP calls.
+// No real credentials, paid model requests or SMTP calls.
 const command = process.env.DSH_COMMAND;
 assert.ok(command, "设置 DSH_COMMAND 为本机 dsh.cmd 的绝对路径。");
 const root = resolve("."),
@@ -136,7 +136,7 @@ try {
   const input = page.getByRole("textbox").last();
   if ((await input.getAttribute("contenteditable")) === "false")
     await page.getByText("演示求职", { exact: true }).first().click();
-  await input.fill("验证原生求职卡片，不发送邮件。");
+  await input.fill("按 JD 核对 Go 开发简历。");
   await input.press("Enter");
   const card = page.getByRole("region", { name: "Resume Grill 求职卡片" });
   await page
@@ -402,9 +402,7 @@ try {
   await mailSettings
     .getByRole("button", { name: "保存邮箱设置", exact: true })
     .click();
-  await mailSettings
-    .getByText("已保存。新设置立即生效。", { exact: true })
-    .waitFor();
+  await mailSettings.getByText("已保存邮箱设置。", { exact: true }).waitFor();
   assert.equal(
     await mailSettings.getByLabel("SMTP 授权码", { exact: true }).inputValue(),
     "",
@@ -458,8 +456,42 @@ try {
   await full.getByRole("region", { name: "求职总览", exact: true }).waitFor();
   await page.screenshot({
     path: join(output, "dsh-workspace-overview.png"),
-    fullPage: true,
+    clip: { x: 0, y: 0, width: 1440, height: 790 },
   });
+  if (process.env.RESUME_VERIFY_BOSS === "1") {
+    await full.getByRole("button", { name: "BOSS", exact: true }).click();
+    const boss = full.getByRole("region", { name: "BOSS 投递", exact: true });
+    const backend = boss.getByLabel("浏览器", { exact: true });
+    await backend.waitFor();
+    assert.deepEqual(await backend.locator("option").allTextContents(), [
+      "自动",
+      "ego",
+      "Microsoft Edge",
+      "Google Chrome",
+    ]);
+    await backend.selectOption("edge");
+    await boss.getByRole("button", { name: "连接浏览器", exact: true }).click();
+    await boss
+      .getByText("已连接 Microsoft Edge", { exact: false })
+      .waitFor({ timeout: 60000 });
+    await page.screenshot({
+      path: join(output, "dsh-boss.png"),
+      clip: { x: 0, y: 0, width: 1440, height: 610 },
+    });
+    await boss
+      .getByRole("button", { name: "读取当前列表", exact: true })
+      .click();
+    await boss
+      .getByText(/请在浏览器.*重新读取|正在加载岗位|当前没有符合条件|个岗位/)
+      .first()
+      .waitFor({ timeout: 30000 });
+    await boss.getByRole("button", { name: "断开浏览器", exact: true }).click();
+    await boss
+      .getByRole("button", { name: "连接浏览器", exact: true })
+      .waitFor();
+    assert.equal(store.list("boss-run").length, 0);
+    assert.equal(store.list("boss-delivery").length, 0);
+  }
   await full.getByRole("button", { name: "岗位", exact: true }).click();
   await full
     .getByLabel("用于核对的简历", { exact: true })
@@ -469,6 +501,15 @@ try {
     .filter({ has: page.getByText("Go 开发", { exact: true }) })
     .getByRole("button", { name: "核对简历", exact: true })
     .click();
+  const firstChange = full.getByLabel("接受这条修改", { exact: true });
+  await firstChange.evaluate((field) => field.scrollIntoView({ block: "center" }));
+  const checkbox = await firstChange.boundingBox();
+  assert.ok(checkbox, "找不到可截图的修改建议");
+  const top = Math.max(0, Math.floor(checkbox.y) - 60);
+  await page.screenshot({
+    path: join(output, "dsh-job-review.png"),
+    clip: { x: 290, y: top, width: 1150, height: 1050 - top },
+  });
   await full
     .getByRole("button", { name: "解析简历并核对资料", exact: true })
     .click();

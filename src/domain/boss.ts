@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+export const bossBrowserChoice = z.enum(["auto", "ego", "edge", "chrome"]);
+export type BossBrowserChoice = z.infer<typeof bossBrowserChoice>;
+export type BossBrowserBackend = Exclude<BossBrowserChoice, "auto">;
+
 export const bossUrl = z
   .string()
   .url()
@@ -35,7 +39,10 @@ export type BossScan = {
   id: string;
   readId: string;
   createdAt: number;
+  resumeId?: string;
   jobs: z.infer<typeof bossJob>[];
+  query?: string;
+  state?: "ready" | "loading" | "empty" | "login" | "verification" | "unsupported";
   blocked?: string;
 };
 export const bossStep = z.object({

@@ -77,7 +77,7 @@ export class BossGateway {
       throw new Error(
         response.status === 401
           ? "BOSS 连接码已失效，请重新粘贴本次服务链接。"
-          : "BOSS 操作未完成，请在网页工作台检查登录、页面及批次状态。",
+          : "BOSS 操作未完成，请检查登录、页面及批次状态。",
       );
     try {
       return JSON.parse(Buffer.concat(parts).toString("utf8"));

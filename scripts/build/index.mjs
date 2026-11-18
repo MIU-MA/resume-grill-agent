@@ -1,4 +1,4 @@
-import { rm, lstat } from "node:fs/promises";
+import { copyFile, rm, lstat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname, basename } from "node:path";
 import { spawn } from "node:child_process";
@@ -25,5 +25,9 @@ await new Promise((done, reject) => {
     code === 0 ? done() : reject(new Error(`TypeScript 构建失败：${code}`)),
   );
 });
+await copyFile(
+  resolve(root, "src/infrastructure/boss-executor/ego-cdp-runtime.mjs"),
+  resolve(output, "infrastructure/boss-executor/ego-cdp-runtime.mjs"),
+);
 await import("./panel.mjs");
 await import("./dsh.mjs");

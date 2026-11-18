@@ -28,14 +28,17 @@ export type BossShortlist = {
 export class BossShortlists {
   constructor(readonly workspace: Workspace) {}
   async collect(goalId: string, scanId: string, budget = 5) {
+    const goal = this.workspace.store.get<Goal>("goal", goalId);
+    return this.collectForGoal(goal, scanId, budget);
+  }
+  async collectForGoal(goal: Goal, scanId: string, budget = 5) {
     z.number().int().min(1).max(10).parse(budget);
-    const goal = this.workspace.store.get<Goal>("goal", goalId),
-      scan = this.workspace.store.get<BossScan>("boss-scan", scanId),
+    const scan = this.workspace.store.get<BossScan>("boss-scan", scanId),
       resume = this.workspace.resume(goal.resumeId);
     if (scan.blocked) throw new Error(scan.blocked);
     const run: BossShortlist = {
       id: randomUUID(),
-      goalId,
+      goalId: goal.id,
       scanId,
       createdAt: Date.now(),
       detailsRead: 0,

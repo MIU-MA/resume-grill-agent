@@ -1,6 +1,16 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { NativeView } from "./views.js";
-import { BossTaskPanel } from "./BossTaskPanel.js";
+import { BossDeliveryPanel } from "./BossDeliveryPanel.js";
+import type {
+  BossBrowserBackend,
+  BossBrowserChoice,
+} from "../../domain/boss.js";
+const browsers: Record<BossBrowserBackend, string> = {
+  ego: "ego",
+  edge: "Microsoft Edge",
+  chrome: "Google Chrome",
+};
+
 export function BossWorkbench({
   view,
   busy,
@@ -14,146 +24,188 @@ export function BossWorkbench({
   open?: (input: any) => void;
   openFile: (path: string) => void;
 }) {
-  const [link, setLink] = useState(""),
-    [query, setQuery] = useState(""),
-    [resumeId, setResume] = useState(view.resumes[0]?.id ?? "");
+  const [query, setQuery] = useState("");
+  const [selectedResume, setResume] = useState<string>();
+  const resumes = view.resumes.filter((resume) => !resume.jobId);
+  const suggestedResume = view.directionNeededFor ?? view.scans[0]?.resumeId;
+  const resumeId =
+    selectedResume ??
+    resumes.find((resume) => resume.id === suggestedResume)?.id ??
+    resumes[0]?.id ??
+    "";
+  const hasResume = resumes.some((resume) => resume.id === resumeId);
+  const [backend, setBackend] = useState<BossBrowserChoice | undefined>();
+  const browserSelectId = useId();
+  const activeBrowser =
+    browsers[view.browserState?.backend as BossBrowserBackend];
   const [goalId, setGoal] = useState(view.goals[0]?.id ?? ""),
     [budget, setBudget] = useState(5);
-  const scan = view.scans[0];
-  const [chosen, setChosen] = useState<Record<string, string>>({}),
-    [ack, setAck] = useState<Record<string, boolean>>({}),
-    [confirmation, setConfirmation] = useState<Record<string, string>>({});
+  const latest = view.scans[0];
+  const needsDirection = hasResume && view.directionNeededFor === resumeId;
+  const scan =
+    !needsDirection && (!latest?.resumeId || latest.resumeId === resumeId)
+      ? latest
+      : undefined;
+  const state = view.connected ? scan?.state : undefined;
+  const resumeAction =
+    state === "login"
+      ? "登录后继续"
+      : state === "verification"
+        ? "验证后继续"
+        : state === "loading"
+          ? "查看搜索结果"
+          : "找岗位并准备投递";
+  const resumeSearch = (override?: string, readCurrent = false) =>
+    void run({
+      action: "boss-auto-prepare",
+      resumeId,
+      backend: backend ?? view.browserPreference,
+      ...(override ? { query: override } : {}),
+      ...(readCurrent ? { readCurrent: true } : {}),
+    });
+  const readCurrent = () =>
+    void run({ action: "boss-read", ...(hasResume ? { resumeId } : {}) });
+  const focusedDelivery = view.deliveries.find((d) => d.id === view.deliveryFocus);
+  const focusedGroup = view.groups.find((g) => g.id === view.groupFocus);
+  const hasDeliveryWork =
+    view.deliveries.length > 0 || view.groups.length > 0 || view.runs.length > 0;
+  if (focusedDelivery || focusedGroup) {
+    return (
+      <section aria-label="BOSS 投递核对">
+        <button disabled={busy} onClick={() => void run({ action: "boss" })}>
+          返回岗位
+        </button>
+        {view.note && <p role="status">{view.note}</p>}
+        <BossDeliveryPanel
+          key={focusedDelivery?.id ?? focusedGroup?.id}
+          view={view}
+          busy={busy}
+          run={run}
+          openFile={openFile}
+        />
+      </section>
+    );
+  }
   return (
     <section aria-label="BOSS 投递">
       <h3>BOSS 投递</h3>
-      <p>
-        启动网页项目的 npm run
-        boss:ego，粘贴终端输出的完整工作台链接。连接码仅留在当前宿主内存，重启后重新连接。
-      </p>
-      {view.browserState && (
-        <p role="status">
-          浏览器：{view.browserState.ready ? "已连接" : view.browserState.phase}
-          {view.browserState.error ? ` · ${view.browserState.error}` : ""}
-        </p>
+      {resumes.length === 1 && <p>简历：{resumes[0].name}</p>}
+      {resumes.length > 1 && (
+        <label>
+          简历
+          <select
+            disabled={busy}
+            value={hasResume ? resumeId : ""}
+            onChange={(e) => {
+              setResume(e.target.value);
+              setQuery("");
+            }}
+          >
+            {resumes.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
-      <label>
-        本次服务链接
-        <input
-          type="password"
-          autoComplete="off"
-          value={link}
-          disabled={busy}
-          onChange={(e) => setLink(e.target.value)}
-        />
-      </label>
-      <button
-        disabled={busy || !link}
-        onClick={() =>
-          void run({ action: "boss-link", link }).then(() => setLink(""))
-        }
-      >
-        接入本机服务
-      </button>
-      <p>
-        {view.connected
-          ? "已接入本机服务；浏览器登录状态请在 ego 中检查。"
-          : "尚未接入本机服务"}
-      </p>
-      {view.connected && (
-        <>
-          <button
-            disabled={busy}
-            onClick={() => void run({ action: "boss-check" })}
-          >
-            检查连接状态
-          </button>
-          <button
-            disabled={busy}
-            onClick={() => void run({ action: "boss-connect" })}
-          >
-            连接浏览器
-          </button>
-          <button
-            disabled={busy}
-            onClick={() => void run({ action: "boss-unlink" })}
-          >
-            解除插件连接
-          </button>
-          <label>
-            岗位方向
+      {resumes.length === 0 && <p>先在简历库上传一份主简历。</p>}
+      {needsDirection ? (
+        <form onSubmit={(event) => {
+          event.preventDefault();
+          if (!busy && query.trim()) resumeSearch(query);
+        }}>
+          <label>简历里的方向不明确，你想找什么岗位？
             <input
               value={query}
+              maxLength={120}
+              placeholder="例如：数据分析实习"
               disabled={busy}
               onChange={(e) => setQuery(e.target.value)}
             />
           </label>
-          <button
-            disabled={busy || !query.trim()}
-            onClick={() => void run({ action: "boss-search", query })}
-          >
-            搜索
-          </button>
+          <button disabled={busy || !query.trim()}>找岗位并准备投递</button>
+        </form>
+      ) : hasResume ? (
+        <button
+          disabled={busy}
+          onClick={() => {
+            resumeSearch(
+              scan?.blocked ? scan.query : undefined,
+              state === "verification" || state === "loading",
+            );
+          }}
+        >
+          {busy ? "正在处理…" : resumeAction}
+        </button>
+      ) : null}
+      {hasResume && !needsDirection && !scan && (
+        <p>自动找岗位、读 JD，准备最多 3 份投递。核对后才会发送。</p>
+      )}
+      {view.note && <p role="status">{view.note}</p>}
+      <details>
+        <summary>更多选项</summary>
+        {view.connected && activeBrowser && <p>已连接 {activeBrowser}</p>}
+        {view.connected ? (
           <button
             disabled={busy}
-            onClick={() => void run({ action: "boss-read" })}
+            onClick={() => void run({ action: "boss-unlink" })}
           >
+            断开浏览器
+          </button>
+        ) : (
+          <>
+          <label htmlFor={browserSelectId}>浏览器</label>
+          <select
+            id={browserSelectId}
+            disabled={busy}
+            value={backend ?? view.browserPreference}
+            onChange={(e) => setBackend(e.target.value as BossBrowserChoice)}
+          >
+            <option value="auto">自动</option>
+            {Object.entries(browsers).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <button
+            disabled={busy}
+            onClick={() =>
+              void run({
+                action: "boss-connect",
+                backend: backend ?? view.browserPreference,
+              })
+            }
+          >
+            连接浏览器
+          </button>
+          </>
+        )}
+        {!needsDirection && hasResume && <form onSubmit={(event) => {
+          event.preventDefault();
+          if (!busy && query.trim()) resumeSearch(query);
+        }}>
+          <label>
+            更换搜索方向
+            <input
+              value={query}
+              maxLength={120}
+              placeholder={scan?.query}
+              disabled={busy}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+          <button disabled={busy || !query.trim()}>搜索</button>
+        </form>}
+        {view.connected && (
+          <button disabled={busy} onClick={readCurrent}>
             读取当前列表
           </button>
-        </>
-      )}
-      <label>
-        用于核对的简历
-        <select
-          disabled={busy}
-          value={resumeId}
-          onChange={(e) => setResume(e.target.value)}
-        >
-          <option value="">选择简历</option>
-          {view.resumes.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      {scan && (
-        <>
-          <p>
-            {new Date(scan.createdAt).toLocaleString()} · {scan.jobs.length}{" "}
-            个岗位（当前页）
-          </p>
-          {scan.blocked ? (
-            <p role="alert">{scan.blocked}</p>
-          ) : (
-            scan.jobs.map((job) => (
-              <article key={job.url}>
-                <h4>
-                  {job.company} · {job.title}
-                </h4>
-                <p>{job.salary}</p>
-                <p>{job.description}</p>
-                <button
-                  disabled={busy || !view.connected}
-                  onClick={() => {
-                    const action = {
-                      action: "boss-detail",
-                      scanId: scan.id,
-                      url: job.url,
-                      ...(resumeId ? { resumeId } : {}),
-                    };
-                    open ? open(action) : void run(action);
-                  }}
-                >
-                  读取完整 JD{resumeId ? "并核对简历" : ""}
-                </button>
-              </article>
-            ))
-          )}
-        </>
-      )}
+        )}
       {scan && !scan.blocked && view.goals.length > 0 && (
-        <section>
-          <h4>按求职目标筛选</h4>
+        <details>
+          <summary>按已保存的求职条件筛选</summary>
           <label>
             已保存目标
             <select
@@ -201,9 +253,9 @@ export function BossWorkbench({
           >
             筛选并读取完整 JD
           </button>
-        </section>
+        </details>
       )}
-      {view.shortlists.slice(0, 1).map((s) => (
+      {view.shortlists.filter((s) => s.scanId === scan?.id).slice(0, 1).map((s) => (
         <section key={s.id}>
           <h4>
             筛选结果 · 已读取 {s.detailsRead}/{s.budget} 个详情
@@ -227,7 +279,7 @@ export function BossWorkbench({
               {i.evidence.map((e, n) => (
                 <blockquote key={n}>{e}</blockquote>
               ))}
-              {i.jobId && resumeId && (
+              {i.jobId && hasResume && (
                 <button
                   disabled={busy}
                   onClick={() =>
@@ -241,188 +293,44 @@ export function BossWorkbench({
           ))}
         </section>
       ))}
-      {scan &&
-        !scan.blocked &&
-        scan.jobs.map((j) => {
-          const job = view.jobs.find((v) => v.url === j.url);
-          if (!job) return null;
-          const value = chosen[job.id] ?? resumeId;
-          return (
-            <article key={`prepare:${job.id}`}>
-              <h4>
-                {j.company} · {j.title}
-              </h4>
-              <label>
-                实际投递的简历
-                <select
-                  value={value}
-                  disabled={busy}
-                  onChange={(e) =>
-                    setChosen({ ...chosen, [job.id]: e.target.value })
-                  }
-                >
-                  <option value="">选择主简历或本岗位版本</option>
-                  {view.resumes
-                    .filter((r) => !r.jobId || r.jobId === job.id)
-                    .map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <button
-                disabled={busy || !value || !view.connected}
-                onClick={() =>
-                  void run({
-                    action: "boss-prepare",
-                    jobId: job.id,
-                    resumeId: value,
-                  })
-                }
-              >
-                生成图片并核对投递
-              </button>
-            </article>
-          );
-        })}
-      {view.deliveries.some((d) => d.status === "prepared") ||
-      view.groups.length > 0 ? (
-        <BossTaskPanel view={view} busy={busy} run={run} openFile={openFile} />
-      ) : null}
-      {view.deliveries.map((d) => (
-        <article key={d.id} aria-label="BOSS 投递核对">
-          <h4>
-            {d.company} · {d.role}
-          </h4>
-          <p>
-            简历：{d.resumeName} · {d.images.length} 张图片
-          </p>
-          <p>首次沟通使用 BOSS 账号默认招呼，不追加自定义文字。</p>
-          <p>
-            状态：
-            {
-              {
-                prepared: "待确认",
-                submitting: "请求已发出，等待读回",
-                running: "执行中",
-                finished: "已投递并核验",
-                paused: "已暂停",
-                uncertain: "结果待核对，不自动重发",
-              }[d.status]
-            }
-          </p>
-          <button onClick={() => openFile(d.pdfPath)}>查看实际 PDF</button>
-          {d.images.map((i, n) => (
-            <button key={i.sha256} onClick={() => openFile(i.path)}>
-              查看第 {n + 1} 张实际图片
-            </button>
-          ))}
-          {d.error && <p role="alert">{d.error}</p>}
-          {d.status === "prepared" ? (
-            <>
-              <button
-                disabled={busy || !view.connected}
-                onClick={() => void run({ action: "boss-preview", id: d.id })}
-              >
-                刷新核对有效期
-              </button>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={!!ack[d.digest]}
-                  disabled={busy}
-                  onChange={(e) =>
-                    setAck({ ...ack, [d.digest]: e.target.checked })
-                  }
-                />
-                已核对公司、岗位、默认招呼方式和全部图片
-              </label>
-              <label>
-                输入“投递”后执行
-                <input
-                  value={confirmation[d.digest] ?? ""}
-                  disabled={busy}
-                  onChange={(e) =>
-                    setConfirmation({
-                      ...confirmation,
-                      [d.digest]: e.target.value,
-                    })
-                  }
-                />
-              </label>
-              <button
-                disabled={
-                  busy ||
-                  !view.connected ||
-                  !ack[d.digest] ||
-                  confirmation[d.digest] !== "投递" ||
-                  (d.expiresAt ?? 0) <= Date.now()
-                }
-                onClick={() =>
-                  void run({
-                    action: "boss-confirm",
-                    id: d.id,
-                    digest: d.digest,
-                    acknowledged: true,
-                    confirmation: "投递",
-                  })
-                }
-              >
-                确认并投递此岗位
-              </button>
-            </>
+      </details>
+      {scan && (
+        <section aria-label="搜索结果">
+          {scan.blocked ? (
+            <p role="status">{scan.blocked}</p>
           ) : (
             <>
-              <button
-                disabled={busy || !view.connected}
-                onClick={() =>
-                  void run({ action: "boss-delivery-refresh", id: d.id })
-                }
-              >
-                读取执行回执
-              </button>
-              {d.status === "running" && (
-                <button
-                  disabled={busy || !view.connected}
-                  onClick={() =>
-                    void run({ action: "boss-delivery-pause", id: d.id })
-                  }
-                >
-                  完成当前步骤后暂停
-                </button>
-              )}
+              <p>{scan.query ? `${scan.query} · ` : ""}{scan.jobs.length} 个岗位</p>
+              {scan.jobs.map((job) => (
+                <article key={job.url}>
+                  <h4>{job.title}</h4>
+                  <p>{[job.company, job.salary].filter(Boolean).join(" · ")}</p>
+                  <button
+                    disabled={busy || !view.connected}
+                    onClick={() => {
+                      const action = {
+                        action: "boss-detail",
+                        scanId: scan.id,
+                        url: job.url,
+                        ...(hasResume ? { resumeId } : {}),
+                      };
+                      open ? open(action) : void run(action);
+                    }}
+                  >
+                    查看岗位
+                  </button>
+                </article>
+              ))}
             </>
           )}
-        </article>
-      ))}
-      {view.runs
-        .filter((r) => !view.deliveries.some((d) => d.remoteId === r.id))
-        .map((r) => (
-          <article key={r.id}>
-            <h4>批次 · {r.state}</h4>
-            {r.tasks.map((t) => (
-              <p key={t.url}>
-                {t.company} · {t.title} · {t.state}
-                {t.error ? `：${t.error}` : ""}
-              </p>
-            ))}
-            <button
-              disabled={busy || !view.connected}
-              onClick={() => void run({ action: "boss-refresh", id: r.id })}
-            >
-              更新回执
-            </button>
-            {r.state === "running" && (
-              <button
-                disabled={busy || !view.connected}
-                onClick={() => void run({ action: "boss-pause", id: r.id })}
-              >
-                完成当前步骤后暂停
-              </button>
-            )}
-          </article>
-        ))}
+        </section>
+      )}
+      {hasDeliveryWork && (
+        <details>
+          <summary>投递任务</summary>
+          <BossDeliveryPanel view={view} busy={busy} run={run} openFile={openFile} />
+        </details>
+      )}
     </section>
   );
 }
