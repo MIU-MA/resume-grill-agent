@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { NativeView } from "./views.js";
+import { groupedBossDeliveryIds } from "./boss-task-view.js";
 type View = Extract<NativeView, { kind: "boss" }>;
 export function BossTaskPanel({
   view,
@@ -14,7 +15,9 @@ export function BossTaskPanel({
 }) {
   const [selected, setSelected] = useState<string[]>([]),
     [ack, setAck] = useState<Record<string, boolean>>({});
-  const eligible = view.deliveries.filter((d) => d.status === "prepared"),
+  const grouped = groupedBossDeliveryIds(view);
+  const eligible = view.deliveries.filter((d) =>
+      d.status === "prepared" && !grouped.has(d.id)),
     ids = selected.filter((id) => eligible.some((d) => d.id === id));
   const groups = view.groupFocus
     ? view.groups.filter((g) => g.id === view.groupFocus)

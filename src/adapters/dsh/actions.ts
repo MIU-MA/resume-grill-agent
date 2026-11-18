@@ -156,9 +156,6 @@ const mailActions = new Set([
   "check",
   "send",
 ]);
-const bossActions = new Set<string>(
-  bossActionSchema.options.map((entry) => entry.shape.action.value),
-);
 const actionName = z.object({ action: z.string() });
 
 export function requireCapability(
@@ -175,9 +172,16 @@ export async function humanAction(
   value: unknown,
   tasks = new Tasks(workspace),
 ): Promise<NativeView> {
-  if (bossActions.has(actionName.parse(value).action)) {
+  const { action } = actionName.parse(value);
+  if (action === "boss" || action.startsWith("boss-")) {
     requireCapability(workspace, "boss");
-    return bossAction(workspace, bossActionSchema.parse(value), (request) =>
+    const parsed = bossActionSchema.safeParse(value);
+    if (!parsed.success) {
+      if (parsed.error.issues.some((issue) => issue.path[0] === "action"))
+        throw new Error("当前插件后端不支持这个 BOSS 操作。请完全退出 DSH 后重新打开，再回到投递任务。");
+      throw new Error("这次 BOSS 操作的参数不完整。请重新打开任务后再试。");
+    }
+    return bossAction(workspace, parsed.data, (request) =>
       humanAction(workspace, request),
     );
   }

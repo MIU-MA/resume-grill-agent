@@ -17,8 +17,14 @@ export function nativeControls(ctx: any, sessionId: string, surface?: string) {
       );
       if (!response.ok) throw new Error(response.error.message);
       const result = response.value?.result;
-      if (!result || result.kind !== "success")
-        throw new Error(result?.text ?? "未收到操作结果。");
+      if (!result || result.kind !== "success") {
+        const action = (input as { action?: string })?.action;
+        const error = result?.text ?? "未收到操作结果。";
+        if (typeof action === "string" && (action === "boss" || action.startsWith("boss-")) &&
+            /invalid_union|Invalid discriminator/i.test(error))
+          throw new Error("BOSS 界面与后端版本可能不同。请完全退出 DSH 后重新打开，再核对投递记录。");
+        throw new Error(error);
+      }
       return JSON.parse(result.text);
     },
     ask: async (text: string, browser = false) => {

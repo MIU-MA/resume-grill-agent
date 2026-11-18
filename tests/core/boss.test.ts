@@ -20,6 +20,7 @@ import { Tasks } from "../../src/core/tasks.js";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BossWorkbench } from "../../src/adapters/dsh/BossWorkbench.js";
+import { nativeControls } from "../../src/adapters/dsh/controls.js";
 import { bossView } from "../../src/adapters/dsh/views.js";
 import { BossExecutor } from "../../src/infrastructure/boss-executor/index.js";
 import type { BossBrowserReader } from "../../src/infrastructure/boss-executor/boss-reader.js";
@@ -769,11 +770,36 @@ test("BOSS 核对界面展示实际岗位与附件，恢复不创建确认", asy
   assert.match(html, /查看该岗位 PDF/);
   assert.match(html, /查看第/);
   assert.match(html, /账号默认招呼/);
+  const list = renderToStaticMarkup(
+    createElement(BossWorkbench, {
+      view: bossView(f.workspace),
+      busy: false,
+      run: async () => {},
+      openFile: () => {},
+    }),
+  );
+  assert.match(list, /确认投递 2 个岗位/);
+  assert.doesNotMatch(list, /确认并投递此岗位|选择要一起投递的岗位/);
   assert.equal(f.state.confirmations, undefined);
   assert.equal(
     JSON.stringify(bossView(f.workspace)).includes("a".repeat(48)),
     false,
   );
+});
+test("未知 BOSS 命令不会进入通用动作校验，旧宿主错误提示重开 DSH", async (t) => {
+  const f = await fixture(t);
+  await assert.rejects(
+    humanAction(f.workspace, { action: "boss-future-action" }),
+    /不支持这个 BOSS 操作/,
+  );
+  const { act } = nativeControls({
+    remote: { commands: { execute: async () => ({
+      ok: true,
+      value: { result: { kind: "error", text: '[{"code":"invalid_union","path":["action"]}]' } },
+    }) } },
+  }, "test");
+  await assert.rejects(act({ action: "boss-group-prepare" }), /完全退出 DSH/);
+  assert.deepEqual(f.requests, []);
 });
 test("并发刷新旧预览不能覆盖已确认的执行结果", async (t) => {
   const f = await fixture(t);
