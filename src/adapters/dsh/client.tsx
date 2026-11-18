@@ -5,6 +5,7 @@ import { nativeControls } from "./controls.js";
 import { notifyWorkspaceChanged } from "./updates.js";
 import { onWorkspaceChanged } from "./updates.js";
 import { ResumeDocument } from "./ResumeDocument.js";
+import { BossWorkbench } from "./BossWorkbench.js";
 import { ResumeProfileEditor } from "./ResumeProfileEditor.js";
 import { JobRevision } from "./JobRevision.js";
 import { registerWorkbench } from "./workbench.js";
@@ -96,10 +97,11 @@ export function NativeCard({
           setRequesting(false);
           if (
             value?.kind === "review" &&
-            value.proposal?.id !== view.proposal?.id
+            (value.proposal?.id !== view.proposal?.id ||
+              value.formRun?.updatedAt !== view.formRun?.updatedAt)
           ) {
             setView(value);
-            setAccepted([]);
+            if (value.proposal?.id !== view.proposal?.id) setAccepted([]);
           }
         })
         .catch((e) => {
@@ -162,6 +164,7 @@ export function NativeCard({
   return (
     <section className="rg-native" aria-label="Resume Grill 求职卡片">
       <style>{__NATIVE_CSS__}</style>
+      {view.kind === "boss" && <BossWorkbench view={view} busy={busy} run={run} />}
       {view.kind === "resume" && (
         <ResumeDocument
           key={view.resume.id}
@@ -189,6 +192,47 @@ export function NativeCard({
             <p role="status">正在通过当前会话生成建议，完成后会在这里更新。</p>
           )}
           <JobRevision key={view.jobId} view={view} busy={busy} run={run} />
+          {view.formRun && (
+            <section aria-label="官网填写进度">
+              <h4>
+                官网填写 ·{" "}
+                {
+                  {
+                    inspecting: "待读取表单",
+                    filling: "待回读检查",
+                    needs_input: "有待补充项目",
+                    needs_review: "需要人工核对",
+                    ready: "已核对，未提交",
+                    stale: "资料已变更，请重开任务",
+                  }[view.formRun.status]
+                }
+              </h4>
+              <p className="rg-note">
+                已核对{" "}
+                {
+                  view.formRun.checks.filter((c) => c.status === "matched")
+                    .length
+                }{" "}
+                项 · 待处理 {view.formRun.issues.length} 项
+              </p>
+              {view.formRun.issues.map((issue, index) => (
+                <p key={index}>
+                  {issue.label}：{issue.reason}
+                </p>
+              ))}
+              {view.formRun.checks
+                .filter((c) => c.status !== "matched")
+                .map((c) => (
+                  <p key={c.uid}>
+                    {c.label}：
+                    {c.status === "missing"
+                      ? "回读未取得值"
+                      : "回读与资料不一致"}
+                    （失败 {c.attempt} 次）
+                  </p>
+                ))}
+            </section>
+          )}
           <button
             disabled={busy}
             onClick={() =>
@@ -212,7 +256,7 @@ export function NativeCard({
             disabled={busy || !view.profile?.confirmedAt}
             onClick={() =>
               void question(
-                `请先调用 resume_grill_application_form_context，resumeId=${view.resumeId}，jobId=${view.jobId}。只使用当前会话中实际可用的浏览器工具，打开返回的官网地址并找到申请表；按页面能力选择先上传解析或逐项填写，再对照原文回读核对。没有工具、需要登录/验证码、必填资料缺失或社招/校招不匹配就明确停下。不要把项目经历当工作经历。不要用邮件工具，不要最终提交，不要代勾同意声明，不要把尚未执行的动作说成完成。`,
+                `请先调用 resume_grill_start_form_run 保存或恢复任务，再调用 resume_grill_application_form_context 读取已确认资料，resumeId=${view.resumeId}，jobId=${view.jobId}。只使用当前会话中实际可用的浏览器工具，打开返回的官网地址并找到申请表；按页面能力选择先上传解析或逐项填写，读取真实字段后调用 resume_grill_plan_form_fill，只执行 write=true 的动作；填写、上传后重新读取实际字段值与附件名，调用 resume_grill_verify_form_fill 保存检查结果。失败最多核查两次，页面值冲突不覆盖。没有工具、需要登录/验证码、必填资料缺失或社招/校招不匹配就明确停下。不要把项目经历当工作经历。不要用邮件工具，不要最终提交，不要代勾同意声明，不要把尚未执行的动作说成完成。`,
                 true,
               )
             }

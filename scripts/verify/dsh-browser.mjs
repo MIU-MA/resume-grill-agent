@@ -110,7 +110,7 @@ try {
   const workspace = new Workspace(store);
   const resume = await workspace.createResume(
     "演示简历.pdf",
-    "姓名：演示用户\n手机：13800000000\n邮箱：demo@example.com\n教育经历\n学校：示例大学\n学历：本科\n项目经历\n参与 Go API 开发与测试。",
+    "姓名：演示用户\n手机：13800000000\n邮箱：demo@example.com\n教育经历\n学校：示例大学\n学历：本科\n项目经历\nGo 工具 | 开发 2026.01 - 至今\n参与 Go API 开发与测试。",
   );
   const job = workspace.addJob({
     company: "表单验证",
@@ -123,11 +123,14 @@ try {
     fixture,
     `import fs from 'node:fs';export const name='form-test';export const inject=['llm','workspaceRegistry'];export async function apply(ctx){await ctx.workspaceRegistry.create(${JSON.stringify(home)},'官网填写验证');const counts=new Map();const state={};const adapter={providerInfo:p=>({id:p,name:'本地表单验证'}),providerRetryPolicy:()=>undefined,imageRequestPricing:()=>undefined,listModels:async p=>[{provider:p,id:'local',name:'本地表单验证'}],resolveModel:async(p,m)=>({provider:p,id:m,name:'本地表单验证',inputModalities:['text']}),async prepareCall(p,m){return {model:await this.resolveModel(p,m),stream:o=>this.stream(o)}},async *stream(options){const step=counts.get(options.sessionId)||0;counts.set(options.sessionId,step+1);fs.writeFileSync(${JSON.stringify(join(home, "last-request.json"))},JSON.stringify(options.messages,null,2));const texts=options.messages.filter(m=>m.role==='tool').flatMap(m=>m.content).filter(p=>p.type==='text').map(p=>p.text);const latest=texts.at(-1)||'';let name,args;
 if(step===0){name='resume_grill_application_form_context';args={resumeId:${JSON.stringify(resume.id)},jobId:${JSON.stringify(job.id)}}};
-if(step===1){state.context=JSON.parse(latest);name='mcp__recruiting_browser__new_page';args={url:state.context.url}};
-if(step===2){state.pageId=Number(latest.match(/(?:^|\\n)(\\d+):.*\\[selected\\]/)?.[1]);if(!state.pageId)throw new Error('new_page 未提供实际页面 ID: '+latest);name='mcp__recruiting_browser__take_snapshot';args={pageId:state.pageId}};
-if(step===3){state.snapshot=latest;const uid=label=>{const line=latest.split('\\n').find(l=>l.includes('"'+label+'"')&&/textbox|combobox/.test(l));if(!line)throw new Error('字段缺失 '+label+': '+latest);return line.match(/uid=(\\S+)/)[1]};const fact=field=>state.context.facts.find(f=>f.field===field).value;name='mcp__recruiting_browser__fill_form';args={pageId:state.pageId,includeSnapshot:true,elements:[{uid:uid('姓名'),value:fact('name')},{uid:uid('手机'),value:fact('phone')},{uid:uid('邮箱'),value:fact('email')},{uid:uid('学校'),value:'示例大学'},{uid:uid('学历'),value:'本科'},{uid:uid('项目经历'),value:'参与 Go API 开发与测试。'}]}};
-if(step===4){const line=state.snapshot.split('\\n').find(l=>l.includes('button')&&l.includes('简历附件'));if(!line)throw new Error('未找到上传入口 '+state.snapshot);name='mcp__recruiting_browser__upload_file';args={pageId:state.pageId,uid:line.match(/uid=(\\S+)/)[1],filePaths:[state.context.attachment.path],includeSnapshot:true}};
-if(step===5){name='mcp__recruiting_browser__take_snapshot';args={pageId:state.pageId}};
+if(step===1){state.context=JSON.parse(latest);name='resume_grill_start_form_run';args={resumeId:state.context.resumeId,jobId:state.context.jobId}};
+if(step===2){state.run=JSON.parse(latest);name='mcp__recruiting_browser__new_page';args={url:state.context.url}};
+if(step===3){state.pageId=Number(latest.match(/(?:^|\\n)(\\d+):.*\\[selected\\]/)?.[1]);if(!state.pageId)throw new Error('没有实际 pageId '+latest);name='mcp__recruiting_browser__take_snapshot';args={pageId:state.pageId}};
+if(step===4){state.snapshot=latest;const lines=latest.split('\\n');const field=(label,type='text',required=false)=>{const line=lines.find(l=>l.includes('"'+label+'"')&&/textbox|combobox|button|checkbox/.test(l));if(!line)throw new Error('字段缺失 '+label);return{uid:line.match(/uid=(\\S+)/)[1],label,type,required,value:line.match(/value="([^"]*)"/)?.[1]||'',...(type==='select'?{options:lines.filter(l=>l.includes('option "')).map(l=>l.match(/option "([^"]+)"/)[1])}:{})}};name='resume_grill_plan_form_fill';args={runId:state.run.id,url:state.context.url,fields:[field('姓名','text',true),field('手机','text',true),field('邮箱','text',true),field('学校'),field('学历','select'),field('项目经历','textarea'),field('简历附件','file'),field('我同意信息处理声明','checkbox',true)]}};
+if(step===5){state.plan=JSON.parse(latest);name='mcp__recruiting_browser__fill_form';args={pageId:state.pageId,elements:state.plan.actions.filter(a=>a.write).map(a=>({uid:a.uid,value:a.value})),includeSnapshot:true}};
+if(step===6){name='mcp__recruiting_browser__upload_file';args={pageId:state.pageId,uid:state.plan.uploads[0].uid,filePaths:[state.plan.uploads[0].path],includeSnapshot:true}};
+if(step===7){name='mcp__recruiting_browser__take_snapshot';args={pageId:state.pageId}};
+if(step===8){const lines=latest.split('\\n');name='resume_grill_verify_form_fill';args={runId:state.run.id,url:state.context.url,values:state.plan.actions.map(a=>{const line=lines.find(l=>l.includes('uid='+a.uid+' '))||'';return{uid:a.uid,value:line.match(/value="([^"]*)"/)?.[1]||''}}),uploadedName:latest.match(/附件已上传：([^"\\n]+)/)?.[1]}};
 if(name){const block={type:'tool-call',id:'form-'+step,name,arguments:JSON.stringify(args)};yield{type:'block-start',index:0,blockType:'tool-call'};yield{type:'tool-call-delta',index:0,id:block.id,name,argumentsDelta:block.arguments};yield{type:'block-end',index:0,block};yield{type:'finish',reason:{kind:'tool-calls'}}}else{const text='字段和附件已回读核对。毕业日期未提供，保持空白；未勾选声明，未提交申请。';yield{type:'block-start',index:0,blockType:'text'};yield{type:'text-delta',index:0,text};yield{type:'block-end',index:0,block:{type:'text',text}};yield{type:'finish',reason:{kind:'stop'}}}}};ctx.effect(()=>ctx.llm.registerAdapter(['form-test'],adapter));}`,
   );
   await run(process.execPath, ["--check", fixture]);
@@ -207,6 +210,10 @@ if(name){const block={type:'tool-call',id:'form-'+step,name,arguments:JSON.strin
     "实际上传内容必须是所选简历的 PDF 字节",
   );
   assert.equal(submissions, 0);
+  const task = store.list("form-run")[0];
+  assert.equal(task.status, "needs_input");
+  assert.equal(task.checks.filter((c) => c.status === "matched").length, 7);
+  assert.ok(task.issues.some((i) => i.label.includes("同意")));
   assert.equal(workspace.history().length, 0);
   const messages = JSON.parse(
     await readFile(join(home, "last-request.json"), "utf8"),

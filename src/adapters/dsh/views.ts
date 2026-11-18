@@ -5,6 +5,9 @@ import { mailSendingEnabled } from "../../infrastructure/smtp.js";
 import { careerSites } from "../../infrastructure/careers/sites.js";
 import type { CareerScan } from "../../core/careers.js";
 import { ResumeProfiles } from "../../core/resume-profiles.js";
+import type { FormRun } from "../../core/form-runs.js";
+import { Boss } from "../../core/boss.js";
+import type { BossScan, BossRun } from "../../domain/boss.js";
 export type Proposal = {
   id: string;
   resumeId: string;
@@ -12,6 +15,7 @@ export type Proposal = {
   plan: TailoringPlan;
 };
 export type NativeView =
+  | ReturnType<typeof bossView>
   | ReturnType<typeof profileView>
   | ReturnType<typeof resumeView>
   | ReturnType<typeof reviewView>
@@ -19,6 +23,9 @@ export type NativeView =
   | ReturnType<typeof goalView>
   | ReturnType<typeof batchView>
   | ReturnType<typeof workspaceView>;
+export function bossView(workspace: Workspace) {
+  return {v:1 as const,kind:"boss" as const,connected:new Boss(workspace).connected,resumes:workspace.listResumes().map(r=>({id:r.id,name:r.name})),scans:workspace.store.list<BossScan>("boss-scan").slice(0,5),runs:workspace.store.list<BossRun>("boss-run")};
+}
 export function profileView(
   workspace: Workspace,
   resumeId: string,
@@ -49,6 +56,9 @@ export function reviewView(
   const resume = workspace.resume(resumeId),
     job = workspace.store.get<Job>("job", jobId);
   const profile = new ResumeProfiles(workspace).current(resumeId);
+  const formRun = workspace.store
+    .list<FormRun>("form-run")
+    .find((r) => r.resumeId === resumeId && r.jobId === jobId);
   const proposal = proposalId
     ? workspace.store.get<Proposal>("proposal", proposalId)
     : workspace.store
@@ -65,7 +75,8 @@ export function reviewView(
     jobId,
     sourceText: resume.text,
     job,
-    ...(profile ? {profile} : {}),
+    ...(profile ? { profile } : {}),
+    ...(formRun ? { formRun } : {}),
     ...(goalId ? { goalId } : {}),
     ...(proposal ? { proposal } : {}),
   };
@@ -180,6 +191,7 @@ export function viewFor(
   args: any,
   value: any,
 ): NativeView | undefined {
+  if(operation.startsWith("boss_")) return bossView(workspace);
   if (operation === "review_context" || operation === "propose_resume_changes")
     return reviewView(
       workspace,

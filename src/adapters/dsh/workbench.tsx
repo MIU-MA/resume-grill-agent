@@ -90,6 +90,7 @@ function Workbench({
   const navigate = (next: string) => {
     setTab(next);
     setDetail(null);
+    if(next === "boss") { void openAction({action:"boss"}); return; }
     void run(reload);
   };
   const applications = data?.applications ?? [];
@@ -107,6 +108,7 @@ function Workbench({
           ["overview", "总览"],
           ["resumes", "简历"],
           ["jobs", "岗位"],
+          ["boss", "BOSS"],
           ["pending", "待确认"],
           ["history", "投递记录"],
         ].map(([key, label]) => (

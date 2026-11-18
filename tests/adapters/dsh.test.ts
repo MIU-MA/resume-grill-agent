@@ -357,7 +357,7 @@ test("DSH 原生工具与人类命令分离，输出核对 metadata；无发信�
     },
     f.workspace,
   );
-  assert.equal(tools.size, 18);
+  assert.equal(tools.size, 27);
   assert.equal(commands.size, 1);
   assert.ok(prompt.text.includes("核对卡"));
   assert.equal(
