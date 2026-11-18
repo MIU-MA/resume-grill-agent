@@ -5,6 +5,7 @@ import { BossShortlists } from "./boss-shortlists.js";
 import type { Goal } from "./tasks.js";
 import type { Workspace } from "./workspace.js";
 import type { BossBrowserChoice, BossScan } from "../domain/boss.js";
+import { extname } from "node:path";
 
 const detailBudget = 5;
 const batchSize = 3;
@@ -22,6 +23,7 @@ export class BossAutoPrepare {
     const resume = this.workspace.resume(resumeId);
     if (resume.jobId)
       return { note: "请选一份主简历。岗位专用版本只用于它对应的岗位。" };
+    const hasPdf = extname(resume.pdf ?? resume.original).toLowerCase() === ".pdf";
 
     const boss = new Boss(this.workspace);
     const previous = readCurrent
@@ -35,6 +37,10 @@ export class BossAutoPrepare {
     const scan = found.scan;
     if (scan.blocked || !scan.jobs.length)
       return scan.blocked ? {} : { note: "当前页没有可准备的岗位。" };
+    if (!hasPdf)
+      return {
+        note: "已找到岗位。这份简历不是 PDF，无法生成投递图片；请上传 PDF，或打开岗位后保存岗位版 PDF。",
+      };
 
     const saved = this.workspace.store.list<Goal>("goal")
       .find((goal) => goal.resumeId === resumeId);

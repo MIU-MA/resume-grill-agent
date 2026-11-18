@@ -565,6 +565,22 @@ test("一次搜索自动核对匹配 JD 并冻结投递，移出岗位后旧批�
   }), /过期/);
   assert.equal(f.state.confirmations, undefined);
 });
+test("上传文本简历仍能找岗位，但明确说明没有可用于 BOSS 的 PDF", async (t) => {
+  const f = await fixture(t);
+  f.boss.connect(f.link);
+  const path = join(f.home, "主简历.txt");
+  await writeFile(path, "求职意向：Go开发");
+  const resume = await f.workspace.importResume(path);
+  const view = await humanAction(f.workspace, {
+    action: "boss-auto-prepare",
+    resumeId: resume.id,
+  });
+  assert.equal(view.kind, "boss");
+  assert.equal(view.scans[0]?.jobs.length, 1);
+  assert.match(view.note ?? "", /不是 PDF/);
+  assert.equal(view.groupFocus, undefined);
+  assert.deepEqual(f.requests, ["/search"]);
+});
 test("搜索等待中的旧关键词不能替换本轮关键词或准备附件", async (t) => {
   const f = await fixture(t);
   f.boss.connect(f.link);
