@@ -1,6 +1,5 @@
 import { useState } from "react";
 import type { NativeView } from "./views.js";
-import { groupedBossDeliveryIds } from "./boss-task-view.js";
 import { BossResumePreview } from "./BossResumePreview.js";
 import type { ReadResumeImage } from "./controls.js";
 type View = Extract<NativeView, { kind: "boss" }>;
@@ -15,48 +14,13 @@ export function BossTaskPanel({
   run: (v: any) => Promise<unknown>;
   readResumeImage?: ReadResumeImage;
 }) {
-  const [selected, setSelected] = useState<string[]>([]),
-    [ack, setAck] = useState<Record<string, boolean>>({});
-  const grouped = groupedBossDeliveryIds(view);
-  const eligible = view.deliveries.filter((d) =>
-      d.status === "prepared" && !grouped.has(d.id)),
-    ids = selected.filter((id) => eligible.some((d) => d.id === id));
-  const groups = view.groupFocus
-    ? view.groups.filter((g) => g.id === view.groupFocus)
-    : view.groups.filter((g) => g.expiresAt !== 0);
+  const [ack, setAck] = useState<Record<string, boolean>>({});
+  const groups = view.groups.filter((group) => group.id === view.groupFocus);
   return (
     <section aria-label="BOSS 整批任务">
-      {!view.groupFocus && eligible.length >= 2 && (
-        <>
-        <h4>选择要一起投递的岗位</h4>
-        {eligible.map((d) => (
-        <label key={d.id}>
-          <input
-            type="checkbox"
-            disabled={busy}
-            checked={ids.includes(d.id)}
-            onChange={(e) =>
-              setSelected(
-                e.target.checked
-                  ? [...ids, d.id]
-                  : ids.filter((i) => i !== d.id),
-              )
-            }
-          />
-          {d.company} · {d.role} · {d.resumeName}
-        </label>
-      ))}
-      <button
-        disabled={busy || ids.length < 2 || ids.length > 10}
-        onClick={() => void run({ action: "boss-group-prepare", ids })}
-      >
-        核对所选岗位{ids.length ? `（${ids.length}）` : ""}
-      </button>
-        </>
-      )}
       {groups.map((g) => (
-        <details key={g.id} open={g.id === view.groupFocus || g.status === "running"}>
-          <summary>
+        <div key={g.id}>
+          <h4>
             {g.items.length} 个岗位 ·{" "}
             {
               {
@@ -66,14 +30,14 @@ export function BossTaskPanel({
                 finished: "已完成",
               }[g.status]
             }
-          </summary>
+          </h4>
           {g.status !== "prepared" && (
             <p>已完成 {g.items.filter((i) => i.state === "finished").length}/{g.items.length}</p>
           )}
           {g.items.map((i) => {
             const d = view.deliveries.find((d) => d.id === i.deliveryId);
             return (
-              <section key={i.deliveryId}>
+              <article key={i.deliveryId}>
                 <strong>
                   {d?.company} · {d?.role}
                 </strong>
@@ -101,7 +65,7 @@ export function BossTaskPanel({
                   }
                 </p>
                 {d && <BossResumePreview images={d.images} readImage={readResumeImage} />}
-              </section>
+              </article>
             );
           })}
           <p>确认后按顺序发出 BOSS 账号默认招呼和简历图片。</p>
@@ -120,6 +84,7 @@ export function BossTaskPanel({
                 已逐项核对全部公司、岗位、简历图片和默认招呼方式
               </label>
               <button
+                className="rg-primary"
                 disabled={
                   busy ||
                   !view.connected ||
@@ -182,7 +147,7 @@ export function BossTaskPanel({
                 )}
             </>
           )}
-        </details>
+        </div>
       ))}
     </section>
   );

@@ -462,46 +462,11 @@ try {
   await full.getByRole("button", { name: "BOSS", exact: true }).click();
   const boss = full.getByRole("region", { name: "BOSS 投递", exact: true });
   await boss.getByRole("button", { name: "找岗位并准备投递", exact: true }).waitFor();
-  const more = boss.getByText("更多选项", { exact: true });
-  await more.waitFor();
-  assert.equal(await boss.getByLabel("浏览器", { exact: true }).isVisible(), false);
+  assert.equal(await boss.locator("details").count(), 0);
   await page.screenshot({
     path: join(output, "dsh-boss-workbench.png"),
     clip: { x: 0, y: 0, width: 1440, height: 650 },
   });
-  if (process.env.RESUME_VERIFY_BOSS === "1") {
-    await more.click();
-    const backend = boss.getByLabel("浏览器", { exact: true });
-    await backend.waitFor();
-    assert.deepEqual(await backend.locator("option").allTextContents(), [
-      "自动",
-      "ego",
-      "Microsoft Edge",
-      "Google Chrome",
-    ]);
-    await backend.selectOption("edge");
-    await boss.getByRole("button", { name: "连接浏览器", exact: true }).click();
-    await boss
-      .getByText("已连接 Microsoft Edge", { exact: false })
-      .waitFor({ timeout: 60000 });
-    await page.screenshot({
-      path: join(output, "dsh-boss.png"),
-      clip: { x: 0, y: 0, width: 1440, height: 610 },
-    });
-    await boss
-      .getByRole("button", { name: "读取当前列表", exact: true })
-      .click();
-    await boss
-      .getByText(/请在浏览器.*读取当前列表|正在加载岗位|当前没有符合条件|没有识别到岗位列表|个岗位/)
-      .first()
-      .waitFor({ timeout: 30000 });
-    await boss.getByRole("button", { name: "断开浏览器", exact: true }).click();
-    await boss
-      .getByRole("button", { name: "连接浏览器", exact: true })
-      .waitFor();
-    assert.equal(store.list("boss-run").length, 0);
-    assert.equal(store.list("boss-delivery").length, 0);
-  }
   if (process.env.RESUME_VERIFY_BOSS_PREVIEW === "1") {
     const pdf = await workspace.createResume("BOSS 预览演示", "演示用户\n项目经历\n负责 Go API 开发。");
     const { resumeImages } = await import("../../dist/infrastructure/resume-images.js");
@@ -511,6 +476,19 @@ try {
     await mkdir(folder, { recursive: true });
     const imagePath = join(folder, "1.png");
     await writeFile(imagePath, image.bytes);
+    store.put("boss-scan", {
+      id: "10000000-0000-4000-8000-000000000012",
+      resumeId: pdf.id,
+      readId: "10000000-0000-4000-8000-000000000013",
+      createdAt: Date.now(),
+      query: "Go 开发",
+      state: "ready",
+      jobs: [
+        { title: "Go 开发", company: "演示软件", salary: "18-25K", url: "https://www.zhipin.com/job_detail/demo.html" },
+        { title: "后端开发实习", company: "演示科技", salary: "200-300 元/天", url: "https://www.zhipin.com/job_detail/demo2.html" },
+        { title: "后端工程师", company: "演示数据", salary: "20-30K", url: "https://www.zhipin.com/job_detail/demo3.html" },
+      ],
+    });
     const deliveryId = "10000000-0000-4000-8000-000000000011";
     store.put("boss-delivery", {
       id: deliveryId, jobId: job.id, resumeId: pdf.id, resumeName: pdf.name,
@@ -522,22 +500,29 @@ try {
       status: "prepared", remoteId: deliveryId,
     });
     await full.getByRole("button", { name: "返回清单", exact: true }).click();
-    await boss.getByText("投递任务", { exact: true }).click();
-    await boss.getByText("BOSS 预览演示 · Go 开发 · 待确认", { exact: true }).click();
-    await boss.getByRole("button", { name: "查看简历", exact: true }).click();
-    const imageView = boss.getByRole("img", { name: "投递简历第 1 页" });
+    const results = boss.getByRole("region", { name: "搜索结果", exact: true });
+    await results.getByRole("listitem").first().waitFor();
+    assert.equal(await results.getByRole("listitem").count(), 3);
+    await page.screenshot({
+      path: join(output, "dsh-boss-job-list.png"),
+      clip: { x: 0, y: 0, width: 1440, height: 720 },
+    });
+    await boss.getByRole("button", { name: "查看投递", exact: true }).click();
+    const review = full.getByRole("region", { name: "BOSS 投递核对", exact: true });
+    await review.getByRole("button", { name: "查看简历", exact: true }).click();
+    const imageView = review.getByRole("img", { name: "投递简历第 1 页" });
     await imageView.waitFor();
     await imageView.evaluate((img) => img.decode());
     await page.screenshot({
       path: join(output, "dsh-boss-resume-preview.png"),
       fullPage: true,
     });
-    await boss.getByRole("button", { name: "收起简历", exact: true }).click();
+    await review.getByRole("button", { name: "收起简历", exact: true }).click();
     assert.equal(await imageView.count(), 0);
     assert.equal(store.list("boss-run").length, 0);
     await rm(imagePath, { force: true });
-    await boss.getByRole("button", { name: "查看简历", exact: true }).click();
-    await boss.getByRole("alert").filter({ hasText: "第 1 页无法预览" }).waitFor();
+    await review.getByRole("button", { name: "查看简历", exact: true }).click();
+    await review.getByRole("alert").filter({ hasText: "第 1 页无法预览" }).waitFor();
   }
   await full.getByRole("button", { name: "投递记录", exact: true }).click();
   await full.getByRole("heading", { name: "投递记录", exact: true }).waitFor();
@@ -556,7 +541,8 @@ try {
     .getByLabel("用于核对的简历", { exact: true })
     .selectOption(resume.id);
   await full
-    .locator("article")
+    .getByRole("region", { name: "已保存的岗位", exact: true })
+    .getByRole("listitem")
     .filter({ has: page.getByText("Go 开发", { exact: true }) })
     .getByRole("button", { name: "核对简历", exact: true })
     .click();
@@ -628,19 +614,22 @@ try {
       .getByRole("button", { name: "实时拉取岗位", exact: true })
       .click();
     await full
-      .getByRole("button", { name: "读取 JD 并修改简历", exact: true })
+      .getByRole("region", { name: "招聘官网实时岗位", exact: true })
+      .getByRole("button", { name: "核对简历", exact: true })
       .first()
       .waitFor({ timeout: 90000 });
     console.log(
       JSON.stringify({
         liveSource: "Tencent official",
         rows: await full
-          .getByRole("button", { name: "读取 JD 并修改简历", exact: true })
+          .getByRole("region", { name: "招聘官网实时岗位", exact: true })
+          .getByRole("button", { name: "核对简历", exact: true })
           .count(),
       }),
     );
     await full
-      .getByRole("button", { name: "读取 JD 并修改简历", exact: true })
+      .getByRole("region", { name: "招聘官网实时岗位", exact: true })
+      .getByRole("button", { name: "核对简历", exact: true })
       .first()
       .click();
     await full

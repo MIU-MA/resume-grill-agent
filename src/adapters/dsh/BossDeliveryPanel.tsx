@@ -4,6 +4,7 @@ import { groupedBossDeliveryIds } from "./boss-task-view.js";
 import { BossTaskPanel } from "./BossTaskPanel.js";
 import { BossResumePreview } from "./BossResumePreview.js";
 import type { ReadResumeImage } from "./controls.js";
+import { JobList, JobListRow } from "./JobList.js";
 
 type View = Extract<NativeView, { kind: "boss" }>;
 const deliveryStatus = {
@@ -27,7 +28,6 @@ export function BossDeliveryPanel({
   readResumeImage?: ReadResumeImage;
 }) {
   const [ack, setAck] = useState<Record<string, boolean>>({});
-  const [confirmation, setConfirmation] = useState<Record<string, string>>({});
   const { deliveryFocus: focusedDelivery, groupFocus: focusedGroup } = view;
   const grouped = groupedBossDeliveryIds(view);
   const deliveries = focusedGroup
@@ -35,18 +35,32 @@ export function BossDeliveryPanel({
     : focusedDelivery
       ? view.deliveries.filter((d) => d.id === focusedDelivery)
       : view.deliveries.filter((d) => !grouped.has(d.id));
-  const preparedCount = deliveries.filter((d) => d.status === "prepared").length;
+  const groups = view.groups.filter((g) => g.expiresAt !== 0 || g.id === focusedGroup);
   return (
     <>
-      {!focusedDelivery && (preparedCount >= 2 || view.groups.length > 0) && (
-        <details open={!!focusedGroup}>
-          <summary>批量投递</summary>
-          <BossTaskPanel view={view} busy={busy} run={run} readResumeImage={readResumeImage} />
-        </details>
+      {focusedGroup && (
+        <BossTaskPanel view={view} busy={busy} run={run} readResumeImage={readResumeImage} />
       )}
-      {deliveries.map((d) => (
-        <details key={d.id} open={d.id === focusedDelivery} aria-label="BOSS 投递核对">
-          <summary>{d.company} · {d.role} · {deliveryStatus[d.status]}</summary>
+      {!focusedDelivery && !focusedGroup && (groups.length > 0 || deliveries.length > 0) && (
+        <JobList>
+          {groups.map((g) => (
+            <JobListRow key={g.id}
+              title={`${g.items.length} 个岗位 · ${groupStatus[g.status]}`}
+              meta={g.items.map((i) => view.deliveries.find((d) => d.id === i.deliveryId)?.company)
+                .filter(Boolean).join("、")}
+              action={<button disabled={busy} onClick={() => void run({ action: "boss", groupFocus: g.id })}>查看批次</button>}
+            />
+          ))}
+          {deliveries.map((d) => (
+            <JobListRow key={d.id} title={d.role} meta={`${d.company} · ${deliveryStatus[d.status]}`}
+              action={<button disabled={busy} onClick={() => void run({ action: "boss", deliveryFocus: d.id })}>查看投递</button>}
+            />
+          ))}
+        </JobList>
+      )}
+      {focusedDelivery && deliveries.map((d) => (
+        <section key={d.id} aria-label="单个岗位投递">
+          <h4>{d.company} · {d.role} · {deliveryStatus[d.status]}</h4>
           <p>
             简历：{d.resumeName} · {d.images.length} 张图片
           </p>
@@ -72,25 +86,12 @@ export function BossDeliveryPanel({
                 />
                 已核对公司、岗位、默认招呼方式和全部图片
               </label>
-              <label>
-                输入“投递”后执行
-                <input
-                  value={confirmation[d.digest] ?? ""}
-                  disabled={busy}
-                  onChange={(e) =>
-                    setConfirmation({
-                      ...confirmation,
-                      [d.digest]: e.target.value,
-                    })
-                  }
-                />
-              </label>
               <button
+                className="rg-primary"
                 disabled={
                   busy ||
                   !view.connected ||
                   !ack[d.digest] ||
-                  confirmation[d.digest] !== "投递" ||
                   (d.expiresAt ?? 0) <= Date.now()
                 }
                 onClick={() =>
@@ -128,7 +129,7 @@ export function BossDeliveryPanel({
               )}
             </>
           )}
-        </details>
+        </section>
       ))}
       {(!focusedDelivery && !focusedGroup ? view.runs : [])
         .filter((r) => !view.deliveries.some((d) => d.remoteId === r.id))
@@ -160,3 +161,10 @@ export function BossDeliveryPanel({
     </>
   );
 }
+
+const groupStatus = {
+  prepared: "待确认",
+  running: "执行中",
+  paused: "已暂停",
+  finished: "已完成",
+};

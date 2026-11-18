@@ -45,7 +45,7 @@ npm run package:plugin
 
 `npm test` 先构建再运行全部递归测试。构建会检查并清理项目内的 `dist/`，避免迁移目录后的旧入口混入插件包。打包检查入口、前端、字体及数据排除规则，只将预构建运行文件写入 `artifacts/*.tgz`，不发布、不上传。
 
-浏览器检查：`npm run verify:panel`；原生检查：设置 `DSH_COMMAND` 后 `npm run verify:dsh`。原生脚本可用 `RESUME_PLUGIN_SPEC` 指向预构建包。设置 `RESUME_VERIFY_BOSS=1` 可额外检查 Edge 连接和读取状态，并保存 BOSS 页面截图。验证关闭真实发信，使用固定本地模型响应；Windows／Edge 专用脚本不作为所有系统的默认测试。
+浏览器检查：`npm run verify:panel`；原生检查：设置 `DSH_COMMAND` 后 `npm run verify:dsh`。原生脚本可用 `RESUME_PLUGIN_SPEC` 指向预构建包。设置 `RESUME_VERIFY_BOSS_PREVIEW=1` 可用本地演示任务检查 BOSS 列表和附件预览，无需访问 BOSS。验证关闭真实发信，使用固定本地模型响应；Windows／Edge 专用脚本不作为所有系统的默认测试。
 
 修改服务后运行类型检查、测试和构建；涉及入口或资源路径时还要验证安装包。SMTP 测试使用替代函数，不能复用历史单次授权发送新邮件。
 

@@ -6,6 +6,7 @@ import { CapabilitySettings } from "./CapabilitySettings.js";
 import { ResumeLibrary } from "./ResumeLibrary.js";
 import { WorkspaceOverview } from "./WorkspaceOverview.js";
 import { CareerBrowser } from "./CareerBrowser.js";
+import { JobList, JobListRow } from "./JobList.js";
 import { viewReference } from "./card-model.js";
 import { onWorkspaceChanged, notifyWorkspaceChanged } from "./updates.js";
 import { applicationStatusLabel } from "../../shared/presentation/application-status.js";
@@ -254,33 +255,12 @@ function Workbench({
                   })
                 }
               />
-              {data.goals.map((goal) => (
-                <article key={goal.id}>
-                  <strong>
-                    {goal.directions.join(" / ")} ·{" "}
-                    {goal.cities.join(" / ") || "不限城市"}
-                  </strong>
-                  <button
-                    disabled={busy}
-                    onClick={() =>
-                      void run(async () =>
-                        setDetail(
-                          await act({ action: "goal", goalId: goal.id }),
-                        ),
-                      )
-                    }
-                  >
-                    查看目标岗位
-                  </button>
-                </article>
-              ))}
-              <details open={data.scans.length === 0}>
-                <summary>已保存的岗位 · {data.jobs.length}</summary>
-                {data.jobs.map((job) => (
-                  <article key={job.id}>
-                    <strong>{job.role}</strong>
-                    <p>{job.company || "公司待核对"}</p>
-                    <button
+              <section className="rg-boss-results" aria-label="已保存的岗位">
+                <h4>已保存的岗位 <small>{data.jobs.length} 个</small></h4>
+                {data.jobs.length ? <JobList>{data.jobs.map((job) => (
+                  <JobListRow key={job.id} title={job.role}
+                    meta={job.company || "公司待核对"}
+                    action={<button
                       disabled={busy || !resumeId}
                       onClick={() =>
                         void run(async () =>
@@ -295,13 +275,12 @@ function Workbench({
                       }
                     >
                       核对简历
-                    </button>
-                  </article>
-                ))}
-                {!data.jobs.length && (
-                  <p>上方拉取官网或读取岗位链接后，会保存在这里。</p>
+                    </button>}
+                  />
+                ))}</JobList> : (
+                  <p className="rg-note">还没有保存的岗位。</p>
                 )}
-              </details>
+              </section>
             </>
           )}
           {data && ["pending", "history"].includes(tab) && (

@@ -65,6 +65,8 @@ export const bossActionSchema = z.discriminatedUnion("action", [
     .object({
       action: z.literal("boss-connect"),
       backend: bossBrowserChoice.optional(),
+      deliveryFocus: z.uuid().optional(),
+      groupFocus: z.uuid().optional(),
     })
     .strict(),
   z
@@ -201,8 +203,13 @@ export async function bossAction(
   }
   if (input.action === "boss") {
     const { deliveryFocus, groupFocus } = input;
+    const delivery = deliveries.list().find((d) => d.id === deliveryFocus);
+    const pendingGroup = delivery?.status === "prepared" && groups.list().find(
+      (group) => group.expiresAt !== 0 && group.status === "prepared" &&
+        group.items.some((item) => item.deliveryId === delivery.id),
+    );
     return bossView(workspace, {
-      ...(deliveryFocus && deliveries.list().some((d) => d.id === deliveryFocus) ? { deliveryFocus } : {}),
+      ...(pendingGroup ? { groupFocus: pendingGroup.id } : delivery ? { deliveryFocus } : {}),
       ...(groupFocus && groups.list().some((g) => g.id === groupFocus) ? { groupFocus } : {}),
     });
   }
@@ -226,7 +233,11 @@ export async function bossAction(
   }
   if (input.action === "boss-connect") {
     await boss.browserConnect(input.backend);
-    return bossView(workspace);
+    return bossView(workspace, {
+      ...(input.groupFocus
+        ? { groupFocus: input.groupFocus }
+        : input.deliveryFocus ? { deliveryFocus: input.deliveryFocus } : {}),
+    });
   }
   if (input.action === "boss-search") {
     await boss.search(input.query);

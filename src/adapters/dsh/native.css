@@ -189,16 +189,6 @@
   flex: 1;
   min-width: 180px;
 }
-.rg-job-links article {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.rg-job-links strong {
-  flex: 1;
-  min-width: 180px;
-}
 @media (max-width: 700px) {
   .rg-revision-grid {
     grid-template-columns: 1fr;
@@ -398,9 +388,29 @@
   margin-inline: auto;
   border: 1px solid var(--dsw-alias-border-l2);
 }
-.rg-boss-results { margin-top: 16px; }
+.rg-boss-results,
+.rg-boss-tasks { margin-top: 22px; }
+.rg-marked-heading { display: flex; align-items: center; gap: 7px; }
+.rg-whale-mark { color: #668dbf; }
+.rg-job-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+}
+.rg-job-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+}
+.rg-job-row + .rg-job-row { border-top: 1px solid var(--dsw-alias-border-l2); }
+.rg-job-row-action button { margin: 0; }
+.rg-job-row-main .rg-note { margin-top: 2px; }
+.rg-job-row:hover { background: var(--rg-surface); }
 .rg-career-panel { background: var(--rg-surface); }
-.rg-career-panel .rg-job-links { background: var(--dsw-alias-bg-base); }
 .rg-history-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

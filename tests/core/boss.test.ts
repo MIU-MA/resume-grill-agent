@@ -776,8 +776,11 @@ test("BOSS 核对界面展示实际岗位与附件，恢复不创建确认", asy
       run: async () => {},
     }),
   );
-  assert.match(list, /确认投递 2 个岗位/);
+  assert.match(list, /查看批次/);
+  assert.doesNotMatch(list, /确认投递 2 个岗位|<details|更多选项/);
   assert.doesNotMatch(list, /确认并投递此岗位|选择要一起投递的岗位/);
+  const fromHistory = await humanAction(f.workspace, { action: "boss", deliveryFocus: f.a.id });
+  assert.equal(fromHistory.kind === "boss" && fromHistory.groupFocus, group.id);
   assert.equal(f.state.confirmations, undefined);
   assert.equal(
     JSON.stringify(bossView(f.workspace)).includes("a".repeat(48)),

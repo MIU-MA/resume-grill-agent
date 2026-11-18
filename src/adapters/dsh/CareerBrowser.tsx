@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { NativeView } from "./views.js";
+import { JobList, JobListRow } from "./JobList.js";
 type Snapshot = Extract<NativeView, { kind: "workspace" }>;
 export function CareerBrowser({
   data,
@@ -92,20 +93,17 @@ export function CareerBrowser({
               {note}
             </p>
           ))}
-          <div className="rg-job-links">
+          <JobList>
             {jobs
               .map((link) => (
-                <article key={link.url}>
-                  <strong>{link.label}</strong>
-                  <a href={link.url} target="_blank" rel="noreferrer">
-                    官网 ↗
-                  </a>
-                  <button disabled={busy} onClick={() => onRead(link.url)}>
-                    {resumeId ? "读取 JD 并修改简历" : "读取完整 JD"}
-                  </button>
-                </article>
+                <JobListRow key={link.url} title={link.label}
+                  meta={<a href={link.url} target="_blank" rel="noreferrer">官网 ↗</a>}
+                  action={<button disabled={busy} onClick={() => onRead(link.url)}>
+                    {resumeId ? "核对简历" : "查看岗位"}
+                  </button>}
+                />
               ))}
-          </div>
+          </JobList>
           {!scan.error &&
             !jobs.length && (
               <p>这次没有读取到具体岗位，原因见上方；可以换来源或粘贴 JD。</p>
