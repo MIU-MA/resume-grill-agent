@@ -295,6 +295,21 @@
     grid-template-columns: 1fr;
   }
 }
+.rg-boss-preview-pages {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  margin-block: 6px 12px;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+}
+.rg-boss-preview-pages img {
+  display: block;
+  width: min(100%, 760px);
+  height: auto;
+  margin-inline: auto;
+  border: 1px solid var(--dsw-alias-border-l2);
+}
 .rg-search {
   padding-bottom: 16px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);

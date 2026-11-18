@@ -17,6 +17,7 @@ function Workbench({
   act,
   ask,
   openFile,
+  readResumeImage,
   Review,
   uploadResume,
   sessionId,
@@ -174,6 +175,7 @@ function Workbench({
             }}
             ask={ask}
             openFile={openFile}
+            readResumeImage={readResumeImage}
             sessionId={sessionId}
           />
         </>

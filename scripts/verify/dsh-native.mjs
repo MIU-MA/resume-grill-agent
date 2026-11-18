@@ -1,5 +1,6 @@
 import { chromium } from "playwright-core";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, writeFile, mkdir, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname, basename } from "node:path";
@@ -496,6 +497,43 @@ try {
       .waitFor();
     assert.equal(store.list("boss-run").length, 0);
     assert.equal(store.list("boss-delivery").length, 0);
+  }
+  if (process.env.RESUME_VERIFY_BOSS_PREVIEW === "1") {
+    const pdf = await workspace.createResume("BOSS 预览演示", "演示用户\n项目经历\n负责 Go API 开发。");
+    const { resumeImages } = await import("../../dist/infrastructure/resume-images.js");
+    const rendered = await resumeImages(pdf.pdf);
+    const image = rendered.images[0];
+    const folder = join(env.RESUME_AGENT_HOME, "boss-images", "preview-fixture");
+    await mkdir(folder, { recursive: true });
+    const imagePath = join(folder, "1.png");
+    await writeFile(imagePath, image.bytes);
+    const deliveryId = "10000000-0000-4000-8000-000000000011";
+    store.put("boss-delivery", {
+      id: deliveryId, jobId: job.id, resumeId: pdf.id, resumeName: pdf.name,
+      company: "BOSS 预览演示", role: "Go 开发", url: "https://www.zhipin.com/job_detail/demo.html",
+      jdHash: createHash("sha256").update(job.jd).digest("hex"),
+      pdfPath: pdf.pdf, pdfHash: rendered.pdfHash,
+      images: [{ path: imagePath, name: "简历-1.png", sha256: image.sha256, size: image.bytes.length }],
+      digest: "preview-fixture", createdAt: Date.now(), updatedAt: Date.now(),
+      status: "prepared", remoteId: deliveryId,
+    });
+    await full.getByRole("button", { name: "返回清单", exact: true }).click();
+    await boss.getByText("投递任务", { exact: true }).click();
+    await boss.getByText("BOSS 预览演示 · Go 开发 · 待确认", { exact: true }).click();
+    await boss.getByRole("button", { name: "查看简历", exact: true }).click();
+    const imageView = boss.getByRole("img", { name: "投递简历第 1 页" });
+    await imageView.waitFor();
+    await imageView.evaluate((img) => img.decode());
+    await page.screenshot({
+      path: join(output, "dsh-boss-resume-preview.png"),
+      fullPage: true,
+    });
+    await boss.getByRole("button", { name: "收起简历", exact: true }).click();
+    assert.equal(await imageView.count(), 0);
+    assert.equal(store.list("boss-run").length, 0);
+    await rm(imagePath, { force: true });
+    await boss.getByRole("button", { name: "查看简历", exact: true }).click();
+    await boss.getByRole("alert").filter({ hasText: "第 1 页无法预览" }).waitFor();
   }
   await full.getByRole("button", { name: "岗位", exact: true }).click();
   await full

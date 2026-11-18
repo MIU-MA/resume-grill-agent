@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { NativeView } from "./views.js";
 import { ApplicationReview } from "./ApplicationReview.js";
-import { nativeControls } from "./controls.js";
+import { nativeControls, type ReadResumeImage } from "./controls.js";
 import { notifyWorkspaceChanged, onWorkspaceChanged } from "./updates.js";
 import { ResumeDocument } from "./ResumeDocument.js";
 import { BossWorkbench } from "./BossWorkbench.js";
@@ -21,6 +21,7 @@ export const inject = [
   "slots",
   "remote",
   "remote.commands",
+  "remote.workspaceFiles",
   "remote.credentials",
   "sessions",
   "sidebarRight",
@@ -36,6 +37,7 @@ type Props = {
   act: Action;
   ask: (text: string, browser?: boolean) => Promise<unknown>;
   openFile: (path: string) => void;
+  readResumeImage?: ReadResumeImage;
 };
 function reviewRequest(view: Extract<NativeView, { kind: "review" }>) {
   return `请调用 resume_grill_review_context 读取简历 ${view.resumeId} 与岗位 ${view.jobId}${view.goalId ? `，保留 goalId ${view.goalId}` : ""}，基于当前 JD 和简历原文生成逐条修改，并调用 resume_grill_propose_resume_changes 保存新建议。不得编造经历、替我接受修改、准备或发送邮件。`;
@@ -45,12 +47,14 @@ export function NativeCard({
   act,
   ask,
   openFile,
+  readResumeImage,
   sessionId,
 }: {
   initial: NativeView;
   act: Action;
   ask: Props["ask"];
   openFile: Props["openFile"];
+  readResumeImage?: ReadResumeImage;
   sessionId?: string;
 }) {
   const lock = useRef(true);
@@ -211,7 +215,7 @@ export function NativeCard({
     <section className="rg-native" aria-label="Resume Grill 求职卡片">
       <style>{__NATIVE_CSS__}</style>
       {view.kind === "boss" && (
-        <BossWorkbench view={view} busy={busy} run={run} openFile={openFile} />
+        <BossWorkbench view={view} busy={busy} run={run} readResumeImage={readResumeImage} />
       )}
       {view.kind === "resume" && (
         <ResumeDocument
@@ -628,6 +632,7 @@ export function Card(props: Props) {
       act={(input) => props.act({ ...(input as object), cardId: props.callId })}
       ask={props.ask}
       openFile={props.openFile}
+      readResumeImage={props.readResumeImage}
       sessionId={(props as any).sessionId}
     />
   );

@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { NativeView } from "./views.js";
 import { groupedBossDeliveryIds } from "./boss-task-view.js";
 import { BossTaskPanel } from "./BossTaskPanel.js";
+import { BossResumePreview } from "./BossResumePreview.js";
+import type { ReadResumeImage } from "./controls.js";
 
 type View = Extract<NativeView, { kind: "boss" }>;
 const deliveryStatus = {
@@ -17,12 +19,12 @@ export function BossDeliveryPanel({
   view,
   busy,
   run,
-  openFile,
+  readResumeImage,
 }: {
   view: View;
   busy: boolean;
   run: (input: any) => Promise<unknown>;
-  openFile: (path: string) => void;
+  readResumeImage?: ReadResumeImage;
 }) {
   const [ack, setAck] = useState<Record<string, boolean>>({});
   const [confirmation, setConfirmation] = useState<Record<string, string>>({});
@@ -39,7 +41,7 @@ export function BossDeliveryPanel({
       {!focusedDelivery && (preparedCount >= 2 || view.groups.length > 0) && (
         <details open={!!focusedGroup}>
           <summary>批量投递</summary>
-          <BossTaskPanel view={view} busy={busy} run={run} openFile={openFile} />
+          <BossTaskPanel view={view} busy={busy} run={run} readResumeImage={readResumeImage} />
         </details>
       )}
       {deliveries.map((d) => (
@@ -49,12 +51,7 @@ export function BossDeliveryPanel({
             简历：{d.resumeName} · {d.images.length} 张图片
           </p>
           <p>首次沟通使用 BOSS 账号默认招呼，不追加自定义文字。</p>
-          <button onClick={() => openFile(d.pdfPath)}>查看实际 PDF</button>
-          {d.images.map((i, n) => (
-            <button key={i.sha256} onClick={() => openFile(i.path)}>
-              查看第 {n + 1} 张实际图片
-            </button>
-          ))}
+          <BossResumePreview images={d.images} readImage={readResumeImage} />
           {d.error && <p role="alert">{d.error}</p>}
           {d.status === "prepared" ? (
             <>

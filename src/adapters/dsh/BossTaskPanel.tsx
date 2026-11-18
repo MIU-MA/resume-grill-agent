@@ -1,17 +1,19 @@
 import { useState } from "react";
 import type { NativeView } from "./views.js";
 import { groupedBossDeliveryIds } from "./boss-task-view.js";
+import { BossResumePreview } from "./BossResumePreview.js";
+import type { ReadResumeImage } from "./controls.js";
 type View = Extract<NativeView, { kind: "boss" }>;
 export function BossTaskPanel({
   view,
   busy,
   run,
-  openFile,
+  readResumeImage,
 }: {
   view: View;
   busy: boolean;
   run: (v: any) => Promise<unknown>;
-  openFile: (p: string) => void;
+  readResumeImage?: ReadResumeImage;
 }) {
   const [selected, setSelected] = useState<string[]>([]),
     [ack, setAck] = useState<Record<string, boolean>>({});
@@ -98,21 +100,7 @@ export function BossTaskPanel({
                     }[i.state]
                   }
                 </p>
-                {d && (
-                  <>
-                    <button onClick={() => openFile(d.pdfPath)}>
-                      查看该岗位 PDF
-                    </button>
-                    {d.images.map((image, n) => (
-                      <button
-                        key={image.sha256}
-                        onClick={() => openFile(image.path)}
-                      >
-                        查看第 {n + 1} 张实际图片
-                      </button>
-                    ))}
-                  </>
-                )}
+                {d && <BossResumePreview images={d.images} readImage={readResumeImage} />}
               </section>
             );
           })}

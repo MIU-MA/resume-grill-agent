@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import type { NativeView } from "./views.js";
 import { BossDeliveryPanel } from "./BossDeliveryPanel.js";
+import type { ReadResumeImage } from "./controls.js";
 import type {
   BossBrowserBackend,
   BossBrowserChoice,
@@ -16,13 +17,13 @@ export function BossWorkbench({
   busy,
   run,
   open,
-  openFile,
+  readResumeImage,
 }: {
   view: Extract<NativeView, { kind: "boss" }>;
   busy: boolean;
   run: (input: any) => Promise<unknown>;
   open?: (input: any) => void;
-  openFile: (path: string) => void;
+  readResumeImage?: ReadResumeImage;
 }) {
   const [query, setQuery] = useState("");
   const [selectedResume, setResume] = useState<string>();
@@ -81,7 +82,7 @@ export function BossWorkbench({
           view={view}
           busy={busy}
           run={run}
-          openFile={openFile}
+          readResumeImage={readResumeImage}
         />
       </section>
     );
@@ -328,7 +329,7 @@ export function BossWorkbench({
       {hasDeliveryWork && (
         <details>
           <summary>投递任务</summary>
-          <BossDeliveryPanel view={view} busy={busy} run={run} openFile={openFile} />
+          <BossDeliveryPanel view={view} busy={busy} run={run} readResumeImage={readResumeImage} />
         </details>
       )}
     </section>

@@ -761,21 +761,19 @@ test("BOSS 核对界面展示实际岗位与附件，恢复不创建确认", asy
       view: bossView(f.workspace, { groupFocus: group.id }),
       busy: false,
       run: async () => {},
-      openFile: () => {},
     }),
   );
   assert.match(html, /第二公司/);
   assert.match(html, /确认投递 2 个岗位/);
   assert.doesNotMatch(html, /找岗位并准备投递|输入.*投递.*确认本批/);
-  assert.match(html, /查看该岗位 PDF/);
-  assert.match(html, /查看第/);
+  assert.equal(html.match(/>查看简历<\/button>/g)?.length, 2);
+  assert.doesNotMatch(html, /查看该岗位 PDF|查看第/);
   assert.match(html, /账号默认招呼/);
   const list = renderToStaticMarkup(
     createElement(BossWorkbench, {
       view: bossView(f.workspace),
       busy: false,
       run: async () => {},
-      openFile: () => {},
     }),
   );
   assert.match(list, /确认投递 2 个岗位/);
