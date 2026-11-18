@@ -306,13 +306,20 @@ function Workbench({
           )}
           {data && ["pending", "history"].includes(tab) && (
             <>
+              <header className="rg-section-heading">
+                <h3>{tab === "pending" ? "待确认邮件" : "投递记录"}</h3>
+                <span className="rg-note">
+                  {shownApplications.length + shownBossDeliveries.length} 条
+                </span>
+              </header>
               {shownBossDeliveries.map((d) => (
-                <article key={d.id}>
+                <article className="rg-history-row" key={d.id}>
+                  <div>
                   <strong>
                     BOSS · {d.company} · {d.role}
                   </strong>
                   <p>
-                    {d.resumeName} ·{" "}
+                    <span className="rg-status">
                     {
                       {
                         prepared: "待确认",
@@ -323,23 +330,32 @@ function Workbench({
                         uncertain: "结果待核对，不重发",
                       }[d.status]
                     }
+                    </span>
+                    <small>{d.resumeName}</small>
                   </p>
+                  </div>
                   <button
                     disabled={busy}
-                    onClick={() => void openAction({ action: "boss" })}
+                    onClick={() =>
+                      void openAction({ action: "boss", deliveryFocus: d.id })
+                    }
                   >
                     查看图片与执行记录
                   </button>
                 </article>
               ))}
               {shownApplications.map((item) => (
-                <article key={item.id}>
+                <article className="rg-history-row" key={item.id}>
+                  <div>
                   <strong>{item.subject}</strong>
-                  <p>{item.recipient}</p>
-                  <small>
-                    {applicationStatusLabel[item.status]} ·{" "}
-                    {new Date(item.createdAt).toLocaleString()}
-                  </small>
+                  <p>
+                    <span className="rg-status">{applicationStatusLabel[item.status]}</span>
+                    <small>
+                      <span>{item.recipient}</span> ·{" "}
+                      {new Date(item.createdAt).toLocaleString()}
+                    </small>
+                  </p>
+                  </div>
                   <button
                     disabled={busy}
                     onClick={() =>

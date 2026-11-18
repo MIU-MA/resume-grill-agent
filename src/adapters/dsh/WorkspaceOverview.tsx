@@ -1,6 +1,7 @@
 import type { NativeView } from "./views.js";
 import { applicationStatusLabel } from "../../shared/presentation/application-status.js";
 import { hasCapability } from "../../shared/capabilities.js";
+declare const __WHALE_PREVIEW__: string;
 type Workspace = Extract<NativeView, { kind: "workspace" }>;
 // The client bundle can reload before the running DSH host is restarted.
 type OptionalFields = "bossDeliveries" | "capabilities";
@@ -36,9 +37,34 @@ export function WorkspaceOverview({
     const verified = data.bossDeliveries.filter((d) => d.status === "finished");
     counts.push(["boss", "BOSS 已核验", verified.length]);
   }
+  const avatar = typeof __WHALE_PREVIEW__ === "string" ? __WHALE_PREVIEW__ : "";
   return (
     <section aria-label="求职总览">
-      <h3>最近在做什么</h3>
+      <header className="rg-section-heading">
+        <div className="rg-overview-heading">
+          {avatar && (
+            <a
+              className="rg-whale-avatar"
+              href="https://github.com/Small-tailqwq/dsh-deep-whale/blob/e74fa8439b8584ed16113920894491b5e0e1e4a0/maid-atelier/NOTICE"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="鲸鱼娘头像来源"
+            >
+              <img src={avatar} alt="" width={42} height={42} />
+            </a>
+          )}
+          <h3>求职总览</h3>
+        </div>
+        <button
+          className="rg-primary"
+          disabled={busy}
+          onClick={() => navigate(
+            !data.resumes.length ? "resumes" : data.bossDeliveries ? "boss" : "jobs",
+          )}
+        >
+          {data.resumes.length ? "找岗位" : "去简历库"}
+        </button>
+      </header>
       <div className="rg-overview-counts">
         {counts.map(([tab, label, count]) => (
           <button
@@ -51,15 +77,17 @@ export function WorkspaceOverview({
           </button>
         ))}
       </div>
-      <div className="rg-overview-grid">
-        <section>
+      <div className="rg-overview-grid" data-mail={mailEnabled}>
+        <section className="rg-overview-panel">
           <h4>最近的简历</h4>
           {data.resumes.slice(0, 4).map((r) => (
-            <article key={r.id}>
-              <strong>{r.name}</strong>
-              <p className="rg-note">
-                {r.job?.role ?? (r.parentId ? "修改副本" : "原始简历")}
-              </p>
+            <article className="rg-overview-row" key={r.id}>
+              <div>
+                <strong>{r.name}</strong>
+                <p className="rg-note">
+                  {r.job?.role ?? (r.parentId ? "修改副本" : "原始简历")}
+                </p>
+              </div>
               <button
                 disabled={busy}
                 onClick={() => open({ action: "resume", id: r.id })}
@@ -74,13 +102,15 @@ export function WorkspaceOverview({
           </button>
         </section>
         {mailEnabled && (
-          <section>
+          <section className="rg-overview-panel">
             <h4>需要处理的邮件</h4>
             {pending.slice(0, 4).map((a) => (
-              <article key={a.id}>
-                <strong>{a.subject}</strong>
-                <p>{a.recipient}</p>
-                <small>{applicationStatusLabel[a.status]}</small>
+              <article className="rg-overview-row" key={a.id}>
+                <div>
+                  <strong>{a.subject}</strong>
+                  <p className="rg-note">{a.recipient}</p>
+                  <small>{applicationStatusLabel[a.status]}</small>
+                </div>
                 <button
                   disabled={busy}
                   onClick={() => open({ action: "application", id: a.id })}
@@ -90,7 +120,7 @@ export function WorkspaceOverview({
               </article>
             ))}
             {!pending.length && (
-              <p>没有待确认的邮件。官网申请也可以只准备简历。</p>
+              <p className="rg-note">没有待确认的邮件。</p>
             )}
             <button disabled={busy} onClick={() => navigate("jobs")}>
               查找官网岗位
@@ -98,7 +128,7 @@ export function WorkspaceOverview({
           </section>
         )}
       </div>
-      <section>
+      <section className="rg-overview-panel rg-overview-activity">
         <h4>最近的官网读取</h4>
         {data.scans.slice(0, 4).map((scan) => (
           <article key={scan.id}>
@@ -113,7 +143,7 @@ export function WorkspaceOverview({
           </article>
         ))}
         {!data.scans.length && (
-          <p>还没有读取记录。进入岗位页后可实时拉取官网。</p>
+          <p className="rg-note">还没有读取记录。</p>
         )}
       </section>
     </section>

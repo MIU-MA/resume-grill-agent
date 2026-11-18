@@ -465,6 +465,10 @@ try {
   const more = boss.getByText("更多选项", { exact: true });
   await more.waitFor();
   assert.equal(await boss.getByLabel("浏览器", { exact: true }).isVisible(), false);
+  await page.screenshot({
+    path: join(output, "dsh-boss-workbench.png"),
+    clip: { x: 0, y: 0, width: 1440, height: 650 },
+  });
   if (process.env.RESUME_VERIFY_BOSS === "1") {
     await more.click();
     const backend = boss.getByLabel("浏览器", { exact: true });
@@ -535,7 +539,19 @@ try {
     await boss.getByRole("button", { name: "查看简历", exact: true }).click();
     await boss.getByRole("alert").filter({ hasText: "第 1 页无法预览" }).waitFor();
   }
+  await full.getByRole("button", { name: "投递记录", exact: true }).click();
+  await full.getByRole("heading", { name: "投递记录", exact: true }).waitFor();
+  await full.getByText("edited@example.com", { exact: true }).waitFor();
+  await page.screenshot({
+    path: join(output, "dsh-delivery-history.png"),
+    clip: { x: 0, y: 0, width: 1440, height: 650 },
+  });
   await full.getByRole("button", { name: "岗位", exact: true }).click();
+  await full.getByRole("heading", { name: "招聘官网", exact: true }).waitFor();
+  await page.screenshot({
+    path: join(output, "dsh-career-workbench.png"),
+    clip: { x: 0, y: 0, width: 1440, height: 720 },
+  });
   await full
     .getByLabel("用于核对的简历", { exact: true })
     .selectOption(resume.id);

@@ -90,6 +90,7 @@ export function BossWorkbench({
   return (
     <section aria-label="BOSS 投递">
       <h3>BOSS 投递</h3>
+      <div className="rg-boss-start">
       {resumes.length === 1 && <p>简历：{resumes[0].name}</p>}
       {resumes.length > 1 && (
         <label>
@@ -125,10 +126,11 @@ export function BossWorkbench({
               onChange={(e) => setQuery(e.target.value)}
             />
           </label>
-          <button disabled={busy || !query.trim()}>找岗位并准备投递</button>
+          <button className="rg-primary" disabled={busy || !query.trim()}>找岗位并准备投递</button>
         </form>
       ) : hasResume ? (
         <button
+          className="rg-primary"
           disabled={busy}
           onClick={() => {
             resumeSearch(
@@ -141,8 +143,9 @@ export function BossWorkbench({
         </button>
       ) : null}
       {hasResume && !needsDirection && !scan && (
-        <p>自动找岗位、读 JD，准备最多 3 份投递。核对后才会发送。</p>
+        <p className="rg-note">自动搜索并准备最多 3 个岗位，确认后投递。</p>
       )}
+      </div>
       {view.note && <p role="status">{view.note}</p>}
       <details>
         <summary>更多选项</summary>
@@ -296,7 +299,7 @@ export function BossWorkbench({
       ))}
       </details>
       {scan && (
-        <section aria-label="搜索结果">
+        <section className="rg-boss-results" aria-label="搜索结果">
           {scan.blocked ? (
             <p role="status">{scan.blocked}</p>
           ) : (

@@ -42,14 +42,14 @@ export function ResumeLibrary({
   });
   return (
     <section aria-label="简历库">
-      <div className="rg-toolbar">
+      <div className="rg-section-heading">
         <div>
           <h3>简历库</h3>
           <p className="rg-note">
             {data.resumes.length} 份简历 · 原件与岗位版本分别保留
           </p>
         </div>
-        <button disabled={busy} onClick={() => setCreating(!creating)}>
+        <button className={creating ? undefined : "rg-primary"} disabled={busy} onClick={() => setCreating(!creating)}>
           {creating ? "收起新建" : "新建简历"}
         </button>
       </div>
@@ -238,6 +238,7 @@ export function ResumeLibrary({
               ) : (
                 <>
                   <button
+                    className="rg-quiet-action"
                     disabled={busy}
                     onClick={() =>
                       void onAction({ action: "resume", id: resume.id })

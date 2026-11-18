@@ -32,7 +32,7 @@ export function CareerBrowser({
     ),
   ]).values()];
   return (
-    <section aria-label="招聘官网实时岗位">
+    <section className="rg-career-panel" aria-label="招聘官网实时岗位">
       <h3>招聘官网</h3>
       <div className="rg-career-filters">
         <label>
@@ -61,6 +61,7 @@ export function CareerBrowser({
           />
         </label>
         <button
+          className="rg-primary"
           disabled={busy || !url}
           onClick={() => onScan(url, keywords.trim() ? [keywords.trim()] : [])}
         >
