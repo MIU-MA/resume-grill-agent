@@ -82,6 +82,22 @@ test("自动计划只取已确认资料，检查真实回读、恢复进度并�
   ]);
   assert.equal(stopped.actions.length, 0);
   assert.match(stopped.issues[0].reason, /两次/);
+  const file = { uid: "attachment", label: "上传简历", type: "file", required: true };
+  assert.equal((await runs.plan(run.id, job.sourceUrl, [file])).uploads[0].write, true);
+  const wrong = await runs.verify(run.id, job.sourceUrl, [], "其他附件.pdf");
+  assert.equal(wrong.checks[0].status, "mismatch");
+  assert.equal(wrong.checks[0].attempt, 1);
+  assert.equal((await runs.verify(run.id, job.sourceUrl, [])).checks[0].attempt, 1);
+  await runs.plan(run.id, job.sourceUrl, [file]);
+  assert.equal((await runs.verify(run.id, job.sourceUrl, [])).checks[0].attempt, 2);
+  const stoppedUpload = await runs.plan(run.id, job.sourceUrl, [file]);
+  assert.equal(stoppedUpload.uploads.length, 0);
+  assert.match(stoppedUpload.issues[0].reason, /附件.*两次/);
+  const manualUpload = await runs.plan(run.id, job.sourceUrl, [
+    { ...file, value: resume.name },
+  ]);
+  assert.equal(manualUpload.uploads[0].write, false);
+  assert.equal((await runs.verify(run.id, job.sourceUrl, [], resume.name)).status, "ready");
   const other = new Store(home);
   try {
     assert.equal(

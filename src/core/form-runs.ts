@@ -170,6 +170,10 @@ export class FormRuns {
           issue("已有其他附件，需要用户核对，未替换");
           continue;
         }
+        if (empty && (run.attempts.attachment ?? 0) >= 2) {
+          issue("附件已检查失败两次，停止自动重试");
+          continue;
+        }
         uploads.push({
           uid: field.uid,
           path: context.attachment.path,
@@ -268,6 +272,12 @@ export class FormRuns {
     const seen = new Map(values.map((f) => [f.uid, f.value]));
     if (seen.size !== values.length) throw new Error("回读 UID 重复");
     const attempts = { ...run.attempts };
+    const failedPaths = new Set<string>();
+    const recordFailure = (path: string) => {
+      if (run.verifiedRevision === run.revision || failedPaths.has(path)) return;
+      failedPaths.add(path);
+      attempts[path] = (attempts[path] ?? 0) + 1;
+    };
     const checks: FormRun["checks"] = run.actions.map((action) => {
       const value = seen.get(action.uid);
       const status =
@@ -277,8 +287,7 @@ export class FormRuns {
               normalizeFormValue(action.value, action.path)
             ? "matched"
             : "mismatch";
-      if (status !== "matched" && run.verifiedRevision !== run.revision)
-        attempts[action.path] = (attempts[action.path] ?? 0) + 1;
+      if (status !== "matched") recordFailure(action.path);
       return {
         uid: action.uid,
         label: action.label,
@@ -289,20 +298,18 @@ export class FormRuns {
     if (run.uploads.length) {
       const expected = run.uploads[0];
       const basename = expected.path.replaceAll("\\", "/").split("/").at(-1);
+      const matched = uploadedName === expected.name || uploadedName === basename;
+      if (!matched) recordFailure("attachment");
       checks.push({
         uid: expected.uid,
         label: "简历附件",
-        status:
-          uploadedName &&
-          (uploadedName === expected.name || uploadedName === basename)
-            ? "matched"
-            : "missing",
-        attempt: 0,
+        status: matched ? "matched" : uploadedName ? "mismatch" : "missing",
+        attempt: attempts.attachment ?? 0,
       });
     }
     const blocked = run.issues.some((i) => i.required);
     const status =
-      checks.some((c) => c.status === "mismatch" || c.attempt >= 2) ||
+      checks.some((c) => c.status !== "matched" && (c.status === "mismatch" || c.attempt >= 2)) ||
       run.issues.some((i) => /已有|多个|没有唯一|两次|域名/.test(i.reason))
         ? "needs_review"
         : checks.some((c) => c.status !== "matched") || blocked

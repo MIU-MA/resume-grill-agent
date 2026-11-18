@@ -458,9 +458,14 @@ try {
     path: join(output, "dsh-workspace-overview.png"),
     clip: { x: 0, y: 0, width: 1440, height: 790 },
   });
+  await full.getByRole("button", { name: "BOSS", exact: true }).click();
+  const boss = full.getByRole("region", { name: "BOSS 投递", exact: true });
+  await boss.getByRole("button", { name: "找岗位并准备投递", exact: true }).waitFor();
+  const more = boss.getByText("更多选项", { exact: true });
+  await more.waitFor();
+  assert.equal(await boss.getByLabel("浏览器", { exact: true }).isVisible(), false);
   if (process.env.RESUME_VERIFY_BOSS === "1") {
-    await full.getByRole("button", { name: "BOSS", exact: true }).click();
-    const boss = full.getByRole("region", { name: "BOSS 投递", exact: true });
+    await more.click();
     const backend = boss.getByLabel("浏览器", { exact: true });
     await backend.waitFor();
     assert.deepEqual(await backend.locator("option").allTextContents(), [
@@ -482,7 +487,7 @@ try {
       .getByRole("button", { name: "读取当前列表", exact: true })
       .click();
     await boss
-      .getByText(/请在浏览器.*重新读取|正在加载岗位|当前没有符合条件|个岗位/)
+      .getByText(/请在浏览器.*读取当前列表|正在加载岗位|当前没有符合条件|没有识别到岗位列表|个岗位/)
       .first()
       .waitFor({ timeout: 30000 });
     await boss.getByRole("button", { name: "断开浏览器", exact: true }).click();
@@ -527,7 +532,7 @@ try {
     .waitFor();
   assert.equal(store.list("proposal").length, 1, "缺浏览器时不能悄悄调用模型");
   await full
-    .getByRole("button", { name: "根据当前 JD 重新生成建议", exact: true })
+    .getByRole("button", { name: "重新生成建议", exact: true })
     .click();
   await page.waitForFunction(
     () =>
