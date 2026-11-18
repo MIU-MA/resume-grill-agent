@@ -9,7 +9,7 @@ import {
   workspaceView,
   resumeView,
   profileView,
-  bossView,
+  type NativeView,
 } from "./views.js";
 import { Tasks, goalInput, type Goal } from "../../core/tasks.js";
 import { mailSendingEnabled } from "../../infrastructure/smtp.js";
@@ -18,101 +18,13 @@ import { applicationMail } from "../../domain/application-mail.js";
 import { Careers } from "../../core/careers.js";
 import { sourceUrlSchema } from "../../infrastructure/careers/contracts.js";
 import { ResumeProfiles } from "../../core/resume-profiles.js";
-import { Boss } from "../../core/boss.js";
-import { BossDeliveries } from "../../core/boss-deliveries.js";
-import { BossGroups } from "../../core/boss-groups.js";
-import { BossShortlists } from "../../core/boss-shortlists.js";
+import { bossAction, bossActionSchema } from "./boss-actions.js";
+import {
+  hasCapability,
+  capabilityLabels,
+  type Capability,
+} from "../../shared/capabilities.js";
 const actionSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("boss-check") }).strict(),
-  z
-    .object({
-      action: z.literal("boss-save-review"),
-      resumeId: z.string(),
-      jobId: z.string(),
-      proposalId: z.string(),
-      accepted: z.array(z.string()),
-    })
-    .strict(),
-  z
-    .object({
-      action: z.literal("boss-shortlist"),
-      goalId: z.string(),
-      scanId: z.string(),
-      budget: z.number().int().min(1).max(10),
-    })
-    .strict(),
-  z
-    .object({
-      action: z.literal("boss-group-prepare"),
-      ids: z.array(z.uuid()).min(1).max(10),
-    })
-    .strict(),
-  z
-    .object({
-      action: z.literal("boss-group-confirm"),
-      id: z.uuid(),
-      digest: z.string(),
-      acknowledged: z.literal(true),
-      confirmation: z.literal("投递"),
-    })
-    .strict(),
-  z.object({ action: z.literal("boss-group-pause"), id: z.uuid() }).strict(),
-  z
-    .object({ action: z.literal("boss-group-remaining"), id: z.uuid() })
-    .strict(),
-  z.object({ action: z.literal("boss") }).strict(),
-  z
-    .object({ action: z.literal("boss-link"), link: z.string().max(2000) })
-    .strict(),
-  z.object({ action: z.literal("boss-unlink") }).strict(),
-  z.object({ action: z.literal("boss-connect") }).strict(),
-  z
-    .object({
-      action: z.literal("boss-search"),
-      query: z.string().min(1).max(120),
-    })
-    .strict(),
-  z.object({ action: z.literal("boss-read") }).strict(),
-  z
-    .object({
-      action: z.literal("boss-detail"),
-      scanId: z.string(),
-      url: z.string(),
-      resumeId: z.string().optional(),
-    })
-    .strict(),
-  z
-    .object({ action: z.literal("boss-refresh"), id: z.string().uuid() })
-    .strict(),
-  z.object({ action: z.literal("boss-pause"), id: z.string().uuid() }).strict(),
-  z
-    .object({
-      action: z.literal("boss-prepare"),
-      resumeId: z.string(),
-      jobId: z.string(),
-    })
-    .strict(),
-  z
-    .object({
-      action: z.literal("boss-delivery-refresh"),
-      id: z.string().uuid(),
-    })
-    .strict(),
-  z
-    .object({ action: z.literal("boss-delivery-pause"), id: z.string().uuid() })
-    .strict(),
-  z
-    .object({ action: z.literal("boss-preview"), id: z.string().uuid() })
-    .strict(),
-  z
-    .object({
-      action: z.literal("boss-confirm"),
-      id: z.string().uuid(),
-      digest: z.string(),
-      acknowledged: z.literal(true),
-      confirmation: z.literal("投递"),
-    })
-    .strict(),
   z.object({ action: z.literal("workspace") }).strict(),
   z.object({ action: z.literal("resume"), id: z.string() }).strict(),
   z
@@ -235,114 +147,44 @@ const actionSchema = z.discriminatedUnion("action", [
     })
     .strict(),
 ]);
+const mailActions = new Set([
+  "application",
+  "revise",
+  "batch-view",
+  "prepare",
+  "batch",
+  "check",
+  "send",
+]);
+const bossActions = new Set<string>(
+  bossActionSchema.options.map((entry) => entry.shape.action.value),
+);
+const actionName = z.object({ action: z.string() });
+
+export function requireCapability(
+  workspace: Workspace,
+  capability: Capability,
+) {
+  if (!hasCapability(workspace.capabilities, capability))
+    throw new Error(capabilityLabels[capability] + "模块未启用。");
+}
+
 /** Human command surface only. This function is never registered as an agent tool. */
 export async function humanAction(
   workspace: Workspace,
   value: unknown,
   tasks = new Tasks(workspace),
-) {
-  const input = actionSchema.parse(value);
-  const boss = new Boss(workspace);
-  const groups = new BossGroups(workspace);
-  if (input.action === "boss-shortlist") {
-    await new BossShortlists(workspace).collect(
-      input.goalId,
-      input.scanId,
-      input.budget,
+): Promise<NativeView> {
+  if (bossActions.has(actionName.parse(value).action)) {
+    requireCapability(workspace, "boss");
+    return bossAction(workspace, bossActionSchema.parse(value), (request) =>
+      humanAction(workspace, request),
     );
-    return bossView(workspace);
   }
-  if (input.action === "boss-group-prepare") {
-    await groups.prepare(input.ids);
-    return bossView(workspace);
-  }
-  if (input.action === "boss-group-confirm") {
-    await groups.start(input.id, input.digest);
-    return bossView(workspace);
-  }
-  if (input.action === "boss-group-pause") {
-    await groups.pause(input.id);
-    return bossView(workspace);
-  }
-  if (input.action === "boss-group-remaining") {
-    await groups.remaining(input.id);
-    return bossView(workspace);
-  }
-  const deliveries = new BossDeliveries(workspace);
-  if (input.action === "boss-save-review") {
-    const saved = await humanAction(workspace, {
-      ...input,
-      action: "save-version",
-    });
-    if (saved?.kind !== "resume") throw new Error("未能保存岗位简历。");
-    await deliveries.prepare(saved.resume.id, input.jobId);
-    return bossView(workspace);
-  }
-  if (input.action === "boss-prepare") {
-    await deliveries.prepare(input.resumeId, input.jobId);
-    return bossView(workspace);
-  }
-  if (input.action === "boss-delivery-refresh") {
-    await deliveries.refresh(input.id);
-    return bossView(workspace);
-  }
-  if (input.action === "boss-delivery-pause") {
-    await deliveries.pause(input.id);
-    return bossView(workspace);
-  }
-  if (input.action === "boss-preview") {
-    await deliveries.preview(deliveries.get(input.id));
-    return bossView(workspace);
-  }
-  if (input.action === "boss-confirm") {
-    await deliveries.confirm(input.id, input.digest);
-    return bossView(workspace);
-  }
-  if (input.action === "boss") return bossView(workspace);
-  if (input.action === "boss-link") {
-    boss.connect(input.link);
-    try {
-      await boss.status();
-    } catch (error) {
-      boss.disconnect();
-      throw error;
-    }
-    return bossView(workspace);
-  }
-  if (input.action === "boss-check") {
-    await boss.status();
-    return bossView(workspace);
-  }
-  if (input.action === "boss-unlink") {
-    boss.disconnect();
-    return bossView(workspace);
-  }
-  if (input.action === "boss-connect") {
-    await boss.browserConnect();
-    return bossView(workspace);
-  }
-  if (input.action === "boss-search") {
-    await boss.search(input.query);
-    return bossView(workspace);
-  }
-  if (input.action === "boss-read") {
-    await boss.read();
-    return bossView(workspace);
-  }
-  if (input.action === "boss-detail") {
-    const job = await boss.detail(input.scanId, input.url);
-    return input.resumeId
-      ? reviewView(workspace, input.resumeId, job.id)
-      : bossView(workspace);
-  }
-  if (input.action === "boss-refresh") {
-    await boss.refresh(input.id);
-    return bossView(workspace);
-  }
-  if (input.action === "boss-pause") {
-    await boss.pause(input.id);
-    return bossView(workspace);
-  }
+  const input = actionSchema.parse(value);
+  if (mailActions.has(input.action)) requireCapability(workspace, "mail");
+  if (input.action === "profile" || input.action === "confirm-profile")
+    requireCapability(workspace, "website");
   if (input.action === "workspace") return workspaceView(workspace);
   if (input.action === "resume") return resumeView(workspace, input.id);
   if (input.action === "profile")
@@ -509,6 +351,33 @@ export async function humanAction(
   return applicationView(workspace, input.id);
 }
 
+const restorableActions = new Set([
+  "workspace",
+  "boss",
+  "goal",
+  "review",
+  "application",
+  "batch-view",
+  "resume",
+  "profile",
+]);
+
+export async function restoreView(workspace: Workspace, reference: unknown) {
+  if (!reference) return null;
+  const { action } = actionName.parse(reference);
+  if (!restorableActions.has(action)) throw new Error("恢复引用只能查询记录。");
+  if (action === "profile") {
+    requireCapability(workspace, "website");
+    const input = actionSchema.parse(reference);
+    if (
+      input.action !== "profile" ||
+      !new ResumeProfiles(workspace).current(input.resumeId)
+    )
+      throw new Error("简历资料已变更，请重新解析并核对。");
+  }
+  return humanAction(workspace, reference);
+}
+
 /** Persist only a domain reference for each conversation card, never an approval. */
 export async function cardAction(
   workspace: Workspace,
@@ -525,23 +394,7 @@ export async function cardAction(
     const saved = workspace.store
       .list<{ id: string; reference: unknown }>("dsh-card")
       .find((item) => item.id === id);
-    const reference = saved?.reference ?? value.reference;
-    if (!reference) return null;
-    const parsed = actionSchema.parse(reference);
-    if (
-      ![
-        "workspace",
-        "boss",
-        "goal",
-        "review",
-        "application",
-        "batch-view",
-        "resume",
-        "profile",
-      ].includes(parsed.action)
-    )
-      throw new Error("恢复引用只能查询记录。");
-    return humanAction(workspace, parsed);
+    return restoreView(workspace, saved?.reference ?? value.reference);
   }
   const view = await humanAction(workspace, value);
   const reference = viewReference(view);

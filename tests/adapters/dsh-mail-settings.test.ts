@@ -1,9 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  nativeMail,
-  NativeConfig,
-} from "../../src/adapters/dsh/mail-settings.js";
+import { nativeMail } from "../../src/adapters/dsh/mail-settings.js";
+import { NativeConfig } from "../../src/adapters/dsh/config.js";
 import {
   nativeControls,
   selectedSessionId,
@@ -122,5 +120,9 @@ test("桌面版 volatile Config 与主会话选择可用，侧栏恢复只执行
     "workbench",
   );
   await controls.act({ action: "restore", reference: { action: "workspace" } });
-  assert.deepEqual(received, { action: "workspace", surface: "workbench" });
+  assert.deepEqual(received, {
+    action: "restore",
+    reference: { action: "workspace" },
+    surface: "workbench",
+  });
 });

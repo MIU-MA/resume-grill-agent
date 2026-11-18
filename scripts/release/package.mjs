@@ -38,6 +38,9 @@ try {
     "assets/NotoSansSC-Regular.ttf",
     "assets/OFL.txt",
     "dist/adapters/cli/main.js",
+    "dist/core/operations/boss.js",
+    "dist/core/operations/mail.js",
+    "dist/core/operations/website.js",
     "dist/web/panel/index.html",
   ])
     assert.ok(files.has(entry.replace(/^\.\//, "")), `插件包缺少 ${entry}`);

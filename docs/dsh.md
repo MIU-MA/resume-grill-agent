@@ -48,6 +48,18 @@ dsh plugin --profile desktop add 'link:C:/path/resume-grill-agent'
 
 资料默认在 `DSH_HOME/storages/resume-grill`，通常为 `%USERPROFILE%/.dsh/storages/resume-grill`；`RESUME_AGENT_HOME` 可指定其他绝对目录。恢复卡片重新读取当前状态，不保存批准。新 PDF 不保留原布局和照片；`sent` 只表示 SMTP 接受，回复同步和已读追踪尚未实现。
 
+## 模块配置
+
+默认启用全部能力。打开 DSH「设置 → 求职模块」，选择需要的模块，保存后重新启动该 Profile。也可以在该 Profile 的 `cordis.patch.yml` 修改 `resume-grill` 插件的配置。以下配置保留简历库、官网岗位读取、按 JD 改简历与 BOSS。
+
+```yaml
+- id: resume-grill
+  config:
+    disabledCapabilities: [mail, website]
+```
+
+可选项为 `boss`（BOSS 投递）、`mail`（邮箱投递）、`website`（官网表单填写）。配置 `[boss, mail, website]` 可只用简历和岗位能力。停用会移除对应工具、操作入口与统计，并保留已存资料。重新启用后可以继续查阅记录。邮箱授权码和真实发送开关仍由原有设置管理。
+
 ## 招聘官网表单
 
 岗位核对页提供“交给浏览器填写官网”试验入口，使用选定简历和岗位，填写后回读核对，停在提交前。DSH 侧栏 Browser 本身不会提供点击、输入或上传工具，仍须单独启用浏览器 MCP。当前本机旧版运行时使用通用 MCP 客户端对接 Chrome DevTools MCP；配置、验证范围及限制见 [官网填写试验](browser-forms.md)。新版官方浏览器提供器需按宿主版本另行接入，不能假设当前已安装。

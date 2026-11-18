@@ -10,13 +10,9 @@ export function selectedSessionId(state: any): string | undefined {
 export function nativeControls(ctx: any, sessionId: string, surface?: string) {
   return {
     act: async (input: unknown) => {
-      const action =
-        surface && (input as any)?.action === "restore"
-          ? (input as any).reference
-          : input;
       const response = await ctx.remote.commands.execute(
         sessionId,
-        `/resume-grill ${JSON.stringify({ ...(action as object), ...(surface ? { surface } : {}) })}`,
+        `/resume-grill ${JSON.stringify({ ...(input as object), ...(surface ? { surface } : {}) })}`,
         [],
       );
       if (!response.ok) throw new Error(response.error.message);

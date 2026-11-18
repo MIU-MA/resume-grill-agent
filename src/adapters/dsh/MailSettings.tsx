@@ -11,19 +11,54 @@ import {
   type MailSettings as Settings,
 } from "../../shared/mail-settings.js";
 import { selectedSessionId } from "./controls.js";
+import { hasCapability, type Capability } from "../../shared/capabilities.js";
 
 declare const __NATIVE_CSS__: string;
-export function MailSettings({
-  scope,
-  credentials,
-  useSessions,
-  testMail,
-}: any) {
+export function MailSettings({ scope, ...props }: any) {
   const snapshot: any = useSyncExternalStore(
     scope.subscribe.bind(scope),
     scope.getSnapshot.bind(scope),
   );
+  if (snapshot.status === "unavailable" || snapshot.status === "error")
+    return <p role="alert">当前无法读取邮箱设置。</p>;
+  if (snapshot.status !== "ready")
+    return <p role="status">正在连接邮箱设置…</p>;
+  return <MailSettingsForm {...props} scope={scope} snapshot={snapshot} />;
+}
+
+function MailSettingsForm({
+  scope,
+  snapshot,
+  credentials,
+  useSessions,
+  capabilityStatus,
+  testMail,
+}: any) {
   const sessionId = useSessions(selectedSessionId);
+  const [runtime, setRuntime] = useState<{
+    sessionId: string;
+    mail?: boolean;
+  }>();
+  const current = runtime?.sessionId === sessionId ? runtime : undefined;
+  const disabledOnRestart =
+    snapshot.value?.disabledCapabilities?.includes("mail");
+  useEffect(() => {
+    if (!sessionId) return;
+    let live = true;
+    setRuntime(undefined);
+    void capabilityStatus(sessionId)
+      .then(({ capabilities }: { capabilities: Capability[] }) => {
+        if (!Array.isArray(capabilities)) throw new Error("未收到模块状态。");
+        if (live)
+          setRuntime({ sessionId, mail: hasCapability(capabilities, "mail") });
+      })
+      .catch(() => {
+        if (live) setRuntime({ sessionId });
+      });
+    return () => {
+      live = false;
+    };
+  }, [sessionId, capabilityStatus]);
   const [draft, setDraft] = useState<Settings>(defaultMailSettings),
     [revision, setRevision] = useState<number>(),
     [code, setCode] = useState(""),
@@ -36,7 +71,8 @@ export function MailSettings({
     id = useId();
   useEffect(() => {
     if (!dirty && snapshot.value) {
-      setDraft(snapshot.value);
+      const { address, provider, enabled } = snapshot.value;
+      setDraft({ address, provider, enabled });
       setRevision(snapshot.revision);
     }
   }, [snapshot, dirty]);
@@ -81,10 +117,21 @@ export function MailSettings({
     <section className="rg-native rg-settings" aria-label="求职邮箱设置">
       <style>{__NATIVE_CSS__}</style>
       <h3>发件邮箱</h3>
-      <p className="rg-note">
-        授权码由 DSH 凭据服务保存。保存后立即生效，不需要重启。
-      </p>
-      {snapshot.status !== "ready" && <p role="status">正在连接设置服务…</p>}
+      <p className="rg-note">授权码由 DSH 凭据服务保存。</p>
+      {sessionId && (
+        <p className="rg-note" role="status">
+          {current?.mail === true
+            ? "当前会话已启用邮件投递。"
+            : current?.mail === false
+              ? "当前会话未启用邮件投递。"
+              : current
+                ? "无法检查当前会话的邮件模块。"
+                : "正在检查当前会话的邮件模块…"}
+          {typeof current?.mail === "boolean" &&
+            current.mail === Boolean(disabledOnRestart) &&
+            `重启 DSH Profile 后将${disabledOnRestart ? "停用" : "启用"}邮件投递。`}
+        </p>
+      )}
       <form
         className="rg-mail-editor"
         onSubmit={(event) => {
@@ -113,7 +160,7 @@ export function MailSettings({
             setConfigured(!!info.value[ref]?.configured);
             setCode("");
             setDirty(false);
-            setMessage("已保存。新设置立即生效。");
+            setMessage("已保存邮箱设置。");
           });
         }}
       >
@@ -177,7 +224,7 @@ export function MailSettings({
         </button>
         <button
           type="button"
-          disabled={busy || dirty || !configured || !sessionId}
+          disabled={busy || dirty || !configured || current?.mail !== true}
           onClick={() =>
             void run(async () => {
               const result = await testMail(sessionId);

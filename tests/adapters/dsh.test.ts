@@ -3,13 +3,21 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { Store } from "../../src/infrastructure/sqlite-store.js";
 import { Workspace } from "../../src/core/workspace.js";
 import { mount } from "../../src/adapters/dsh/host.js";
 import { humanAction, cardAction } from "../../src/adapters/dsh/actions.js";
 import { turnCardSelector } from "../../src/adapters/dsh/card-model.js";
 import { Tasks } from "../../src/core/tasks.js";
-import { batchView } from "../../src/adapters/dsh/views.js";
+import { batchView, workspaceView } from "../../src/adapters/dsh/views.js";
+import { WorkspaceOverview } from "../../src/adapters/dsh/WorkspaceOverview.js";
+import { operations } from "../../src/core/operations.js";
+import {
+  activeCapabilities,
+  NativeConfig,
+} from "../../src/adapters/dsh/config.js";
 
 async function setup(t: any) {
   const home = await mkdtemp(join(tmpdir(), "resume-dsh-test-")),
@@ -65,6 +73,119 @@ async function setup(t: any) {
   const proposal = workspace.propose(resume.id, job.id, plan);
   return { workspace, store, resume, job, proposal, sends: () => sends };
 }
+
+test("旧宿主的工作台快照缺少 BOSS 字段时，总览仍能渲染", async (t) => {
+  const { workspace, resume } = await setup(t);
+  const data = workspaceView(workspace);
+  const { bossDeliveries, capabilities, ...previousHost } = data;
+  const render = (snapshot: typeof previousHost) =>
+    renderToStaticMarkup(
+      createElement(WorkspaceOverview, {
+        data: snapshot,
+        busy: false,
+        navigate: () => {},
+        open: () => {},
+      }),
+    );
+  const overview = render(previousHost);
+  assert.match(overview, /求职总览/);
+  assert.ok(overview.includes(resume.name));
+  assert.doesNotMatch(overview, /BOSS 已核验/);
+  assert.match(render(data), /BOSS 已核验/);
+});
+
+test("BOSS 单独启用时只注册对应工具，旧邮件卡和官网命令不能执行", async (t) => {
+  const f = await setup(t);
+  const config = NativeConfig({ disabledCapabilities: ["mail", "website"] });
+  const workspace = new Workspace(
+    f.store,
+    undefined,
+    undefined,
+    activeCapabilities(config.disabledCapabilities),
+  );
+  const tools = new Set<string>(),
+    prompts = new Set<string>();
+  let command: any;
+  mount(
+    {
+      tools: {
+        register: ({ name }) => {
+          tools.add(name);
+          return () => tools.delete(name);
+        },
+      },
+      commands: {
+        register: (entry) => {
+          command = entry;
+          return () => {};
+        },
+      },
+      systemPrompt: {
+        section: ({ name }) => {
+          prompts.add(name);
+          return () => prompts.delete(name);
+        },
+      },
+      effect: (fn) => fn(),
+    },
+    workspace,
+  );
+  assert.ok(tools.has("resume_grill_boss_read_jobs"));
+  assert.ok(tools.has("resume_grill_review_context"));
+  assert.ok(!tools.has("resume_grill_prepare_application"));
+  assert.ok(!tools.has("resume_grill_start_form_run"));
+  assert.deepEqual(prompts, new Set(["resume-grill", "resume-grill-boss"]));
+  const snapshot = operations(workspace)
+    .find((op) => op.name === "list_workspace")!
+    .run({}) as object;
+  assert.ok("bossScans" in snapshot);
+  assert.ok(!("formRuns" in snapshot || "batches" in snapshot));
+
+  const old = await humanAction(f.workspace, {
+    action: "prepare",
+    resumeId: f.resume.id,
+    jobId: f.job.id,
+    proposalId: f.proposal.id,
+    accepted: [],
+  });
+  assert.equal(old.kind, "application");
+  if (old.kind !== "application") return;
+  assert.equal(workspaceView(workspace).applications.length, 0);
+  await assert.rejects(
+    cardAction(workspace, "session", "old-card", {
+      action: "restore",
+      reference: { action: "application", id: old.application.id },
+    }),
+    /邮件投递模块未启用/,
+  );
+  const checked = await command.handler({
+    rawInput: JSON.stringify({
+      action: "browser-check",
+      resumeId: f.resume.id,
+    }),
+    agent: { id: "session" },
+    signal: new AbortController().signal,
+  });
+  assert.equal(checked.kind, "error");
+  assert.match(checked.text, /官网填写模块未启用/);
+  const status = await command.handler({
+    rawInput: JSON.stringify({ action: "capability-status" }),
+    agent: { id: "session" },
+    signal: new AbortController().signal,
+  });
+  assert.equal(status.kind, "success");
+  assert.deepEqual(JSON.parse(status.text), { capabilities: ["boss"] });
+  assert.equal(workspaceView(f.workspace).applications.length, 1);
+  assert.equal(f.sends(), 0);
+
+  const baseOnly = new Workspace(f.store, undefined, undefined, []);
+  assert.deepEqual(workspaceView(baseOnly).capabilities, []);
+  assert.equal(workspaceView(baseOnly).bossDeliveries, undefined);
+  await assert.rejects(
+    humanAction(baseOnly, { action: "boss" }),
+    /BOSS 投递模块未启用/,
+  );
+});
 
 test("从岗位清单进入核对后仍保留城市与排除条件，不另建宽松目标", async (t) => {
   const f = await setup(t),
@@ -380,7 +501,11 @@ test("DSH 原生工具与人类命令分离，输出核对 metadata；无发信�
   });
   const meta = review.output.presentationMeta(args, result).resumeGrill;
   assert.equal(meta.kind, "review");
-  assert.deepEqual(JSON.parse(JSON.stringify(meta)),meta,"卡片 metadata 必须能无损 JSON 序列化");
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(meta)),
+    meta,
+    "卡片 metadata 必须能无损 JSON 序列化",
+  );
   assert.equal(meta.proposal.id, result.id);
   assert.equal(meta.sourceText, f.resume.text);
   assert.equal(meta.goalId, goal.id);
@@ -400,14 +525,54 @@ test("DSH 原生工具与人类命令分离，输出核对 metadata；无发信�
   );
   const notices: any[] = [];
   const prepared = await commands.get("resume-grill").handler({
-    rawInput: JSON.stringify({action: "prepare", resumeId: f.resume.id, jobId: f.job.id, proposalId: result.id, accepted: []}),
-    agent: {id: "session-command", inject: (message: unknown) => notices.push(message)},
+    rawInput: JSON.stringify({
+      action: "prepare",
+      resumeId: f.resume.id,
+      jobId: f.job.id,
+      proposalId: result.id,
+      accepted: [],
+    }),
+    agent: {
+      id: "session-command",
+      inject: (message: unknown) => notices.push(message),
+    },
     signal: new AbortController().signal,
   });
   assert.equal(prepared.kind, "success");
   assert.equal(notices.length, 1);
   assert.equal(notices[0].source.kind, "resume-grill");
-  assert.equal(notices[0].source.plugin, undefined, "DSH v4 不接受旧 plugin 来源包装");
+  assert.equal(
+    notices[0].source.plugin,
+    undefined,
+    "DSH v4 不接受旧 plugin 来源包装",
+  );
+  const invoke = (input: unknown) =>
+    commands.get("resume-grill").handler({
+      rawInput: JSON.stringify(input),
+      agent: {
+        id: "session-command",
+        inject: (message: unknown) => notices.push(message),
+      },
+      signal: new AbortController().signal,
+    });
+  const id = JSON.parse(prepared.text).application.id;
+  const restored = await invoke({
+    surface: "workbench",
+    action: "restore",
+    reference: { action: "application", id },
+  });
+  assert.equal(restored.kind, "success");
+  assert.equal(JSON.parse(restored.text).application.id, id);
+  assert.equal((await invoke({ action: "application", id })).kind, "success");
+  assert.equal(notices.length, 1, "读取邮件不向对话添加操作结果");
+  const invalid = await invoke({
+    surface: "workbench",
+    action: "restore",
+    reference: { action: "check", id },
+  });
+  assert.equal(invalid.kind, "error");
+  assert.match(invalid.text, /恢复引用只能查询记录/);
+  assert.equal(f.workspace.preview(id).status, "prepared");
   for (const dispose of disposers.reverse()) dispose();
   assert.equal(tools.size, 0);
   assert.equal(commands.size, 0);
@@ -424,6 +589,26 @@ test("对话卡片恢复真实记录，隔离会话，恢复不会创建审批�
   });
   assert.equal(prepared?.kind, "application");
   if (prepared?.kind !== "application") return;
+  const profileReference = {
+    action: "profile",
+    resumeId: f.resume.id,
+  };
+  await assert.rejects(
+    cardAction(f.workspace, "session-a", "profile", {
+      action: "restore",
+      reference: profileReference,
+    }),
+    /重新解析/,
+  );
+  assert.equal(f.store.list("resume-profile").length, 0);
+  const profile = await humanAction(f.workspace, profileReference);
+  assert.deepEqual(
+    await cardAction(f.workspace, "session-a", "profile", {
+      action: "restore",
+      reference: profileReference,
+    }),
+    profile,
+  );
   const second = new Store(f.store.home);
   try {
     const resumed = await cardAction(

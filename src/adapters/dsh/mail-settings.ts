@@ -16,11 +16,6 @@ export const mailSettingsInput = z.object({
   enabled: z.boolean(),
 });
 /** Native credentials are resolved on use and never copied to plugin data or tool results. */
-export const NativeConfig = Schema.object({
-  address: Schema.string().default("").volatile(),
-  provider: Schema.union(["qq", "163", "126"]).default("qq").volatile(),
-  enabled: Schema.boolean().default(false).volatile(),
-});
 export async function nativeMail(ctx: any, entryConfig?: any) {
   const scope =
     typeof ctx.settings.register === "function"

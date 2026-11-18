@@ -29,6 +29,7 @@ assets/                字体及许可
 - 具体文件、网络和邮件实现放 `infrastructure/`。适配器只处理协议、界面和用户动作。
 - 共享组件放 `shared/ui/`，DSH 不反向引用面板内部组件；浏览器代码不导入 Node 路径工具或数据库实现。
 - BOSS 的本机 HTTP 契约位于 `infrastructure/boss-gateway.ts`，任务、冻结附件、批次与筛选分别在 `core/boss*.ts`；DSH 只处理视图和人工命令。连接码不进入持久化，模型工具不暴露确认。参考 `tests/core/boss.test.ts` 的隔离执行器夹具。
+- `core/operations/` 按基础能力、邮件、官网填写、BOSS 提供工具与查询数据，由 `core/operations.ts` 统一组装。DSH 从 Profile 配置确定当前可用能力，并在人工命令和界面上使用同一选择。历史卡片恢复也经过命令校验。
 - `plugin/` 不放业务源码；新增构建资源时同步更新清单和打包检查。
 - `scripts/verify/` 的临时服务、固定模型响应和演示资料不能进入正式插件。
 - 资料只写入指定数据目录；`dist/`、`artifacts/`、`.resume-agent/` 不进 Git。

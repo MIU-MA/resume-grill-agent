@@ -5,11 +5,13 @@ export function ResumeDocument({
   busy,
   run,
   openFile,
+  canParseProfile,
 }: {
   resume: Resume;
   busy: boolean;
   run: (input: unknown) => Promise<boolean>;
   openFile: (path: string) => void;
+  canParseProfile: boolean;
 }) {
   const [text, setText, clear] = useEditDraft(
     `resume:${resume.id}`,
@@ -18,12 +20,14 @@ export function ResumeDocument({
   return (
     <section aria-label="简历查看与编辑">
       <h3>{resume.name}</h3>
-      <button
-        disabled={busy}
-        onClick={() => void run({ action: "profile", resumeId: resume.id })}
-      >
-        解析为可复用资料
-      </button>
+      {canParseProfile && (
+        <button
+          disabled={busy}
+          onClick={() => void run({ action: "profile", resumeId: resume.id })}
+        >
+          解析为可复用资料
+        </button>
+      )}
       <button
         disabled={busy}
         onClick={() => openFile(resume.pdf ?? resume.original)}

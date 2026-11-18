@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { NativeView } from "./views.js";
 import { nativeControls, selectedSessionId } from "./controls.js";
 import { MailSettings } from "./MailSettings.js";
+import { CapabilitySettings } from "./CapabilitySettings.js";
 import { ResumeLibrary } from "./ResumeLibrary.js";
 import { WorkspaceOverview } from "./WorkspaceOverview.js";
 import { CareerBrowser } from "./CareerBrowser.js";
 import { viewReference } from "./card-model.js";
 import { onWorkspaceChanged, notifyWorkspaceChanged } from "./updates.js";
 import { applicationStatusLabel } from "../../shared/presentation/application-status.js";
+import { hasCapability } from "../../shared/capabilities.js";
 declare const __NATIVE_CSS__: string;
 type Snapshot = Extract<NativeView, { kind: "workspace" }>;
 
@@ -99,6 +101,25 @@ function Workbench({
     void run(reload);
   };
   const applications = data?.applications ?? [];
+  const bossDeliveries = data?.bossDeliveries;
+  const mailEnabled = hasCapability(data?.capabilities, "mail");
+  const tabs = [
+    ["overview", "总览"],
+    ["resumes", "简历"],
+    ["jobs", "岗位"],
+    ...(bossDeliveries ? [["boss", "BOSS"]] : []),
+    ...(mailEnabled ? [["pending", "待确认"]] : []),
+    ...(mailEnabled || bossDeliveries ? [["history", "投递记录"]] : []),
+  ];
+  const shownApplications = applications.filter(
+    (item) =>
+      tab === "history" || ["prepared", "simulated"].includes(item.status),
+  );
+  const shownBossDeliveries = (bossDeliveries ?? []).filter(
+    (d) =>
+      tab === "history" ||
+      ["submitting", "running", "uncertain", "paused"].includes(d.status),
+  );
   return (
     <section className="rg-native rg-workbench" aria-label="求职工作台">
       <style>{__NATIVE_CSS__}</style>
@@ -109,14 +130,7 @@ function Workbench({
         </button>
       </div>
       <nav aria-label="求职分类">
-        {[
-          ["overview", "总览"],
-          ["resumes", "简历"],
-          ["jobs", "岗位"],
-          ["boss", "BOSS"],
-          ["pending", "待确认"],
-          ["history", "投递记录"],
-        ].map(([key, label]) => (
+        {tabs.map(([key, label]) => (
           <button
             key={key}
             aria-pressed={tab === key}
@@ -187,7 +201,10 @@ function Workbench({
                   const importedId =
                     value.importedResumeId ?? value.resumes[0]?.id;
                   setResume(importedId ?? "");
-                  if (importedId)
+                  if (
+                    importedId &&
+                    hasCapability(value.capabilities, "website")
+                  )
                     setDetail(
                       await act({ action: "profile", resumeId: importedId }),
                     );
@@ -287,73 +304,55 @@ function Workbench({
           )}
           {data && ["pending", "history"].includes(tab) && (
             <>
-              {data.bossDeliveries
-                .filter(
-                  (d) =>
-                    tab === "history" ||
-                    ["submitting", "running", "uncertain", "paused"].includes(
-                      d.status,
-                    ),
-                )
-                .map((d) => (
-                  <article key={d.id}>
-                    <strong>
-                      BOSS · {d.company} · {d.role}
-                    </strong>
-                    <p>
-                      {d.resumeName} ·{" "}
+              {shownBossDeliveries.map((d) => (
+                <article key={d.id}>
+                  <strong>
+                    BOSS · {d.company} · {d.role}
+                  </strong>
+                  <p>
+                    {d.resumeName} ·{" "}
+                    {
                       {
-                        {
-                          prepared: "待确认",
-                          submitting: "请求已发出",
-                          running: "执行中",
-                          finished: "已投递并核验",
-                          paused: "已暂停",
-                          uncertain: "结果待核对，不重发",
-                        }[d.status]
-                      }
-                    </p>
-                    <button
-                      disabled={busy}
-                      onClick={() => void openAction({ action: "boss" })}
-                    >
-                      查看图片与执行记录
-                    </button>
-                  </article>
-                ))}
-              {applications
-                .filter(
-                  (item) =>
-                    tab === "history" ||
-                    ["prepared", "simulated"].includes(item.status),
-                )
-                .map((item) => (
-                  <article key={item.id}>
-                    <strong>{item.subject}</strong>
-                    <p>{item.recipient}</p>
-                    <small>
-                      {applicationStatusLabel[item.status]} ·{" "}
-                      {new Date(item.createdAt).toLocaleString()}
-                    </small>
-                    <button
-                      disabled={busy}
-                      onClick={() =>
-                        void run(async () =>
-                          setDetail(
-                            await act({ action: "application", id: item.id }),
-                          ),
-                        )
-                      }
-                    >
-                      查看邮件与附件
-                    </button>
-                  </article>
-                ))}
-              {!applications.some(
-                (item) =>
-                  tab === "history" ||
-                  ["prepared", "simulated"].includes(item.status),
-              ) && (
+                        prepared: "待确认",
+                        submitting: "请求已发出",
+                        running: "执行中",
+                        finished: "已投递并核验",
+                        paused: "已暂停",
+                        uncertain: "结果待核对，不重发",
+                      }[d.status]
+                    }
+                  </p>
+                  <button
+                    disabled={busy}
+                    onClick={() => void openAction({ action: "boss" })}
+                  >
+                    查看图片与执行记录
+                  </button>
+                </article>
+              ))}
+              {shownApplications.map((item) => (
+                <article key={item.id}>
+                  <strong>{item.subject}</strong>
+                  <p>{item.recipient}</p>
+                  <small>
+                    {applicationStatusLabel[item.status]} ·{" "}
+                    {new Date(item.createdAt).toLocaleString()}
+                  </small>
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () =>
+                        setDetail(
+                          await act({ action: "application", id: item.id }),
+                        ),
+                      )
+                    }
+                  >
+                    查看邮件与附件
+                  </button>
+                </article>
+              ))}
+              {!shownApplications.length && !shownBossDeliveries.length && (
                 <p>
                   {tab === "pending"
                     ? "没有待确认的邮件。"
@@ -521,12 +520,28 @@ export function registerWorkbench(ctx: any, Review: any) {
     ctx.slots.register(
       {
         name: "settings.section",
+        id: "resume-grill-modules",
+        order: 44,
+        label: () => "求职模块",
+        inject: () => ({ scope }),
+      },
+      CapabilitySettings,
+    ),
+  );
+  ctx.slots.inject("settings.section", () =>
+    ctx.slots.register(
+      {
+        name: "settings.section",
         id: "resume-grill-mail",
         order: 45,
         label: () => "求职邮箱",
         inject: () => ({
           scope,
           credentials: ctx.remote.credentials,
+          capabilityStatus: (sessionId: string) =>
+            nativeControls(ctx, sessionId, "workbench").act({
+              action: "capability-status",
+            }),
           testMail: (sessionId: string) =>
             nativeControls(ctx, sessionId, "workbench").act({
               action: "test-mail",

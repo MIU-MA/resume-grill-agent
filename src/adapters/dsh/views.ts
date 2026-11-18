@@ -11,6 +11,7 @@ import type { BossScan, BossRun } from "../../domain/boss.js";
 import { BossDeliveries } from "../../core/boss-deliveries.js";
 import { BossGroups } from "../../core/boss-groups.js";
 import type { BossShortlist } from "../../core/boss-shortlists.js";
+import { hasCapability } from "../../shared/capabilities.js";
 export type Proposal = {
   id: string;
   resumeId: string;
@@ -39,13 +40,11 @@ export function bossView(workspace: Workspace) {
     ...(new Boss(workspace).browserState
       ? { browserState: new Boss(workspace).browserState! }
       : {}),
-    resumes: workspace
-      .listResumes()
-      .map((r) => ({
-        id: r.id,
-        name: r.name,
-        ...(r.jobId ? { jobId: r.jobId } : {}),
-      })),
+    resumes: workspace.listResumes().map((r) => ({
+      id: r.id,
+      name: r.name,
+      ...(r.jobId ? { jobId: r.jobId } : {}),
+    })),
     jobs: workspace.store
       .list<Job>("job")
       .map((j) => ({ id: j.id, url: j.sourceUrl })),
@@ -73,6 +72,7 @@ export function resumeView(workspace: Workspace, id: string) {
   return {
     v: 1 as const,
     kind: "resume" as const,
+    capabilities: workspace.capabilities,
     resume: workspace.resume(id),
   };
 }
@@ -85,10 +85,15 @@ export function reviewView(
 ) {
   const resume = workspace.resume(resumeId),
     job = workspace.store.get<Job>("job", jobId);
-  const profile = new ResumeProfiles(workspace).current(resumeId);
-  const formRun = workspace.store
-    .list<FormRun>("form-run")
-    .find((r) => r.resumeId === resumeId && r.jobId === jobId);
+  const website = hasCapability(workspace.capabilities, "website");
+  const profile = website
+    ? new ResumeProfiles(workspace).current(resumeId)
+    : undefined;
+  const formRun = website
+    ? workspace.store
+        .list<FormRun>("form-run")
+        .find((r) => r.resumeId === resumeId && r.jobId === jobId)
+    : undefined;
   const proposal = proposalId
     ? workspace.store.get<Proposal>("proposal", proposalId)
     : workspace.store
@@ -101,6 +106,7 @@ export function reviewView(
   return {
     v: 1 as const,
     kind: "review" as const,
+    capabilities: workspace.capabilities,
     resumeId,
     jobId,
     sourceText: resume.text,
@@ -170,6 +176,7 @@ export function workspaceView(workspace: Workspace) {
   return {
     v: 1 as const,
     kind: "workspace" as const,
+    capabilities: workspace.capabilities,
     resumes: resumes.filter((item) => !item.deletedAt).map(summarizeResume),
     deletedResumes: resumes
       .filter((item) => item.deletedAt)
@@ -210,12 +217,16 @@ export function workspaceView(workspace: Workspace) {
             }
           : undefined,
       })),
-    applications: workspace
-      .history()
-      .filter((item) => item.status !== "superseded"),
-    bossDeliveries: new BossDeliveries(workspace)
-      .list()
-      .filter((d) => d.status !== "prepared"),
+    applications: hasCapability(workspace.capabilities, "mail")
+      ? workspace.history().filter((item) => item.status !== "superseded")
+      : [],
+    ...(hasCapability(workspace.capabilities, "boss")
+      ? {
+          bossDeliveries: new BossDeliveries(workspace)
+            .list()
+            .filter((d) => d.status !== "prepared"),
+        }
+      : {}),
   };
 }
 export function viewFor(

@@ -294,6 +294,40 @@ test("人工确认只执行一次，缺失回执不记成功，恢复不重发",
   assert.equal(reopened.get<any>("boss-delivery", d.id).status, "finished");
   reopened.close();
 });
+test("BOSS 查询待确认批次只读本地，暂停使用执行器批次号", async (t) => {
+  const f = await fixture(t);
+  f.boss.connect(f.link);
+  const scan = await f.boss.read();
+  const job = await f.boss.detail(scan.id, f.url);
+  const resume = await f.workspace.createResume(
+    "测试简历",
+    "负责 Go 服务开发。",
+  );
+  const delivery = await new BossDeliveries(f.workspace).prepare(
+    resume.id,
+    job.id,
+  );
+  const tools = operations(f.workspace);
+  const status = tools.find((tool) => tool.name === "boss_delivery_status")!;
+  const pause = tools.find((tool) => tool.name === "boss_pause_delivery")!;
+  const prepared = await status.run({ id: delivery.id });
+  assert.equal((prepared as { status: string }).status, "prepared");
+  assert.equal(Object.hasOwn(prepared as object, "previewId"), false);
+  await assert.rejects(async () => pause.run({ id: delivery.id }), /等待确认/);
+  assert.equal(
+    f.requests.some((url) => url.includes(delivery.remoteId)),
+    false,
+  );
+
+  f.store.put("boss-delivery", { ...delivery, status: "running" });
+  assert.deepEqual(await pause.run({ id: delivery.id }), {
+    id: delivery.id,
+    requested: true,
+    message: "已请求完成当前步骤后暂停；请重新读取状态。",
+  });
+  assert.equal(f.requests.at(-1), `/boss-batch/${delivery.remoteId}/stop`);
+  assert.equal(f.state.confirmations, undefined);
+});
 test("确认响应丢失不重试，PDF 超三页不截断", async (t) => {
   const f = await fixture(t);
   f.boss.connect(f.link);

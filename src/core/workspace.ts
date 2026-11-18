@@ -4,6 +4,7 @@ import { resolve, basename, extname } from "node:path";
 import { z } from "zod";
 import { Store } from "../infrastructure/sqlite-store.js";
 import { readResume, renderPdf } from "../infrastructure/documents.js";
+import { capabilities as defaultCapabilities, type Capability } from "../shared/capabilities.js";
 import {
   applicationMail,
   type ApplicationMail,
@@ -80,6 +81,7 @@ export class Workspace {
     readonly store: Store,
     readonly send?: Send,
     readonly sendEnabled?: () => boolean,
+    readonly capabilities: readonly Capability[] = defaultCapabilities,
   ) {}
   listResumes(deleted = false) {
     return this.store

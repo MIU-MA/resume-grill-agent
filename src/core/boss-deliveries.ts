@@ -289,11 +289,12 @@ export class BossDeliveries {
   }
   async refresh(id: string) {
     const d = this.get(id);
+    if (d.status === "prepared") return d;
     try {
       const run = await new Boss(this.workspace).refresh(d.remoteId);
       this.apply(d, run);
     } catch (error) {
-      if (d.status !== "prepared" && d.status !== "finished") {
+      if (d.status !== "finished") {
         d.status = "uncertain";
         d.error = "未获得可靠回执，请在官网核对，不重复投递。";
         this.save(d);
@@ -304,7 +305,9 @@ export class BossDeliveries {
   }
   async pause(id: string) {
     const d = this.get(id);
-    await new Boss(this.workspace).pause(d.remoteId);
-    return d;
+    if (d.status === "prepared")
+      throw new Error("该岗位还在等待确认，尚无需暂停。");
+    const result = await new Boss(this.workspace).pause(d.remoteId);
+    return { ...result, id };
   }
 }

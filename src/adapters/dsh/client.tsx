@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { NativeView } from "./views.js";
 import { ApplicationReview } from "./ApplicationReview.js";
 import { nativeControls } from "./controls.js";
-import { notifyWorkspaceChanged } from "./updates.js";
-import { onWorkspaceChanged } from "./updates.js";
+import { notifyWorkspaceChanged, onWorkspaceChanged } from "./updates.js";
 import { ResumeDocument } from "./ResumeDocument.js";
 import { BossWorkbench } from "./BossWorkbench.js";
 import { ResumeProfileEditor } from "./ResumeProfileEditor.js";
@@ -11,6 +10,7 @@ import { JobRevision } from "./JobRevision.js";
 import { registerWorkbench } from "./workbench.js";
 import { RevisionChanges } from "../../shared/ui/RevisionChanges.js";
 import { turnCardSelector, viewReference } from "./card-model.js";
+import { hasCapability } from "../../shared/capabilities.js";
 import {
   applicationStatusLabel,
   batchItemLabel,
@@ -53,8 +53,11 @@ export function NativeCard({
   sessionId?: string;
 }) {
   const lock = useRef(true);
+  const refreshVersion = useRef(0);
   const [view, setView] = useState(initial),
     [working, setBusy] = useState(true),
+    [restored, setRestored] = useState(false),
+    [restoreAttempt, setRestoreAttempt] = useState(0),
     [requesting, setRequesting] = useState(false),
     [error, setError] = useState(""),
     [accepted, setAccepted] = useState<string[]>([]),
@@ -64,24 +67,27 @@ export function NativeCard({
     let live = true;
     void act({ action: "restore", reference: viewReference(initial) })
       .then((value) => {
-        if (live && value) setView(value);
+        if (!live) return;
+        if (!value) throw new Error("没有找到对应记录。");
+        lock.current = false;
+        setView(value);
+        setRestored(true);
       })
       .catch((e) => {
         if (live) setError(e instanceof Error ? e.message : "无法恢复卡片。");
       })
       .finally(() => {
-        if (live) {
-          lock.current = false;
-          setBusy(false);
-        }
+        if (live) setBusy(false);
       });
     return () => {
       live = false;
     };
-  }, []);
+  }, [restoreAttempt]);
   useEffect(() => {
-    if (!sessionId || view.kind !== "review") return;
-    return onWorkspaceChanged(sessionId, ({ error }) => {
+    if (!restored || !sessionId || view.kind !== "review") return;
+    let live = true;
+    const unsubscribe = onWorkspaceChanged(sessionId, ({ error }) => {
+      const request = ++refreshVersion.current;
       if (error) {
         setError(error);
         setRequesting(false);
@@ -94,22 +100,31 @@ export function NativeCard({
         ...(view.goalId ? { goalId: view.goalId } : {}),
       })
         .then((value) => {
+          if (!live || request !== refreshVersion.current) return;
           setRequesting(false);
           if (
             value?.kind === "review" &&
             (value.proposal?.id !== view.proposal?.id ||
-              value.formRun?.updatedAt !== view.formRun?.updatedAt)
+              value.formRun?.updatedAt !== view.formRun?.updatedAt ||
+              value.profile?.id !== view.profile?.id ||
+              value.sourceText !== view.sourceText ||
+              value.job.jd !== view.job.jd)
           ) {
             setView(value);
             if (value.proposal?.id !== view.proposal?.id) setAccepted([]);
           }
         })
         .catch((e) => {
+          if (!live || request !== refreshVersion.current) return;
           setRequesting(false);
           setError(e instanceof Error ? e.message : "建议读取失败");
         });
     });
-  }, [sessionId, view]);
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, [restored, sessionId, view]);
   const run = async (input: unknown) => {
     if (lock.current) return false;
     lock.current = true;
@@ -117,7 +132,10 @@ export function NativeCard({
     setError("");
     try {
       const value = await act(input);
-      if (value) setView(value);
+      if (value) {
+        refreshVersion.current++;
+        setView(value);
+      }
       setSelected((items) =>
         value?.kind === "goal"
           ? items.filter((id) =>
@@ -161,6 +179,30 @@ export function NativeCard({
       setBusy(false);
     }
   };
+  if (!restored)
+    return (
+      <section className="rg-native" aria-label="Resume Grill 求职卡片">
+        <style>{__NATIVE_CSS__}</style>
+        {working ? (
+          <p role="status">正在读取当前记录…</p>
+        ) : (
+          <>
+            <p role="alert" className="rg-error">
+              无法打开卡片：{error}
+            </p>
+            <button
+              onClick={() => {
+                setBusy(true);
+                setError("");
+                setRestoreAttempt((attempt) => attempt + 1);
+              }}
+            >
+              重新读取
+            </button>
+          </>
+        )}
+      </section>
+    );
   return (
     <section className="rg-native" aria-label="Resume Grill 求职卡片">
       <style>{__NATIVE_CSS__}</style>
@@ -174,6 +216,7 @@ export function NativeCard({
           busy={busy}
           run={run}
           openFile={openFile}
+          canParseProfile={hasCapability(view.capabilities, "website")}
         />
       )}
       {view.kind === "profile" && (
@@ -194,7 +237,7 @@ export function NativeCard({
             <p role="status">正在通过当前会话生成建议，完成后会在这里更新。</p>
           )}
           <JobRevision key={view.jobId} view={view} busy={busy} run={run} />
-          {view.formRun && (
+          {hasCapability(view.capabilities, "website") && view.formRun && (
             <section aria-label="官网填写进度">
               <h4>
                 官网填写 ·{" "}
@@ -235,39 +278,43 @@ export function NativeCard({
                 ))}
             </section>
           )}
-          <button
-            disabled={busy}
-            onClick={() =>
-              void run({
-                action: "profile",
-                resumeId: view.resumeId,
-                jobId: view.jobId,
-              })
-            }
-          >
-            {view.profile?.confirmedAt
-              ? "查看 / 修改已确认资料"
-              : "解析简历并核对资料"}
-          </button>
-          {!view.profile?.confirmedAt && (
-            <p className="rg-note">
-              先确认解析资料，再交给浏览器回填；换岗位可直接复用。
-            </p>
+          {hasCapability(view.capabilities, "website") && (
+            <>
+              <button
+                disabled={busy}
+                onClick={() =>
+                  void run({
+                    action: "profile",
+                    resumeId: view.resumeId,
+                    jobId: view.jobId,
+                  })
+                }
+              >
+                {view.profile?.confirmedAt
+                  ? "查看 / 修改已确认资料"
+                  : "解析简历并核对资料"}
+              </button>
+              {!view.profile?.confirmedAt && (
+                <p className="rg-note">
+                  先确认解析资料，再交给浏览器回填；换岗位可直接复用。
+                </p>
+              )}
+              <button
+                disabled={busy || !view.profile?.confirmedAt}
+                onClick={() =>
+                  void question(
+                    `请先调用 resume_grill_start_form_run 保存或恢复任务，再调用 resume_grill_application_form_context 读取已确认资料，resumeId=${view.resumeId}，jobId=${view.jobId}。只使用当前会话中实际可用的浏览器工具，打开返回的官网地址并找到申请表；按页面能力选择先上传解析或逐项填写，读取真实字段后调用 resume_grill_plan_form_fill，只执行 write=true 的动作；填写、上传后重新读取实际字段值与附件名，调用 resume_grill_verify_form_fill 保存检查结果。失败最多核查两次，页面值冲突不覆盖。没有工具、需要登录/验证码、必填资料缺失或社招/校招不匹配就明确停下。不要把项目经历当工作经历。不要用邮件工具，不要最终提交，不要代勾同意声明，不要把尚未执行的动作说成完成。`,
+                    true,
+                  )
+                }
+              >
+                交给浏览器填写官网
+              </button>
+              <p className="rg-note">
+                需要启用浏览器操作工具；填写和核对后停在提交前，遇到登录或验证码由你接手。
+              </p>
+            </>
           )}
-          <button
-            disabled={busy || !view.profile?.confirmedAt}
-            onClick={() =>
-              void question(
-                `请先调用 resume_grill_start_form_run 保存或恢复任务，再调用 resume_grill_application_form_context 读取已确认资料，resumeId=${view.resumeId}，jobId=${view.jobId}。只使用当前会话中实际可用的浏览器工具，打开返回的官网地址并找到申请表；按页面能力选择先上传解析或逐项填写，读取真实字段后调用 resume_grill_plan_form_fill，只执行 write=true 的动作；填写、上传后重新读取实际字段值与附件名，调用 resume_grill_verify_form_fill 保存检查结果。失败最多核查两次，页面值冲突不覆盖。没有工具、需要登录/验证码、必填资料缺失或社招/校招不匹配就明确停下。不要把项目经历当工作经历。不要用邮件工具，不要最终提交，不要代勾同意声明，不要把尚未执行的动作说成完成。`,
-                true,
-              )
-            }
-          >
-            交给浏览器填写官网
-          </button>
-          <p className="rg-note">
-            需要启用浏览器操作工具；填写和核对后停在提交前，遇到登录或验证码由你接手。
-          </p>
           <details>
             <summary>岗位要求与来源</summary>
             <a href={view.job.sourceUrl} target="_blank" rel="noreferrer">
@@ -302,44 +349,49 @@ export function NativeCard({
               >
                 保存所选修改为岗位版 PDF
               </button>
-              {view.job.sourceUrl.startsWith(
-                "https://www.zhipin.com/job_detail/",
-              ) && (
+              {hasCapability(view.capabilities, "boss") &&
+                view.job.sourceUrl.startsWith(
+                  "https://www.zhipin.com/job_detail/",
+                ) && (
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      void run({
+                        action: "boss-save-review",
+                        resumeId: view.resumeId,
+                        jobId: view.jobId,
+                        proposalId: view.proposal!.id,
+                        accepted,
+                      })
+                    }
+                  >
+                    保存所选修改并核对 BOSS 图片
+                  </button>
+                )}
+              {hasCapability(view.capabilities, "mail") &&
+                !view.job.recipient && (
+                  <p className="rg-note">
+                    此岗位没有公开投递邮箱。可保存岗位版
+                    PDF，再通过上方官网申请。
+                  </p>
+                )}
+              {hasCapability(view.capabilities, "mail") && (
                 <button
-                  disabled={busy}
+                  disabled={busy || !view.job.recipient}
                   onClick={() =>
                     void run({
-                      action: "boss-save-review",
+                      action: "prepare",
                       resumeId: view.resumeId,
                       jobId: view.jobId,
                       proposalId: view.proposal!.id,
                       accepted,
+                      ...(view.goalId ? { goalId: view.goalId } : {}),
                     })
                   }
                 >
-                  保存所选修改并核对 BOSS 图片
+                  用所选修改准备邮件
                 </button>
               )}
-              {!view.job.recipient && (
-                <p className="rg-note">
-                  此岗位没有公开投递邮箱。可保存岗位版 PDF，再通过上方官网申请。
-                </p>
-              )}
-              <button
-                disabled={busy || !view.job.recipient}
-                onClick={() =>
-                  void run({
-                    action: "prepare",
-                    resumeId: view.resumeId,
-                    jobId: view.jobId,
-                    proposalId: view.proposal!.id,
-                    accepted,
-                    ...(view.goalId ? { goalId: view.goalId } : {}),
-                  })
-                }
-              >
-                用所选修改准备邮件
-              </button>
             </>
           ) : (
             <>

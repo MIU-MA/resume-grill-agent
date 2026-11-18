@@ -1,6 +1,11 @@
 import type { NativeView } from "./views.js";
 import { applicationStatusLabel } from "../../shared/presentation/application-status.js";
-type Snapshot = Extract<NativeView, { kind: "workspace" }>;
+import { hasCapability } from "../../shared/capabilities.js";
+type Workspace = Extract<NativeView, { kind: "workspace" }>;
+// The client bundle can reload before the running DSH host is restarted.
+type OptionalFields = "bossDeliveries" | "capabilities";
+type Snapshot = Omit<Workspace, OptionalFields> &
+  Partial<Pick<Workspace, OptionalFields>>;
 export function WorkspaceOverview({
   data,
   busy,
@@ -16,21 +21,26 @@ export function WorkspaceOverview({
     ["prepared", "simulated"].includes(a.status),
   );
   const sent = data.applications.filter((a) => a.status === "sent");
+  const mailEnabled = hasCapability(data.capabilities, "mail");
+  const counts = [
+    ["resumes", "简历", data.resumes.length],
+    ["jobs", "已保存岗位", data.jobs.length],
+    ...(mailEnabled
+      ? [
+          ["pending", "待确认邮件", pending.length],
+          ["history", "已发送", sent.length],
+        ]
+      : []),
+  ];
+  if (data.bossDeliveries) {
+    const verified = data.bossDeliveries.filter((d) => d.status === "finished");
+    counts.push(["boss", "BOSS 已核验", verified.length]);
+  }
   return (
     <section aria-label="求职总览">
       <h3>最近在做什么</h3>
       <div className="rg-overview-counts">
-        {[
-          ["resumes", "简历", data.resumes.length],
-          ["jobs", "已保存岗位", data.jobs.length],
-          ["pending", "待确认邮件", pending.length],
-          ["history", "已发送", sent.length],
-          [
-            "boss",
-            "BOSS 已核验",
-            data.bossDeliveries.filter((d) => d.status === "finished").length,
-          ],
-        ].map(([tab, label, count]) => (
+        {counts.map(([tab, label, count]) => (
           <button
             key={tab}
             disabled={busy}
@@ -63,28 +73,30 @@ export function WorkspaceOverview({
             管理简历库
           </button>
         </section>
-        <section>
-          <h4>需要处理的邮件</h4>
-          {pending.slice(0, 4).map((a) => (
-            <article key={a.id}>
-              <strong>{a.subject}</strong>
-              <p>{a.recipient}</p>
-              <small>{applicationStatusLabel[a.status]}</small>
-              <button
-                disabled={busy}
-                onClick={() => open({ action: "application", id: a.id })}
-              >
-                核对邮件与附件
-              </button>
-            </article>
-          ))}
-          {!pending.length && (
-            <p>没有待确认的邮件。官网申请也可以只准备简历。</p>
-          )}
-          <button disabled={busy} onClick={() => navigate("jobs")}>
-            查找官网岗位
-          </button>
-        </section>
+        {mailEnabled && (
+          <section>
+            <h4>需要处理的邮件</h4>
+            {pending.slice(0, 4).map((a) => (
+              <article key={a.id}>
+                <strong>{a.subject}</strong>
+                <p>{a.recipient}</p>
+                <small>{applicationStatusLabel[a.status]}</small>
+                <button
+                  disabled={busy}
+                  onClick={() => open({ action: "application", id: a.id })}
+                >
+                  核对邮件与附件
+                </button>
+              </article>
+            ))}
+            {!pending.length && (
+              <p>没有待确认的邮件。官网申请也可以只准备简历。</p>
+            )}
+            <button disabled={busy} onClick={() => navigate("jobs")}>
+              查找官网岗位
+            </button>
+          </section>
+        )}
       </div>
       <section>
         <h4>最近的官网读取</h4>
