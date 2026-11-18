@@ -127,6 +127,31 @@ test("所选岗位顺序改变仍复用同一准备批次", async (t) => {
   assert.equal(f.store.list("batch").length, 1);
 });
 
+test("重试中断的邮件批次会复用已完成草稿并补全剩余岗位", async (t) => {
+  const f = await setup(t), tasks = new Tasks(f.workspace);
+  const goal = tasks.saveGoal({ resumeId: f.resume.id, directions: ["Go"] });
+  const jobs = ["first", "second"].map((name) => f.workspace.addJob({
+    company: name,
+    role: "Go",
+    jd: "负责 Go API 开发与测试。",
+    sourceUrl: `https://example.com/jobs/${name}`,
+    recipient: `${name}@example.com`,
+  }));
+  const choices = jobs.map((job) => ({ jobId: job.id, keepOriginal: true }));
+  const prepared = await tasks.prepareBatch(goal.id, choices);
+  const original = prepared.items[0].applicationId;
+  const saved = f.store.list<typeof prepared & { requestHash: string }>("batch")[0];
+  // Simulate a host exiting after persisting one item (legacy batch without a PID).
+  f.store.put("batch", { ...saved, status: "preparing", items: saved.items.slice(0, 1) });
+  const recovered = await new Tasks(f.workspace).prepareBatch(goal.id, choices);
+  assert.equal(recovered.id, prepared.id);
+  assert.equal(recovered.status, "prepared");
+  assert.equal(recovered.items.length, 2);
+  assert.equal(recovered.items[0].applicationId, original);
+  assert.equal(f.workspace.history().length, 2);
+  assert.ok(f.workspace.history().every((app) => app.status === "prepared"));
+});
+
 test("失败的详情请求也计入十页预算，并标记部分读取", async (t) => {
   const f = await setup(t);
   let reads = 0;

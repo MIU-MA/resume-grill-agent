@@ -63,6 +63,7 @@ export type Batch = {
   status: "preparing" | "prepared" | "needs_input";
   items: BatchItem[];
 };
+type StoredBatch = Batch & { requestHash: string; ownerPid?: number };
 export const batchChoice = z
   .object({
     jobId: z.string(),
@@ -75,6 +76,15 @@ const normalized = (s: string) =>
   s.normalize("NFKC").replace(/\s/g, "").toLowerCase();
 
 const pendingBatches = new Map<string, Promise<Batch>>();
+function otherProcessIsPreparing(pid: number | undefined) {
+  if (!pid || pid === process.pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
 
 export class Tasks {
   constructor(
@@ -335,11 +345,13 @@ export class Tasks {
       source = this.workspace.resume(goal.resumeId);
     const { batch, owned } = store.transaction(() => {
       const existing = store
-        .list<Batch & { requestHash: string }>("batch")
+        .list<StoredBatch>("batch")
         .find((item) => item.requestHash === requestHash);
-      if (existing && existing.status !== "needs_input")
+      if (existing?.status === "prepared" ||
+          (existing?.status === "preparing" && otherProcessIsPreparing(existing.ownerPid)))
         return { batch: existing, owned: false };
-      const batch: Batch & { requestHash: string } = existing ?? {
+      // Reuse drafts already persisted before interruption; never resend anything.
+      const batch: StoredBatch = existing ?? {
         requestHash,
         id: randomUUID(),
         goalId,
@@ -348,6 +360,7 @@ export class Tasks {
         items: [],
       };
       batch.status = "preparing";
+      batch.ownerPid = process.pid;
       store.put("batch", batch);
       return { batch, owned: true };
     });
@@ -442,6 +455,7 @@ export class Tasks {
     )
       ? "prepared"
       : "needs_input";
+    delete batch.ownerPid;
     store.put("batch", batch);
     return batch;
   }
