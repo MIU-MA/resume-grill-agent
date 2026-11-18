@@ -9,6 +9,8 @@ import type { FormRun } from "../../core/form-runs.js";
 import { Boss } from "../../core/boss.js";
 import type { BossScan, BossRun } from "../../domain/boss.js";
 import { BossDeliveries } from "../../core/boss-deliveries.js";
+import { BossGroups } from "../../core/boss-groups.js";
+import type { BossShortlist } from "../../core/boss-shortlists.js";
 export type Proposal = {
   id: string;
   resumeId: string;
@@ -28,10 +30,22 @@ export function bossView(workspace: Workspace) {
   return {
     v: 1 as const,
     kind: "boss" as const,
+    goals: workspace.store.list<Goal>("goal"),
+    shortlists: workspace.store
+      .list<BossShortlist>("boss-shortlist")
+      .slice(0, 5),
+    groups: new BossGroups(workspace).list(),
     connected: new Boss(workspace).connected,
+    ...(new Boss(workspace).browserState
+      ? { browserState: new Boss(workspace).browserState! }
+      : {}),
     resumes: workspace
       .listResumes()
-      .map((r) => ({ id: r.id, name: r.name, jobId: r.jobId })),
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        ...(r.jobId ? { jobId: r.jobId } : {}),
+      })),
     jobs: workspace.store
       .list<Job>("job")
       .map((j) => ({ id: j.id, url: j.sourceUrl })),
@@ -199,6 +213,9 @@ export function workspaceView(workspace: Workspace) {
     applications: workspace
       .history()
       .filter((item) => item.status !== "superseded"),
+    bossDeliveries: new BossDeliveries(workspace)
+      .list()
+      .filter((d) => d.status !== "prepared"),
   };
 }
 export function viewFor(

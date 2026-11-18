@@ -15,4 +15,8 @@ description: 用本地 MCP 记住求职目标、读取官网岗位、按 JD 修�
 6. preview_application 完整展示收件人、正文、实际附件和 digest。真实发送须用户在 DSH 投递卡片或本机面板确认，或在自己交互终端 approve，并配置 RESUME_ALLOW_SEND=1。不得通过宿主终端、浏览器或 /resume-grill 命令替用户批准。DSH 原生 execute_application 只允许 dryRun:true，真实发送由用户卡片处理。execute_application 的 dryRun 必填；true 仅检查，false 才尝试真实发送。缺确认时说明原因，不偷偷降级成模拟并声称已投递。
 7. application_history 核验结果：sent 只表示 SMTP 接受；simulated 未发信；sending／uncertain 先核对邮箱，不自动重发。修改已准备邮件用 revise_application，沿用冻结附件，旧预览标为 superseded；打开 replacedBy 的新预览重新核对。历史单次发信授权不能复用到新岗位或批次。
 
-尚无定时后台任务、官网自动填表、收信同步、已读追踪和面试能力。不要承诺已提供这些功能；邮件正文和附件准备后仍须逐封确认发送。
+官网填写已支持已确认资料的匹配、填写计划和回读核对，需要宿主实际启用浏览器工具；停在最终提交前，不代勾声明。不能把生成计划说成已经填写。
+
+BOSS 需要用户在工作台接入网页项目的本机执行器，连接码不进入聊天。boss_status 检查后按要求 boss_search、boss_read_jobs，boss_shortlist 使用同一求职目标有界读取完整 JD；也可逐个 boss_read_detail。只覆盖当前页，工作地不明确时保留待核对，不编造分数。之后复用 review_context 与逐条修改核对，用户选定主简历或该岗位版本后 boss_prepare_delivery 冻结真实图片。多份用 boss_prepare_group 整理整批核对卡；工具不能确认、批准或发送。实际联系只由用户在卡片核对全部岗位与图片后确认，授权不覆盖未来岗位。不要通过 shell、网络或 /resume-grill 命令绕过确认。boss_group_status、boss_delivery_status 可读进度与回执，暂停工具只停止后续步骤；不明确的结果先检查，不能新建批次重发。
+
+尚无定时后台任务、收信同步、已读追踪和面试能力。不要承诺已提供这些功能。原 PDF 转图保留原图面；新生成岗位 PDF 的布局及照片限制仍然适用。

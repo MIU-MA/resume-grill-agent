@@ -36,15 +36,17 @@ export function turnCardSelector(turn: number) {
         view = root?.meta?.resumeGrill;
       if (root?.isError || view?.v !== 1) continue;
       const identity =
-        view.kind === "review"
-          ? `review:${view.resumeId}:${view.jobId}`
-          : view.kind === "application"
-            ? `application:${view.application.id}`
-            : view.kind === "goal"
-              ? `goal:${view.goal.id}`
-              : view.kind === "batch"
-                ? `batch:${view.batch.id}`
-                : "workspace";
+        view.kind === "boss"
+          ? "boss"
+          : view.kind === "review"
+            ? `review:${view.resumeId}:${view.jobId}`
+            : view.kind === "application"
+              ? `application:${view.application.id}`
+              : view.kind === "goal"
+                ? `goal:${view.goal.id}`
+                : view.kind === "batch"
+                  ? `batch:${view.batch.id}`
+                  : "workspace";
       cards.set(identity, root);
     }
     const next = [...cards.values()];

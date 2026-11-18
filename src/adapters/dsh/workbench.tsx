@@ -5,6 +5,7 @@ import { MailSettings } from "./MailSettings.js";
 import { ResumeLibrary } from "./ResumeLibrary.js";
 import { WorkspaceOverview } from "./WorkspaceOverview.js";
 import { CareerBrowser } from "./CareerBrowser.js";
+import { viewReference } from "./card-model.js";
 import { onWorkspaceChanged, notifyWorkspaceChanged } from "./updates.js";
 import { applicationStatusLabel } from "../../shared/presentation/application-status.js";
 declare const __NATIVE_CSS__: string;
@@ -25,6 +26,7 @@ function Workbench({
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const lock = useRef(false);
+  const [detailKey, setDetailKey] = useState(0);
   const reload = async () => {
     const value = await act({ action: "workspace" });
     setData(value);
@@ -133,13 +135,22 @@ function Workbench({
           <button
             disabled={busy}
             onClick={() => {
-              setDetail(null);
-              void run(reload);
+              if (tab === "boss")
+                void run(async () => {
+                  setDetail(await act({ action: "boss" }));
+                  setDetailKey((n) => n + 1);
+                  await reload();
+                });
+              else {
+                setDetail(null);
+                void run(reload);
+              }
             }}
           >
             返回清单
           </button>
           <Review
+            key={`${detailKey}:${JSON.stringify(viewReference(detail))}`}
             initial={detail}
             act={async (input: any) => {
               const view = await act(input);
@@ -276,6 +287,40 @@ function Workbench({
           )}
           {data && ["pending", "history"].includes(tab) && (
             <>
+              {data.bossDeliveries
+                .filter(
+                  (d) =>
+                    tab === "history" ||
+                    ["submitting", "running", "uncertain", "paused"].includes(
+                      d.status,
+                    ),
+                )
+                .map((d) => (
+                  <article key={d.id}>
+                    <strong>
+                      BOSS · {d.company} · {d.role}
+                    </strong>
+                    <p>
+                      {d.resumeName} ·{" "}
+                      {
+                        {
+                          prepared: "待确认",
+                          submitting: "请求已发出",
+                          running: "执行中",
+                          finished: "已投递并核验",
+                          paused: "已暂停",
+                          uncertain: "结果待核对，不重发",
+                        }[d.status]
+                      }
+                    </p>
+                    <button
+                      disabled={busy}
+                      onClick={() => void openAction({ action: "boss" })}
+                    >
+                      查看图片与执行记录
+                    </button>
+                  </article>
+                ))}
               {applications
                 .filter(
                   (item) =>

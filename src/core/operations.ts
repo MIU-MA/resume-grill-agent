@@ -7,6 +7,8 @@ import { FormRuns, observedFields, type FormRun } from "./form-runs.js";
 import { Careers } from "./careers.js";
 import { Boss } from "./boss.js";
 import { BossDeliveries } from "./boss-deliveries.js";
+import { BossGroups } from "./boss-groups.js";
+import { BossShortlists } from "./boss-shortlists.js";
 export type Operation = {
   name: string;
   description: string;
@@ -71,7 +73,11 @@ export function operations(workspace: Workspace) {
     "查询已有 BOSS 批次，保存本机回执。无 id 时列最近批次。不恢复发送。",
     { id: z.string().uuid().optional() },
     ({ id }) =>
-      id ? new Boss(workspace).refresh(id) : new Boss(workspace).recent(),
+      id
+        ? new BossDeliveries(workspace).list().some((d) => d.id === id)
+          ? new BossDeliveries(workspace).refresh(id)
+          : new Boss(workspace).refresh(id)
+        : new Boss(workspace).recent(),
   );
   tool(
     "boss_pause_delivery",
@@ -84,7 +90,40 @@ export function operations(workspace: Workspace) {
     "将用户选定的主简历或当前岗位版本转为图片，冻结附件并准备 BOSS 人工核对卡。不确认、不发送，不使用其他岗位的简历版本。",
     { resumeId: z.string(), jobId: z.string() },
     ({ resumeId, jobId }) =>
-      new BossDeliveries(workspace).prepare(resumeId, jobId),
+      new BossDeliveries(workspace)
+        .prepare(resumeId, jobId)
+        .then(({ previewId, ...delivery }) => delivery),
+  );
+  tool(
+    "boss_shortlist",
+    "按用户保存的目标筛选当前 BOSS 列表，最多读取 budget 个完整 JD，保留排除原因与简历原文证据。不编造匹配分数。城市提及不等于实际工作地点，需人工核对。失败停止后续读取，不发信。",
+    {
+      goalId: z.string(),
+      scanId: z.string(),
+      budget: z.number().int().min(1).max(10).default(5),
+    },
+    ({ goalId, scanId, budget }) =>
+      new BossShortlists(workspace).collect(goalId, scanId, budget),
+  );
+  tool(
+    "boss_prepare_group",
+    "将用户选定且已冻结的岗位附件整理为整批核对卡，最多 10 个岗位。只准备，不确认或执行。",
+    { deliveryIds: z.array(z.string().uuid()).min(1).max(10) },
+    ({ deliveryIds }) => new BossGroups(workspace).prepare(deliveryIds),
+  );
+  tool(
+    "boss_group_status",
+    "读取插件整批任务缓存和逐岗位进度，重启后不自动恢复发送。需要更新当前官网回执请调用 boss_delivery_status。",
+    { id: z.string().uuid().optional() },
+    ({ id }) =>
+      id ? new BossGroups(workspace).get(id) : new BossGroups(workspace).list(),
+    true,
+  );
+  tool(
+    "boss_pause_group",
+    "按用户要求停止后续岗位并请求当前岗位完成步骤后暂停。不自动重发或重新批准。",
+    { id: z.string().uuid() },
+    ({ id }) => new BossGroups(workspace).pause(id),
   );
   tool(
     "start_form_run",
@@ -289,9 +328,15 @@ export function operations(workspace: Workspace) {
   );
   tool(
     "application_history",
-    "读取投递记录与事件。simulated 代表没有发信，sent 仅表示 SMTP 服务接受。",
+    "读取邮件和 BOSS 投递记录。simulated 没有发信，sent 仅表示 SMTP 接受；BOSS finished 仅表示官网消息和图片回执匹配，不代表已读。",
     {},
-    () => workspace.history(),
+    () => [
+      ...workspace.history(),
+      ...new BossDeliveries(workspace)
+        .list()
+        .filter((d) => d.status !== "prepared")
+        .map(({ previewId, ...d }) => ({ ...d, channel: "boss" })),
+    ],
     true,
   );
   tool(
@@ -300,6 +345,12 @@ export function operations(workspace: Workspace) {
     {},
     () => ({
       resumes: workspace.listResumes(),
+      bossScans: workspace.store.list("boss-scan").slice(0, 5),
+      bossShortlists: workspace.store.list("boss-shortlist").slice(0, 5),
+      bossGroups: new BossGroups(workspace).list(),
+      bossDeliveries: new BossDeliveries(workspace)
+        .list()
+        .map(({ previewId, ...d }) => d),
       formRuns: workspace.store.list<FormRun>("form-run"),
       jobs: workspace.store.list("job"),
       goals: workspace.store.list("goal"),

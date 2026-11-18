@@ -13,6 +13,13 @@ import { humanAction, cardAction } from "../../src/adapters/dsh/actions.js";
 import { BossDeliveries } from "../../src/core/boss-deliveries.js";
 import { resumeImages } from "../../src/infrastructure/resume-images.js";
 import { PDFDocument } from "pdf-lib";
+import { BossGroups } from "../../src/core/boss-groups.js";
+import { BossShortlists } from "../../src/core/boss-shortlists.js";
+import { Tasks } from "../../src/core/tasks.js";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { BossWorkbench } from "../../src/adapters/dsh/BossWorkbench.js";
+import { bossView } from "../../src/adapters/dsh/views.js";
 
 export async function fixture(t: any) {
   const home = await mkdtemp(join(tmpdir(), "boss-agent-test-")),
@@ -56,11 +63,12 @@ export async function fixture(t: any) {
     if (req.url === "/jobs")
       result = {
         readId: "snapshot",
-        jobs: [{ url, title: "Go开发", company: "演示" }],
+        jobs: state.rows ?? [{ url, title: "Go开发", company: "演示" }],
         needsLogin: false,
         needsVerification: false,
       };
-    if (req.url === "/inspect-job") result = state.detail;
+    if (req.url === "/inspect-job")
+      result = state.details?.[JSON.parse(body).url] ?? state.detail;
     if (
       req.url === `/boss-batch/${id}` ||
       (state.preview && req.url === `/boss-batch/${state.preview.id}`)
@@ -78,6 +86,7 @@ export async function fixture(t: any) {
         images: state.preview.images.map(({ base64, ...i }: any) => i),
         skipped: [],
       };
+      await state.onPreview?.();
     }
     if (req.url === "/boss-batch/confirm") {
       state.confirmations = (state.confirmations ?? 0) + 1;
@@ -92,6 +101,35 @@ export async function fixture(t: any) {
         })),
       };
       state.run = result;
+      if (state.finish) {
+        result.state = "finished";
+        result.tasks[0].state = "verified";
+        result.tasks[0].steps = [
+          {
+            id: "contact",
+            kind: "contact",
+            value: result.tasks[0].url,
+            state: "verified",
+            receipt: "contact",
+          },
+          {
+            id: "text",
+            kind: "greeting",
+            value: "默认招呼",
+            source: "platform",
+            state: "verified",
+            receipt: "msg",
+          },
+          ...state.preview.images.map((i: any, n: number) => ({
+            id: `image-${n}`,
+            kind: "image",
+            value: state.badReceipt ? "wrong" : i.sha256,
+            state: "verified",
+            receipt: `image-${n}`,
+          })),
+        ];
+      }
+      await state.onConfirm?.();
       if (state.dropConfirmation) {
         res.destroy();
         return;
@@ -286,4 +324,192 @@ test("恢复和暂停只读回执，不重新确认或发送", async (t) => {
   assert.equal(f.store.list("boss-run").length, 1);
   assert.equal(f.requests.includes("/boss-batch/confirm"), false);
   await assert.rejects(f.boss.gateway().request("/fill-draft", {}), /不支持/);
+});
+
+async function twoDeliveries(t: any) {
+  const f = await fixture(t);
+  f.boss.connect(f.link);
+  const scan = await f.boss.read(),
+    job = await f.boss.detail(scan.id, f.url),
+    resume = await f.workspace.createResume(
+      "主简历.pdf",
+      "演示用户\n项目经历\n负责 Go 服务开发。",
+    );
+  const deliveries = new BossDeliveries(f.workspace),
+    a = await deliveries.prepare(resume.id, job.id);
+  const secondUrl = "https://www.zhipin.com/job_detail/second.html";
+  f.state.rows = [{ url: secondUrl, title: "Go开发", company: "第二公司" }];
+  f.state.detail = { ...f.state.detail, url: secondUrl, company: "第二公司" };
+  const otherScan = await f.boss.read(),
+    otherJob = await f.boss.detail(otherScan.id, secondUrl),
+    b = await deliveries.prepare(resume.id, otherJob.id);
+  return { ...f, deliveries, a, b, resume, job };
+}
+test("整批一次人工确认，顺序发送各自图片；重复开始与重复岗位被拒绝", async (t) => {
+  const f = await twoDeliveries(t),
+    groups = new BossGroups(f.workspace, 1, 3),
+    g = await groups.prepare([f.a.id, f.b.id]);
+  f.state.finish = true;
+  assert.equal(f.state.confirmations, undefined);
+  await groups.start(g.id, g.digest);
+  const result = await groups.wait(g.id);
+  assert.equal(result.status, "finished");
+  assert.equal(result.items.filter((i) => i.state === "finished").length, 2);
+  assert.equal(f.state.confirmations, 2);
+  assert.equal(f.deliveries.get(f.a.id).status, "finished");
+  assert.equal(f.deliveries.get(f.b.id).status, "finished");
+  await assert.rejects(groups.start(g.id, g.digest));
+  assert.equal(f.state.confirmations, 2);
+});
+test("整批缺回执停在第一项，不发送后续；重启记录不自动执行", async (t) => {
+  const f = await twoDeliveries(t),
+    groups = new BossGroups(f.workspace, 1, 2),
+    g = await groups.prepare([f.a.id, f.b.id]);
+  f.state.finish = true;
+  f.state.badReceipt = true;
+  await groups.start(g.id, g.digest);
+  const result = await groups.wait(g.id);
+  assert.equal(result.status, "paused");
+  assert.equal(result.items[0].state, "needs_review");
+  assert.equal(result.items[1].state, "queued");
+  assert.equal(f.state.confirmations, 1);
+  const remaining = await groups.remaining(g.id);
+  assert.deepEqual(
+    remaining.items.map((i) => i.deliveryId),
+    [f.b.id],
+  );
+  assert.equal(f.state.confirmations, 1);
+  const orphan = {
+    ...remaining,
+    id: "20000000-0000-4000-8000-000000000001",
+    status: "running",
+    ownerPid: undefined,
+  };
+  f.store.put("boss-group", orphan);
+  assert.equal(groups.get(orphan.id).status, "paused");
+  assert.equal(f.state.confirmations, 1);
+});
+test("整批暂停只完成当前项，附件变化在发送前被阻止", async (t) => {
+  const f = await twoDeliveries(t),
+    groups = new BossGroups(f.workspace, 1, 2),
+    g = await groups.prepare([f.a.id, f.b.id]);
+  f.state.finish = true;
+  f.state.onConfirm = () => groups.pause(g.id);
+  await groups.start(g.id, g.digest);
+  const result = await groups.wait(g.id);
+  assert.equal(result.status, "paused");
+  assert.equal(result.items[0].state, "finished");
+  assert.equal(result.items[1].state, "queued");
+  assert.equal(f.state.confirmations, 1);
+  const remaining = await groups.remaining(g.id);
+  await writeFile(f.b.images[0].path, "changed");
+  await assert.rejects(
+    groups.start(remaining.id, remaining.digest),
+    /图片已变化/,
+  );
+  assert.equal(f.state.confirmations, 1);
+});
+test("筛选复用目标、原文和职业别名，遵守读取预算且不发送", async (t) => {
+  const f = await fixture(t);
+  f.boss.connect(f.link);
+  const resume = await f.workspace.createResume(
+      "简历.pdf",
+      "演示用户\n负责 Go 服务开发。",
+    ),
+    goal = new Tasks(f.workspace).saveGoal({
+      resumeId: resume.id,
+      directions: ["Go"],
+      cities: ["上海"],
+      exclude: ["外包"],
+      limit: 2,
+    });
+  const rows = [
+    { url: f.url, title: "Go开发", company: "演示" },
+    {
+      url: "https://www.zhipin.com/job_detail/outsource.html",
+      title: "Go开发",
+      company: "外包公司",
+    },
+    {
+      url: "https://www.zhipin.com/job_detail/sales.html",
+      title: "销售",
+      company: "销售公司",
+    },
+    {
+      url: "https://www.zhipin.com/job_detail/extra.html",
+      title: "Go开发",
+      company: "其他公司",
+    },
+  ];
+  f.state.rows = rows;
+  const scan = await f.boss.read(),
+    result = await new BossShortlists(f.workspace).collect(goal.id, scan.id, 1);
+  assert.equal(result.detailsRead, 1);
+  assert.equal(result.items[0].status, "needs_review");
+  assert.deepEqual(result.items[0].evidence, ["负责 Go 服务开发。"]);
+  assert.equal(result.items[1].status, "excluded");
+  assert.equal(result.items[2].status, "excluded");
+  assert.equal(result.items[3].status, "not_read");
+  assert.equal(f.state.confirmations, undefined);
+  f.state.detail.kind = "verification";
+  const blocked = await new BossShortlists(f.workspace).collect(
+    goal.id,
+    scan.id,
+    2,
+  );
+  assert.equal(blocked.detailsRead, 1);
+  assert.equal(blocked.items[3].status, "not_read");
+});
+test("BOSS 核对界面展示实际岗位与附件，恢复不创建确认", async (t) => {
+  const f = await twoDeliveries(t),
+    groups = new BossGroups(f.workspace);
+  await groups.prepare([f.a.id, f.b.id]);
+  const html = renderToStaticMarkup(
+    createElement(BossWorkbench, {
+      view: bossView(f.workspace),
+      busy: false,
+      run: async () => {},
+      openFile: () => {},
+    }),
+  );
+  assert.match(html, /第二公司/);
+  assert.match(html, /整批核对/);
+  assert.match(html, /查看该岗位 PDF/);
+  assert.match(html, /查看第/);
+  assert.match(html, /账号默认招呼/);
+  assert.equal(f.state.confirmations, undefined);
+  assert.equal(
+    JSON.stringify(bossView(f.workspace)).includes("a".repeat(48)),
+    false,
+  );
+});
+test("并发刷新旧预览不能覆盖已确认的执行结果", async (t) => {
+  const f = await fixture(t);
+  f.boss.connect(f.link);
+  const scan = await f.boss.read(),
+    job = await f.boss.detail(scan.id, f.url),
+    resume = await f.workspace.createResume(
+      "简历.pdf",
+      "演示用户\n负责 Go 服务开发。",
+    ),
+    deliveries = new BossDeliveries(f.workspace),
+    d = await deliveries.prepare(resume.id, job.id);
+  let entered!: () => void, release!: () => void;
+  const ready = new Promise<void>((r) => (entered = r)),
+    barrier = new Promise<void>((r) => (release = r));
+  f.state.onPreview = () => {
+    entered();
+    return barrier;
+  };
+  const pending = deliveries.preview(deliveries.get(d.id));
+  await ready;
+  f.state.finish = true;
+  try {
+    await deliveries.confirm(d.id, d.digest);
+  } finally {
+    release();
+  }
+  await assert.rejects(pending, /状态已变化/);
+  assert.equal(deliveries.get(d.id).status, "finished");
+  assert.equal(f.state.confirmations, 1);
 });

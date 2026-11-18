@@ -11,7 +11,7 @@ DSH 的“插件 → 添加插件 → 安装第三方插件”可以安装 npm �
 3. 使用者在 DSH 官方安装入口填写下载文件的绝对路径，安装并启用“求职助手”。CLI 等价方式如下，路径须替换为实际下载位置：
 
 ```powershell
-dsh plugin --profile desktop add 'C:/Downloads/resume-grill-agent-0.3.0.tgz'
+dsh plugin --profile desktop add 'C:/Downloads/resume-grill-agent-0.4.0.tgz'
 ```
 
 Web 版将 `desktop` 换成 `web`。如安装器报告需要重启，重启 DSH。此包包含构建后的 Host、React 卡片、字体和插件声明，不需要在使用者电脑上编译源码；仍需下载运行依赖。包尚未发布到 npm，也没有上传下载版本，仓库当前不会自动发布。

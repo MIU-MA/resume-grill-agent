@@ -12,6 +12,10 @@ import {
 
 // Connection codes rotate with the executor. Never store them in SQLite or cards.
 const connections = new WeakMap<Workspace, BossGateway>();
+const statuses = new WeakMap<
+  Workspace,
+  { ready: boolean; phase: string; backend?: string; error: string }
+>();
 export class Boss {
   constructor(readonly workspace: Workspace) {}
   connect(link: string) {
@@ -19,9 +23,13 @@ export class Boss {
   }
   disconnect() {
     connections.delete(this.workspace);
+    statuses.delete(this.workspace);
   }
   get connected() {
     return connections.has(this.workspace);
+  }
+  get browserState() {
+    return statuses.get(this.workspace);
   }
   gateway() {
     const gateway = connections.get(this.workspace);
@@ -38,10 +46,12 @@ export class Boss {
         error: z.string().optional(),
       })
       .parse(await this.gateway().request("/status"));
-    return {
+    const result = {
       ...state,
       error: state.error ? "执行器有诊断信息，请在网页工作台查看。" : "",
     };
+    statuses.set(this.workspace, result);
+    return result;
   }
   async browserConnect() {
     await this.gateway().request("/connect", {});

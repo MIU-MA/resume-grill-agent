@@ -25,6 +25,11 @@ export function WorkspaceOverview({
           ["jobs", "已保存岗位", data.jobs.length],
           ["pending", "待确认邮件", pending.length],
           ["history", "已发送", sent.length],
+          [
+            "boss",
+            "BOSS 已核验",
+            data.bossDeliveries.filter((d) => d.status === "finished").length,
+          ],
         ].map(([tab, label, count]) => (
           <button
             key={tab}

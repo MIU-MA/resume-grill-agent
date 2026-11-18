@@ -302,6 +302,24 @@ export function NativeCard({
               >
                 保存所选修改为岗位版 PDF
               </button>
+              {view.job.sourceUrl.startsWith(
+                "https://www.zhipin.com/job_detail/",
+              ) && (
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void run({
+                      action: "boss-save-review",
+                      resumeId: view.resumeId,
+                      jobId: view.jobId,
+                      proposalId: view.proposal!.id,
+                      accepted,
+                    })
+                  }
+                >
+                  保存所选修改并核对 BOSS 图片
+                </button>
+              )}
               {!view.job.recipient && (
                 <p className="rg-note">
                   此岗位没有公开投递邮箱。可保存岗位版 PDF，再通过上方官网申请。

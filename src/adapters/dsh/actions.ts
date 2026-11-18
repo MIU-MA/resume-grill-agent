@@ -20,7 +20,46 @@ import { sourceUrlSchema } from "../../infrastructure/careers/contracts.js";
 import { ResumeProfiles } from "../../core/resume-profiles.js";
 import { Boss } from "../../core/boss.js";
 import { BossDeliveries } from "../../core/boss-deliveries.js";
+import { BossGroups } from "../../core/boss-groups.js";
+import { BossShortlists } from "../../core/boss-shortlists.js";
 const actionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("boss-check") }).strict(),
+  z
+    .object({
+      action: z.literal("boss-save-review"),
+      resumeId: z.string(),
+      jobId: z.string(),
+      proposalId: z.string(),
+      accepted: z.array(z.string()),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("boss-shortlist"),
+      goalId: z.string(),
+      scanId: z.string(),
+      budget: z.number().int().min(1).max(10),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("boss-group-prepare"),
+      ids: z.array(z.uuid()).min(1).max(10),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("boss-group-confirm"),
+      id: z.uuid(),
+      digest: z.string(),
+      acknowledged: z.literal(true),
+      confirmation: z.literal("投递"),
+    })
+    .strict(),
+  z.object({ action: z.literal("boss-group-pause"), id: z.uuid() }).strict(),
+  z
+    .object({ action: z.literal("boss-group-remaining"), id: z.uuid() })
+    .strict(),
   z.object({ action: z.literal("boss") }).strict(),
   z
     .object({ action: z.literal("boss-link"), link: z.string().max(2000) })
@@ -204,7 +243,41 @@ export async function humanAction(
 ) {
   const input = actionSchema.parse(value);
   const boss = new Boss(workspace);
+  const groups = new BossGroups(workspace);
+  if (input.action === "boss-shortlist") {
+    await new BossShortlists(workspace).collect(
+      input.goalId,
+      input.scanId,
+      input.budget,
+    );
+    return bossView(workspace);
+  }
+  if (input.action === "boss-group-prepare") {
+    await groups.prepare(input.ids);
+    return bossView(workspace);
+  }
+  if (input.action === "boss-group-confirm") {
+    await groups.start(input.id, input.digest);
+    return bossView(workspace);
+  }
+  if (input.action === "boss-group-pause") {
+    await groups.pause(input.id);
+    return bossView(workspace);
+  }
+  if (input.action === "boss-group-remaining") {
+    await groups.remaining(input.id);
+    return bossView(workspace);
+  }
   const deliveries = new BossDeliveries(workspace);
+  if (input.action === "boss-save-review") {
+    const saved = await humanAction(workspace, {
+      ...input,
+      action: "save-version",
+    });
+    if (saved?.kind !== "resume") throw new Error("未能保存岗位简历。");
+    await deliveries.prepare(saved.resume.id, input.jobId);
+    return bossView(workspace);
+  }
   if (input.action === "boss-prepare") {
     await deliveries.prepare(input.resumeId, input.jobId);
     return bossView(workspace);
@@ -228,6 +301,16 @@ export async function humanAction(
   if (input.action === "boss") return bossView(workspace);
   if (input.action === "boss-link") {
     boss.connect(input.link);
+    try {
+      await boss.status();
+    } catch (error) {
+      boss.disconnect();
+      throw error;
+    }
+    return bossView(workspace);
+  }
+  if (input.action === "boss-check") {
+    await boss.status();
     return bossView(workspace);
   }
   if (input.action === "boss-unlink") {

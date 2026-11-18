@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { NativeView } from "./views.js";
+import { BossTaskPanel } from "./BossTaskPanel.js";
 export function BossWorkbench({
   view,
   busy,
@@ -16,6 +17,8 @@ export function BossWorkbench({
   const [link, setLink] = useState(""),
     [query, setQuery] = useState(""),
     [resumeId, setResume] = useState(view.resumes[0]?.id ?? "");
+  const [goalId, setGoal] = useState(view.goals[0]?.id ?? ""),
+    [budget, setBudget] = useState(5);
   const scan = view.scans[0];
   const [chosen, setChosen] = useState<Record<string, string>>({}),
     [ack, setAck] = useState<Record<string, boolean>>({}),
@@ -27,6 +30,12 @@ export function BossWorkbench({
         启动网页项目的 npm run
         boss:ego，粘贴终端输出的完整工作台链接。连接码仅留在当前宿主内存，重启后重新连接。
       </p>
+      {view.browserState && (
+        <p role="status">
+          浏览器：{view.browserState.ready ? "已连接" : view.browserState.phase}
+          {view.browserState.error ? ` · ${view.browserState.error}` : ""}
+        </p>
+      )}
       <label>
         本次服务链接
         <input
@@ -52,6 +61,12 @@ export function BossWorkbench({
       </p>
       {view.connected && (
         <>
+          <button
+            disabled={busy}
+            onClick={() => void run({ action: "boss-check" })}
+          >
+            检查连接状态
+          </button>
           <button
             disabled={busy}
             onClick={() => void run({ action: "boss-connect" })}
@@ -136,6 +151,96 @@ export function BossWorkbench({
           )}
         </>
       )}
+      {scan && !scan.blocked && view.goals.length > 0 && (
+        <section>
+          <h4>按求职目标筛选</h4>
+          <label>
+            已保存目标
+            <select
+              value={goalId}
+              disabled={busy}
+              onChange={(e) => setGoal(e.target.value)}
+            >
+              <option value="">选择目标</option>
+              {view.goals.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.directions.join("、")} ·{" "}
+                  {g.cities.join("、") || "不限城市"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            本次最多读取详情
+            <input
+              type="number"
+              min={1}
+              max={10}
+              disabled={busy}
+              value={budget}
+              onChange={(e) => setBudget(Number(e.target.value))}
+            />
+          </label>
+          <button
+            disabled={
+              busy ||
+              !view.connected ||
+              !goalId ||
+              !Number.isInteger(budget) ||
+              budget < 1 ||
+              budget > 10
+            }
+            onClick={() =>
+              void run({
+                action: "boss-shortlist",
+                goalId,
+                scanId: scan.id,
+                budget,
+              })
+            }
+          >
+            筛选并读取完整 JD
+          </button>
+        </section>
+      )}
+      {view.shortlists.slice(0, 1).map((s) => (
+        <section key={s.id}>
+          <h4>
+            筛选结果 · 已读取 {s.detailsRead}/{s.budget} 个详情
+          </h4>
+          {s.items.map((i) => (
+            <article key={i.url}>
+              <strong>
+                {i.company} · {i.title}
+              </strong>
+              <p>
+                {
+                  {
+                    candidate: "可进一步核对",
+                    needs_review: "待核对",
+                    excluded: "已排除",
+                    not_read: "未读取详情",
+                  }[i.status]
+                }{" "}
+                · {i.reasons.join("；")}
+              </p>
+              {i.evidence.map((e, n) => (
+                <blockquote key={n}>{e}</blockquote>
+              ))}
+              {i.jobId && resumeId && (
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void run({ action: "review", resumeId, jobId: i.jobId })
+                  }
+                >
+                  结合完整 JD 核对简历
+                </button>
+              )}
+            </article>
+          ))}
+        </section>
+      ))}
       {scan &&
         !scan.blocked &&
         scan.jobs.map((j) => {
@@ -181,6 +286,10 @@ export function BossWorkbench({
             </article>
           );
         })}
+      {view.deliveries.some((d) => d.status === "prepared") ||
+      view.groups.length > 0 ? (
+        <BossTaskPanel view={view} busy={busy} run={run} openFile={openFile} />
+      ) : null}
       {view.deliveries.map((d) => (
         <article key={d.id} aria-label="BOSS 投递核对">
           <h4>

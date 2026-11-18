@@ -28,6 +28,7 @@ assets/                字体及许可
 - 新业务流程放 `core/`，纯规则放 `domain/`；不要在 `src/` 根目录或适配器里继续堆服务。
 - 具体文件、网络和邮件实现放 `infrastructure/`。适配器只处理协议、界面和用户动作。
 - 共享组件放 `shared/ui/`，DSH 不反向引用面板内部组件；浏览器代码不导入 Node 路径工具或数据库实现。
+- BOSS 的本机 HTTP 契约位于 `infrastructure/boss-gateway.ts`，任务、冻结附件、批次与筛选分别在 `core/boss*.ts`；DSH 只处理视图和人工命令。连接码不进入持久化，模型工具不暴露确认。参考 `tests/core/boss.test.ts` 的隔离执行器夹具。
 - `plugin/` 不放业务源码；新增构建资源时同步更新清单和打包检查。
 - `scripts/verify/` 的临时服务、固定模型响应和演示资料不能进入正式插件。
 - 资料只写入指定数据目录；`dist/`、`artifacts/`、`.resume-agent/` 不进 Git。
@@ -46,3 +47,5 @@ npm run package:plugin
 浏览器检查：`npm run verify:panel`；原生检查：设置 `DSH_COMMAND` 后 `npm run verify:dsh`。原生脚本可用 `RESUME_PLUGIN_SPEC` 指向预构建包，确认包能脱离源码工作。验证关闭真实发信，使用固定本地模型响应；Windows／Edge 专用脚本不作为所有系统的默认测试。
 
 修改服务后运行类型检查、测试和构建；涉及入口或资源路径时还要验证安装包。SMTP 测试使用替代函数，不能复用历史单次授权发送新邮件。
+
+设置 `RESUME_GRILL_ROOT` 为本机网页项目目录后，运行 `npm run verify:boss` 检查真实执行器的 HTTP 鉴权与状态契约。它只启动临时本机 HTTP 服务，不连接浏览器、不读取账号、不投递；临时服务和目录会清理。完整队列边界由默认测试中的隔离执行器夹具覆盖。

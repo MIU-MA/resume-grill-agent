@@ -78,6 +78,9 @@ export class BossDeliveries {
       if (hash(await readFile(image.path)) !== image.sha256)
         throw new Error("冻结的简历图片已变化，请重新准备。");
   }
+  async validate(d: BossDelivery) {
+    await this.check(d);
+  }
   async prepare(resumeId: string, jobId: string) {
     const resume = this.workspace.resume(resumeId),
       job = this.workspace.store.get<Job>("job", jobId);
@@ -168,20 +171,18 @@ export class BossDeliveries {
       })),
     );
     const p = previewSchema.parse(
-      await new Boss(this.workspace)
-        .gateway()
-        .request("/boss-batch/preview", {
-          id: d.remoteId,
-          jobs: [
-            {
-              url: d.url,
-              title: d.role,
-              company: d.company,
-              greeting: "使用账号默认招呼；不追加自定义文字。",
-            },
-          ],
-          images,
-        }),
+      await new Boss(this.workspace).gateway().request("/boss-batch/preview", {
+        id: d.remoteId,
+        jobs: [
+          {
+            url: d.url,
+            title: d.role,
+            company: d.company,
+            greeting: "使用账号默认招呼；不追加自定义文字。",
+          },
+        ],
+        images,
+      }),
     );
     if (
       p.batchId !== d.remoteId ||
@@ -194,10 +195,15 @@ export class BossDeliveries {
       p.expiresAt <= Date.now()
     )
       throw new Error("执行器预览与当前岗位附件不一致，不能确认。");
-    d.previewId = p.id;
-    d.expiresAt = p.expiresAt;
-    delete d.error;
-    return this.save(d);
+    return this.workspace.store.transaction(() => {
+      const current = this.get(d.id);
+      if (current.status !== "prepared" || current.updatedAt !== d.updatedAt)
+        throw new Error("预览期间任务状态已变化，请重新读取，不重复发送。");
+      d.previewId = p.id;
+      d.expiresAt = p.expiresAt;
+      delete d.error;
+      return this.save(d);
+    });
   }
   /** Called only by the user command channel, never an MCP/model operation. */
   async confirm(id: string, digest: string) {
@@ -242,6 +248,8 @@ export class BossDeliveries {
     }
   }
   private apply(d: BossDelivery, run: BossRun) {
+    if (d.status === "finished" && run.state !== "finished")
+      throw new Error("已完成记录不能回退为待执行。");
     if (
       run.id !== d.remoteId ||
       run.tasks.length !== 1 ||

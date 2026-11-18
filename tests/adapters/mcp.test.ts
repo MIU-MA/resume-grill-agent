@@ -41,7 +41,7 @@ test(
     try {
       await connect();
       const tools = await client!.listTools();
-      assert.equal(tools.tools.length, 28);
+      assert.equal(tools.tools.length, 32);
       assert.ok(
         tools.tools
           .find((tool) => tool.name === "execute_application")
