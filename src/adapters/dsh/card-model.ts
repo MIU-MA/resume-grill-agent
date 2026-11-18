@@ -1,6 +1,6 @@
 import type { NativeView } from "./views.js";
 export function viewReference(view: NativeView) {
-  if(view.kind==="boss") return {action:"boss"};
+  if (view.kind === "boss") return { action: "boss" };
   return view.kind === "profile"
     ? {
         action: "profile",

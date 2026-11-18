@@ -19,16 +19,61 @@ import { Careers } from "../../core/careers.js";
 import { sourceUrlSchema } from "../../infrastructure/careers/contracts.js";
 import { ResumeProfiles } from "../../core/resume-profiles.js";
 import { Boss } from "../../core/boss.js";
+import { BossDeliveries } from "../../core/boss-deliveries.js";
 const actionSchema = z.discriminatedUnion("action", [
-  z.object({action:z.literal("boss")}).strict(),
-  z.object({action:z.literal("boss-link"),link:z.string().max(2000)}).strict(),
-  z.object({action:z.literal("boss-unlink")}).strict(),
-  z.object({action:z.literal("boss-connect")}).strict(),
-  z.object({action:z.literal("boss-search"),query:z.string().min(1).max(120)}).strict(),
-  z.object({action:z.literal("boss-read")}).strict(),
-  z.object({action:z.literal("boss-detail"),scanId:z.string(),url:z.string(),resumeId:z.string().optional()}).strict(),
-  z.object({action:z.literal("boss-refresh"),id:z.string().uuid()}).strict(),
-  z.object({action:z.literal("boss-pause"),id:z.string().uuid()}).strict(),
+  z.object({ action: z.literal("boss") }).strict(),
+  z
+    .object({ action: z.literal("boss-link"), link: z.string().max(2000) })
+    .strict(),
+  z.object({ action: z.literal("boss-unlink") }).strict(),
+  z.object({ action: z.literal("boss-connect") }).strict(),
+  z
+    .object({
+      action: z.literal("boss-search"),
+      query: z.string().min(1).max(120),
+    })
+    .strict(),
+  z.object({ action: z.literal("boss-read") }).strict(),
+  z
+    .object({
+      action: z.literal("boss-detail"),
+      scanId: z.string(),
+      url: z.string(),
+      resumeId: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({ action: z.literal("boss-refresh"), id: z.string().uuid() })
+    .strict(),
+  z.object({ action: z.literal("boss-pause"), id: z.string().uuid() }).strict(),
+  z
+    .object({
+      action: z.literal("boss-prepare"),
+      resumeId: z.string(),
+      jobId: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("boss-delivery-refresh"),
+      id: z.string().uuid(),
+    })
+    .strict(),
+  z
+    .object({ action: z.literal("boss-delivery-pause"), id: z.string().uuid() })
+    .strict(),
+  z
+    .object({ action: z.literal("boss-preview"), id: z.string().uuid() })
+    .strict(),
+  z
+    .object({
+      action: z.literal("boss-confirm"),
+      id: z.string().uuid(),
+      digest: z.string(),
+      acknowledged: z.literal(true),
+      confirmation: z.literal("投递"),
+    })
+    .strict(),
   z.object({ action: z.literal("workspace") }).strict(),
   z.object({ action: z.literal("resume"), id: z.string() }).strict(),
   z
@@ -158,16 +203,63 @@ export async function humanAction(
   tasks = new Tasks(workspace),
 ) {
   const input = actionSchema.parse(value);
-  const boss=new Boss(workspace);
-  if(input.action==="boss") return bossView(workspace);
-  if(input.action==="boss-link") { boss.connect(input.link); return bossView(workspace); }
-  if(input.action==="boss-unlink") { boss.disconnect(); return bossView(workspace); }
-  if(input.action==="boss-connect") { await boss.browserConnect(); return bossView(workspace); }
-  if(input.action==="boss-search") { await boss.search(input.query); return bossView(workspace); }
-  if(input.action==="boss-read") { await boss.read(); return bossView(workspace); }
-  if(input.action==="boss-detail") { const job=await boss.detail(input.scanId,input.url); return input.resumeId ? reviewView(workspace,input.resumeId,job.id) : bossView(workspace); }
-  if(input.action==="boss-refresh") { await boss.refresh(input.id); return bossView(workspace); }
-  if(input.action==="boss-pause") { await boss.pause(input.id); return bossView(workspace); }
+  const boss = new Boss(workspace);
+  const deliveries = new BossDeliveries(workspace);
+  if (input.action === "boss-prepare") {
+    await deliveries.prepare(input.resumeId, input.jobId);
+    return bossView(workspace);
+  }
+  if (input.action === "boss-delivery-refresh") {
+    await deliveries.refresh(input.id);
+    return bossView(workspace);
+  }
+  if (input.action === "boss-delivery-pause") {
+    await deliveries.pause(input.id);
+    return bossView(workspace);
+  }
+  if (input.action === "boss-preview") {
+    await deliveries.preview(deliveries.get(input.id));
+    return bossView(workspace);
+  }
+  if (input.action === "boss-confirm") {
+    await deliveries.confirm(input.id, input.digest);
+    return bossView(workspace);
+  }
+  if (input.action === "boss") return bossView(workspace);
+  if (input.action === "boss-link") {
+    boss.connect(input.link);
+    return bossView(workspace);
+  }
+  if (input.action === "boss-unlink") {
+    boss.disconnect();
+    return bossView(workspace);
+  }
+  if (input.action === "boss-connect") {
+    await boss.browserConnect();
+    return bossView(workspace);
+  }
+  if (input.action === "boss-search") {
+    await boss.search(input.query);
+    return bossView(workspace);
+  }
+  if (input.action === "boss-read") {
+    await boss.read();
+    return bossView(workspace);
+  }
+  if (input.action === "boss-detail") {
+    const job = await boss.detail(input.scanId, input.url);
+    return input.resumeId
+      ? reviewView(workspace, input.resumeId, job.id)
+      : bossView(workspace);
+  }
+  if (input.action === "boss-refresh") {
+    await boss.refresh(input.id);
+    return bossView(workspace);
+  }
+  if (input.action === "boss-pause") {
+    await boss.pause(input.id);
+    return bossView(workspace);
+  }
   if (input.action === "workspace") return workspaceView(workspace);
   if (input.action === "resume") return resumeView(workspace, input.id);
   if (input.action === "profile")

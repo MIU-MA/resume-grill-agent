@@ -90,7 +90,10 @@ function Workbench({
   const navigate = (next: string) => {
     setTab(next);
     setDetail(null);
-    if(next === "boss") { void openAction({action:"boss"}); return; }
+    if (next === "boss") {
+      void openAction({ action: "boss" });
+      return;
+    }
     void run(reload);
   };
   const applications = data?.applications ?? [];

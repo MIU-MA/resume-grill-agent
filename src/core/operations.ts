@@ -6,6 +6,7 @@ import { applicationFormContext } from "./application-forms.js";
 import { FormRuns, observedFields, type FormRun } from "./form-runs.js";
 import { Careers } from "./careers.js";
 import { Boss } from "./boss.js";
+import { BossDeliveries } from "./boss-deliveries.js";
 export type Operation = {
   name: string;
   description: string;
@@ -40,12 +41,51 @@ export function operations(workspace: Workspace) {
       readOnly,
     });
   };
-  tool("boss_status", "检查用户已连接的本机 BOSS 执行器状态。不建立新浏览器，不发送。", {}, () => new Boss(workspace).status(), true);
-  tool("boss_search", "在已连接且登录的 BOSS 页面搜索用户指定方向。只导航，不联系招聘方。", {query:z.string().trim().min(1).max(120)}, ({query})=>new Boss(workspace).search(query));
-  tool("boss_read_jobs", "读取当前 BOSS 列表快照；遇到登录或验证请用户接管，不自动重试。", {}, ()=>new Boss(workspace).read());
-  tool("boss_read_detail", "核对本次列表中的岗位身份与完整 JD，保存为独立岗位，可 review_context。", {scanId:z.string(),url:z.string()}, ({scanId,url})=>new Boss(workspace).detail(scanId,url));
-  tool("boss_delivery_status", "查询已有 BOSS 批次，保存本机回执。无 id 时列最近批次。不恢复发送。", {id:z.string().uuid().optional()}, ({id})=>id?new Boss(workspace).refresh(id):new Boss(workspace).recent());
-  tool("boss_pause_delivery", "按用户要求暂停 BOSS 批次，完成当前步骤后停下；之后读取状态，不重复执行。", {id:z.string().uuid()}, ({id})=>new Boss(workspace).pause(id));
+  tool(
+    "boss_status",
+    "检查用户已连接的本机 BOSS 执行器状态。不建立新浏览器，不发送。",
+    {},
+    () => new Boss(workspace).status(),
+    true,
+  );
+  tool(
+    "boss_search",
+    "在已连接且登录的 BOSS 页面搜索用户指定方向。只导航，不联系招聘方。",
+    { query: z.string().trim().min(1).max(120) },
+    ({ query }) => new Boss(workspace).search(query),
+  );
+  tool(
+    "boss_read_jobs",
+    "读取当前 BOSS 列表快照；遇到登录或验证请用户接管，不自动重试。",
+    {},
+    () => new Boss(workspace).read(),
+  );
+  tool(
+    "boss_read_detail",
+    "核对本次列表中的岗位身份与完整 JD，保存为独立岗位，可 review_context。",
+    { scanId: z.string(), url: z.string() },
+    ({ scanId, url }) => new Boss(workspace).detail(scanId, url),
+  );
+  tool(
+    "boss_delivery_status",
+    "查询已有 BOSS 批次，保存本机回执。无 id 时列最近批次。不恢复发送。",
+    { id: z.string().uuid().optional() },
+    ({ id }) =>
+      id ? new Boss(workspace).refresh(id) : new Boss(workspace).recent(),
+  );
+  tool(
+    "boss_pause_delivery",
+    "按用户要求暂停 BOSS 批次，完成当前步骤后停下；之后读取状态，不重复执行。",
+    { id: z.string().uuid() },
+    ({ id }) => new Boss(workspace).pause(id),
+  );
+  tool(
+    "boss_prepare_delivery",
+    "将用户选定的主简历或当前岗位版本转为图片，冻结附件并准备 BOSS 人工核对卡。不确认、不发送，不使用其他岗位的简历版本。",
+    { resumeId: z.string(), jobId: z.string() },
+    ({ resumeId, jobId }) =>
+      new BossDeliveries(workspace).prepare(resumeId, jobId),
+  );
   tool(
     "start_form_run",
     "开始或恢复官网填写任务，绑定已确认资料与附件。先调用本工具，再读取页面并用 plan_form_fill 自动匹配；禁止最终提交。",

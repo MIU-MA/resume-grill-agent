@@ -8,6 +8,7 @@ import { ResumeProfiles } from "../../core/resume-profiles.js";
 import type { FormRun } from "../../core/form-runs.js";
 import { Boss } from "../../core/boss.js";
 import type { BossScan, BossRun } from "../../domain/boss.js";
+import { BossDeliveries } from "../../core/boss-deliveries.js";
 export type Proposal = {
   id: string;
   resumeId: string;
@@ -24,7 +25,22 @@ export type NativeView =
   | ReturnType<typeof batchView>
   | ReturnType<typeof workspaceView>;
 export function bossView(workspace: Workspace) {
-  return {v:1 as const,kind:"boss" as const,connected:new Boss(workspace).connected,resumes:workspace.listResumes().map(r=>({id:r.id,name:r.name})),scans:workspace.store.list<BossScan>("boss-scan").slice(0,5),runs:workspace.store.list<BossRun>("boss-run")};
+  return {
+    v: 1 as const,
+    kind: "boss" as const,
+    connected: new Boss(workspace).connected,
+    resumes: workspace
+      .listResumes()
+      .map((r) => ({ id: r.id, name: r.name, jobId: r.jobId })),
+    jobs: workspace.store
+      .list<Job>("job")
+      .map((j) => ({ id: j.id, url: j.sourceUrl })),
+    scans: workspace.store.list<BossScan>("boss-scan").slice(0, 5),
+    runs: workspace.store.list<BossRun>("boss-run"),
+    deliveries: new BossDeliveries(workspace)
+      .list()
+      .map(({ previewId, ...d }) => d),
+  };
 }
 export function profileView(
   workspace: Workspace,
@@ -191,7 +207,7 @@ export function viewFor(
   args: any,
   value: any,
 ): NativeView | undefined {
-  if(operation.startsWith("boss_")) return bossView(workspace);
+  if (operation.startsWith("boss_")) return bossView(workspace);
   if (operation === "review_context" || operation === "propose_resume_changes")
     return reviewView(
       workspace,

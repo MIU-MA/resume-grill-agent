@@ -164,7 +164,9 @@ export function NativeCard({
   return (
     <section className="rg-native" aria-label="Resume Grill 求职卡片">
       <style>{__NATIVE_CSS__}</style>
-      {view.kind === "boss" && <BossWorkbench view={view} busy={busy} run={run} />}
+      {view.kind === "boss" && (
+        <BossWorkbench view={view} busy={busy} run={run} openFile={openFile} />
+      )}
       {view.kind === "resume" && (
         <ResumeDocument
           key={view.resume.id}
