@@ -273,7 +273,11 @@ try {
   await workbench.screenshot({ path: join(output, "dsh-workspace-sidebar.png") });
   await workbench.getByRole("button", { name: "简历库", exact: true }).click();
   await workbench.getByText("演示简历.txt", { exact: true }).waitFor();
-  await workbench.getByLabel("选择简历文件", { exact: true }).setInputFiles({
+  const [resumeChooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    workbench.getByText("选择简历文件", { exact: true }).click(),
+  ]);
+  await resumeChooser.setFiles({
     name: "侧栏上传.txt",
     mimeType: "text/plain",
     buffer: Buffer.from("演示用户\n项目经历\n- 参与 Go API 开发与测试。"),
@@ -473,6 +477,7 @@ try {
     );
     return panel && panel.getBoundingClientRect().width > 850;
   });
+  await full.locator(".rg-refresh:enabled").waitFor();
   await page.screenshot({
     path: join(output, "dsh-resume-library.png"),
     fullPage: true,
@@ -485,7 +490,7 @@ try {
   ), 2, "宽版总览应使用双列");
   await page.screenshot({
     path: join(output, "dsh-workspace-overview.png"),
-    clip: { x: 0, y: 0, width: 1440, height: 835 },
+    clip: { x: 0, y: 0, width: 1440, height: 900 },
   });
   await full.getByRole("button", { name: "BOSS 投递", exact: true }).click();
   const boss = full.getByRole("region", { name: "BOSS 投递", exact: true });
@@ -555,12 +560,14 @@ try {
   await full.getByRole("button", { name: "投递记录", exact: true }).click();
   await full.getByRole("heading", { name: "投递记录", exact: true }).waitFor();
   await full.getByText("edited@example.com", { exact: true }).waitFor();
+  await full.locator(".rg-refresh:enabled").waitFor();
   await page.screenshot({
     path: join(output, "dsh-delivery-history.png"),
     clip: { x: 0, y: 0, width: 1440, height: 650 },
   });
   await full.getByRole("button", { name: "招聘官网", exact: true }).click();
   await full.getByRole("heading", { name: "招聘官网", exact: true }).waitFor();
+  await full.locator(".rg-refresh:enabled").waitFor();
   await page.screenshot({
     path: join(output, "dsh-career-workbench.png"),
     clip: { x: 0, y: 0, width: 1440, height: 720 },

@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { PixelIcon } from "./PixelIcon.js";
 export function ResumeUpload({
   busy,
   onUpload,
@@ -10,14 +11,19 @@ export function ResumeUpload({
   return (
     <div
       className="rg-upload"
+      data-busy={busy}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
         if (!busy && e.dataTransfer.files[0]) onUpload(e.dataTransfer.files[0]);
       }}
     >
-      <p>选择简历，或将文件拖到这里</p>
-      <label htmlFor={id}>选择简历文件</label>
+      <span className="rg-icon-tile"><PixelIcon name="upload" /></span>
+      <div className="rg-upload-copy">
+        <strong>拖入简历</strong>
+        <small>PDF、DOCX、TXT 或 Markdown · 最多 10 MiB</small>
+      </div>
+      <label className="rg-upload-button" htmlFor={id}>选择简历文件</label>
       <input
         id={id}
         type="file"
@@ -29,7 +35,6 @@ export function ResumeUpload({
           if (file) onUpload(file);
         }}
       />
-      <small>PDF / DOCX / TXT / Markdown，最多 10 MiB</small>
     </div>
   );
 }

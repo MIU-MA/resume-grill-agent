@@ -3,6 +3,7 @@ import type { NativeView } from "./views.js";
 import { BossDeliveryPanel } from "./BossDeliveryPanel.js";
 import type { ReadResumeImage } from "./controls.js";
 import { JobList, JobListRow } from "./JobList.js";
+import { WorkbenchHeading } from "./WorkbenchHeading.js";
 
 export function BossWorkbench({
   view,
@@ -81,7 +82,7 @@ export function BossWorkbench({
   }
   return (
     <section aria-label="BOSS 投递">
-      <h3>BOSS 投递</h3>
+      <WorkbenchHeading icon="boss" title="BOSS 投递" />
       <div className="rg-boss-start">
       {resumes.length === 1 && <p>简历：{resumes[0].name}</p>}
       {resumes.length > 1 && (
@@ -150,6 +151,7 @@ export function BossWorkbench({
                 {scan.jobs.map((job) => (
                   <JobListRow
                     key={job.url}
+                    icon="boss"
                     title={job.title}
                     meta={[job.company, job.salary].filter(Boolean).join(" · ")}
                     action={

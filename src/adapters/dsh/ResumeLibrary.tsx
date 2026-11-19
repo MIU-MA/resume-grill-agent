@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { NativeView } from "./views.js";
 import { ResumeUpload } from "./ResumeUpload.js";
 import { useEditDraft } from "./use-edit-draft.js";
+import { WorkbenchHeading } from "./WorkbenchHeading.js";
+import { PixelIcon } from "./PixelIcon.js";
 
 type Snapshot = Extract<NativeView, { kind: "workspace" }>;
 export function ResumeLibrary({
@@ -42,17 +44,11 @@ export function ResumeLibrary({
   });
   return (
     <section aria-label="简历库">
-      <div className="rg-section-heading">
-        <div>
-          <h3>简历库</h3>
-          <p className="rg-note">
-            {data.resumes.length} 份简历 · 原件与岗位版本分别保留
-          </p>
-        </div>
-        <button className={creating ? undefined : "rg-primary"} disabled={busy} onClick={() => setCreating(!creating)}>
+      <WorkbenchHeading icon="resumes" title="简历库" meta={`${data.resumes.length} 份`} action={
+        <button disabled={busy} onClick={() => setCreating(!creating)}>
           {creating ? "收起新建" : "新建简历"}
         </button>
-      </div>
+      } />
       <ResumeUpload busy={busy} onUpload={onUpload} />
       {creating && (
         <form
@@ -171,6 +167,7 @@ export function ResumeLibrary({
       <div className="rg-library-list">
         {rows.map((resume) => (
           <article key={resume.id} className="rg-library-row">
+            <span className="rg-icon-tile"><PixelIcon name="resumes" /></span>
             <div className="rg-library-description">
               {renaming === resume.id ? (
                 <form

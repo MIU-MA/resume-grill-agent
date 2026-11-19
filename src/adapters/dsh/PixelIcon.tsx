@@ -6,6 +6,7 @@ const paths = {
   pending: "M1 2h10v8H1zm1 2v5h8V4H9v1H8v1H7v1H5V6H4V5H3V4zm1-1v1h1v1h1v1h2V5h1V4h1V3z",
   history: "M2 1h8v10H2zm1 1v8h6V2zm1 2h4v1H4zm0 2h4v1H4zm0 2h3v1H4z",
   refresh: "M3 2h5v1h2V1h1v5H6V5h3V4H8V3H3v1H2v2H1V4h1V3h1zm8 4v2h-1v1H9v1H4V9H2v2H1V6h5v1H3v1h1v1h5V8h1V6z",
+  upload: "M5 1h2v1h1v1h1v1h1v1H7v4H5V5H2V4h1V3h1V2h1zM1 8h1v2h8V8h1v3H1z",
 };
 
 export type PixelIconName = keyof typeof paths;

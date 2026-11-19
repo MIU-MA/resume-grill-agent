@@ -167,8 +167,7 @@ export function ApplicationReview({
           </button>
           {!sendingEnabled && (
             <p className="rg-note">
-              未启用真实发送。在 DSH
-              在设置的「鲸历邮箱」中保存邮箱和授权码，并开启真实发送。
+              未启用真实发送。请在 DSH 设置的「鲸历邮箱」中保存邮箱和授权码，再开启真实发送。
             </p>
           )}
         </>

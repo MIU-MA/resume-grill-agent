@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { NativeView } from "./views.js";
 import { JobList, JobListRow } from "./JobList.js";
 import { isBossSource } from "../../domain/boss.js";
+import { WorkbenchHeading } from "./WorkbenchHeading.js";
 type Snapshot = Extract<NativeView, { kind: "workspace" }>;
 export function CareerBrowser({
   data,
@@ -35,7 +36,7 @@ export function CareerBrowser({
   ]).values()].filter((job) => !isBossSource(job.url));
   return (
     <section className="rg-career-panel" aria-label="招聘官网实时岗位">
-      <h3>招聘官网</h3>
+      <WorkbenchHeading icon="jobs" title="招聘官网" />
       <div className="rg-career-filters">
         <label>
           招聘来源

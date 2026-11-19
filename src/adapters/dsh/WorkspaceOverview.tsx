@@ -56,7 +56,7 @@ export function WorkspaceOverview({
           </div>
         </div>
         <div className="rg-portrait-stage">
-          <DsPortrait size={168} alt="像素风 DS 娘" />
+          <DsPortrait size={216} alt="像素风 DS 娘" />
         </div>
       </header>
       <div className="rg-overview-counts">
@@ -66,7 +66,7 @@ export function WorkspaceOverview({
             disabled={busy}
             onClick={() => navigate(tab)}
           >
-            <span className="rg-count-value"><strong>{count}</strong><PixelIcon name={tab} /></span>
+            <span className="rg-count-value"><strong>{count}</strong><span className="rg-icon-tile"><PixelIcon name={tab} /></span></span>
             <span className="rg-count-label">{label}</span>
           </button>
         ))}
