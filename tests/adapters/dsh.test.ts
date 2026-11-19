@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
@@ -14,6 +15,7 @@ import { turnCardSelector } from "../../src/adapters/dsh/card-model.js";
 import { Tasks } from "../../src/core/tasks.js";
 import { batchView, reviewView, workspaceView } from "../../src/adapters/dsh/views.js";
 import { WorkspaceOverview } from "../../src/adapters/dsh/WorkspaceOverview.js";
+import { ApplicationHistory } from "../../src/adapters/dsh/ApplicationHistory.js";
 import { operations } from "../../src/core/operations.js";
 import { ResumeProfiles } from "../../src/core/resume-profiles.js";
 import {
@@ -94,6 +96,55 @@ test("旧宿主的工作台快照缺少 BOSS 字段时，总览仍能渲染", as
   assert.ok(overview.includes(resume.name));
   assert.doesNotMatch(overview, /BOSS 已核验/);
   assert.match(render(data), /BOSS 已核验/);
+});
+
+test("三种投递共用跟进记录，官网手动记录可重复点击，跟进不改变回执", async (t) => {
+  const f = await setup(t);
+  const record = (jobId: string) => humanAction(f.workspace, {
+    action: "record-website-submission", resumeId: f.resume.id, jobId,
+  });
+  const first = await record(f.job.id);
+  const { id: originalJobId, ...jobFields } = f.job;
+  const editedJob = f.workspace.addJob({ ...jobFields, jd: `${f.job.jd} · 新要求` });
+  assert.notEqual(editedJob.id, originalJobId);
+  const repeated = await record(editedJob.id);
+  assert.equal(first.kind === "review" && first.websiteSubmissionAt, repeated.kind === "review" && repeated.websiteSubmissionAt);
+  const websiteId = workspaceView(f.workspace).websiteSubmissions![0].id;
+  assert.equal(workspaceView(f.workspace).websiteSubmissions?.length, 1);
+  const save = (channel: string, applicationId: string, revision = 0, stage = "interview", dueDate = "2025-03-10") =>
+    humanAction(f.workspace, { action: "save-application-followup", channel, applicationId, revision,
+      data: { stage, dueDate, note: "面试前复习项目" },
+    });
+  await save("website", websiteId);
+  await assert.rejects(save("website", websiteId), /已被更新/);
+  await assert.rejects(save("website", websiteId, 1, "interview", "2025-02-30"));
+  const draft = await humanAction(f.workspace, { action: "prepare", resumeId: f.resume.id,
+    jobId: f.job.id, proposalId: f.proposal.id, accepted: [],
+  });
+  assert.equal(draft.kind, "application");
+  await assert.rejects(save("mail", draft.application.id), /还在准备/);
+  f.store.put("application", { ...draft.application, status: "sent" });
+  await save("mail", draft.application.id);
+  const bossJob = f.workspace.addJob({ company: "BOSS 公司", role: "Go", jd: "开发 Go", sourceUrl: "https://www.zhipin.com/job_detail/demo.html" });
+  await assert.rejects(record(bossJob.id), /BOSS 投递/);
+  const bossId = randomUUID();
+  f.store.put("boss-delivery", { id: bossId, company: bossJob.company, role: bossJob.role,
+    resumeName: f.resume.name, status: "finished", createdAt: Date.now() });
+  await save("boss", bossId);
+  await save("website", websiteId, 1, "closed");
+  const snapshot = workspaceView(f.workspace);
+  assert.equal(snapshot.applications[0].status, "sent");
+  assert.equal(snapshot.bossDeliveries?.[0].status, "finished");
+  assert.equal(snapshot.applicationFollowups.length, 3);
+  assert.equal(snapshot.applicationFollowups.find((item) => item.channel === "website")?.dueDate, "");
+  const html = renderToStaticMarkup(createElement(ApplicationHistory, { data: snapshot, pending: false,
+    busy: false, open: () => {}, save: async () => true,
+  }));
+  assert.match(html, /到期跟进 2/);
+  assert.match(html, /手动记录已提交/);
+  assert.match(html, /SMTP 已接受/);
+  assert.match(html, /已投递并核验/);
+  assert.equal(f.sends(), 0);
 });
 
 test("官网代填遇到旧版宿主时提示重启或更新插件，普通填写错误原样保留", async () => {

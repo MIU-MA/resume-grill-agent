@@ -650,6 +650,9 @@ try {
     .filter({ hasText: "招聘页必须使用公网地址" })
     .waitFor();
   assert.equal(store.list("proposal").length, 1, "代填失败不能调用模型");
+  await full.getByRole("button", { name: "记录官网已提交", exact: true }).click();
+  await full.getByRole("status").filter({ hasText: "已记入投递记录。" }).waitFor();
+  assert.equal(await full.getByLabel("接受这条修改", { exact: true }).isChecked(), true);
   await full
     .getByRole("button", { name: "重新生成建议", exact: true })
     .click();
@@ -736,6 +739,19 @@ try {
       "实时查看和改简历不能准备或发送邮件",
     );
   }
+  await full.getByRole("button", { name: "投递记录", exact: true }).click();
+  const webRow = full.getByRole("listitem").filter({ hasText: "手动记录已提交" });
+  await webRow.getByRole("button", { name: "记录跟进", exact: true }).click();
+  await webRow.getByLabel("跟进进展", { exact: true }).selectOption("interview");
+  await webRow.getByLabel("下次跟进日期", { exact: true }).fill("2025-03-10");
+  await webRow.getByLabel("跟进备注", { exact: true }).fill("复习 Go API 项目，再确认面试时间");
+  await webRow.getByRole("button", { name: "保存跟进", exact: true }).click();
+  await webRow.getByText("已约面", { exact: true }).waitFor();
+  await full.getByRole("button", { name: "到期跟进 1", exact: true }).click();
+  assert.equal(await full.getByRole("listitem").count(), 1);
+  assert.equal(store.list("website-application").length, 1);
+  assert.equal(await webRow.getByText("复习 Go API 项目，再确认面试时间", { exact: true }).count(), 1);
+  await page.screenshot({ path: join(output, "dsh-application-followup.png"), fullPage: true });
   await page.screenshot({
     path: join(output, "dsh-workspace-full.png"),
     fullPage: true,

@@ -9,11 +9,13 @@ export function JobListRow({
   title,
   meta,
   action,
+  details,
   icon = "jobs",
 }: {
   title: ReactNode;
   meta?: ReactNode;
   action: ReactNode;
+  details?: ReactNode;
   icon?: PixelIconName;
 }) {
   return (
@@ -24,6 +26,7 @@ export function JobListRow({
         {meta && <div className="rg-note">{meta}</div>}
       </div>
       <div className="rg-job-row-action">{action}</div>
+      {details && <div className="rg-job-row-details">{details}</div>}
     </li>
   );
 }

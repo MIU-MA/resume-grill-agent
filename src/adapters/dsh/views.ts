@@ -13,6 +13,7 @@ import { BossGroups } from "../../core/boss-groups.js";
 import { BossArchives } from "../../core/boss-archives.js";
 import type { BossShortlist } from "../../core/boss-shortlists.js";
 import { hasCapability } from "../../shared/capabilities.js";
+import { ApplicationFollowups } from "../../core/application-followups.js";
 export type Proposal = {
   id: string;
   resumeId: string;
@@ -107,6 +108,7 @@ export function reviewView(
         .list<FormRun>("form-run")
         .find((r) => r.resumeId === resumeId && r.jobId === jobId)
     : undefined;
+  const websiteSubmission = website ? new ApplicationFollowups(workspace).websiteSubmission(job) : undefined;
   const proposal = proposalId
     ? workspace.store.get<Proposal>("proposal", proposalId)
     : workspace.store
@@ -127,6 +129,8 @@ export function reviewView(
     job,
     ...(profile ? { profile } : {}),
     ...(formRun ? { formRun } : {}),
+    canRecordWebsiteSubmission: website,
+    ...(websiteSubmission ? { websiteSubmissionAt: websiteSubmission.submittedAt } : {}),
     ...(websiteNotice ? { websiteNotice } : {}),
     ...(goalId ? { goalId } : {}),
     ...(proposal ? { proposal } : {}),
@@ -165,6 +169,7 @@ export function batchView(workspace: Workspace, id: string) {
   };
 }
 export function workspaceView(workspace: Workspace) {
+  const followups = new ApplicationFollowups(workspace);
   const resumes = workspace.store
     .list<Resume>("resume")
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
@@ -236,6 +241,8 @@ export function workspaceView(workspace: Workspace) {
     applications: hasCapability(workspace.capabilities, "mail")
       ? workspace.history().filter((item) => item.status !== "superseded")
       : [],
+    applicationFollowups: followups.list().filter(({ channel }) => hasCapability(workspace.capabilities, channel)),
+    ...(hasCapability(workspace.capabilities, "website") ? { websiteSubmissions: followups.websiteSubmissions() } : {}),
     ...(hasCapability(workspace.capabilities, "boss")
       ? {
           bossDeliveries: new BossDeliveries(workspace)

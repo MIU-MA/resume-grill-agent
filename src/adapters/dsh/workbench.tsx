@@ -9,10 +9,9 @@ import { CareerBrowser } from "./CareerBrowser.js";
 import { JobList, JobListRow } from "./JobList.js";
 import { PixelIcon, type PixelIconName } from "./PixelIcon.js";
 import { brandName, DsPortrait, mailSettingsName, moduleSettingsName, quickEntryName } from "./branding.js";
-import { WorkbenchHeading } from "./WorkbenchHeading.js";
+import { ApplicationHistory } from "./ApplicationHistory.js";
 import { viewReference } from "./card-model.js";
 import { onWorkspaceChanged, notifyWorkspaceChanged } from "./updates.js";
-import { applicationStatusLabel } from "../../shared/presentation/application-status.js";
 import { hasCapability } from "../../shared/capabilities.js";
 declare const __NATIVE_CSS__: string;
 type Snapshot = Extract<NativeView, { kind: "workspace" }>;
@@ -115,17 +114,7 @@ function Workbench({
   ];
   if (bossDeliveries) tabs.push(["boss", "BOSS 投递"]);
   if (mailEnabled) tabs.push(["pending", "待确认"]);
-  if (mailEnabled || bossDeliveries) tabs.push(["history", "投递记录"]);
-  const shownApplications = applications.filter(
-    (item) =>
-      tab === "history" || ["prepared", "simulated"].includes(item.status),
-  );
-  const shownBossDeliveries = (bossDeliveries ?? []).filter(
-    (d) =>
-      tab === "history" ||
-      ["submitting", "running", "uncertain", "paused"].includes(d.status),
-  );
-  const historyCount = shownApplications.length + shownBossDeliveries.length;
+  if (mailEnabled || bossDeliveries || data?.websiteSubmissions) tabs.push(["history", "投递记录"]);
   return (
     <section className="rg-native rg-workbench" aria-label={brandName}>
       <style>{__NATIVE_CSS__}</style>
@@ -287,56 +276,9 @@ function Workbench({
             </>
           )}
           {data && ["pending", "history"].includes(tab) && (
-            <>
-              <WorkbenchHeading
-                icon={tab === "pending" ? "pending" : "history"}
-                title={tab === "pending" ? "待确认邮件" : "投递记录"}
-                meta={`${historyCount} 条`}
-              />
-              {historyCount > 0 ? (
-                <JobList>
-                  {shownBossDeliveries.map((d) => (
-                    <JobListRow key={d.id} icon="boss" title={`${d.company} · ${d.role}`} meta={
-                      <>
-                        <span className="rg-status" data-tone={d.status === "finished" ? "success" : d.status === "uncertain" ? "warning" : undefined}>
-                          {{
-                            prepared: "待确认",
-                            submitting: "请求已发出",
-                            running: "执行中",
-                            finished: "已投递并核验",
-                            paused: "已暂停",
-                            uncertain: "结果待核对，不重发",
-                          }[d.status]}
-                        </span>
-                        <span>BOSS · {d.resumeName}</span>
-                      </>
-                    } action={
-                      <button disabled={busy} onClick={() =>
-                        void openAction({ action: "boss", deliveryFocus: d.id })
-                      }>查看图片与执行记录</button>
-                    } />
-                  ))}
-                  {shownApplications.map((item) => (
-                    <JobListRow key={item.id} icon="pending" title={item.subject} meta={
-                      <>
-                        <span className="rg-status" data-tone={item.status === "sent" ? "success" : item.status === "uncertain" ? "warning" : undefined}>
-                          {applicationStatusLabel[item.status]}
-                        </span>
-                        <span>
-                          <span>{item.recipient}</span> · {new Date(item.createdAt).toLocaleString()}
-                        </span>
-                      </>
-                    } action={
-                      <button disabled={busy} onClick={() =>
-                        void run(async () => setDetail(await act({ action: "application", id: item.id })))
-                      }>查看邮件与附件</button>
-                    } />
-                  ))}
-                </JobList>
-              ) : (
-                <p className="rg-note">{tab === "pending" ? "没有待确认的邮件。" : "还没有投递记录。"}</p>
-              )}
-            </>
+            <ApplicationHistory key={tab} data={data} pending={tab === "pending"} busy={busy}
+              open={(input) => void openAction(input)}
+              save={(input) => run(async () => setData(await act(input)))} />
           )}
         </>
       )}

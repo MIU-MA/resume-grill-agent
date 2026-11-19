@@ -118,6 +118,7 @@ export function NativeCard({
             value?.kind === "review" &&
             (value.proposal?.id !== view.proposal?.id ||
               value.formRun?.updatedAt !== view.formRun?.updatedAt ||
+              value.websiteSubmissionAt !== view.websiteSubmissionAt ||
               value.profile?.id !== view.profile?.id ||
               value.sourceText !== view.sourceText ||
               value.job.jd !== view.job.jd)
@@ -142,6 +143,7 @@ export function NativeCard({
     lock.current = true;
     setBusy(true);
     setError("");
+    const action = (input as { action?: string } | null)?.action;
     try {
       const value = await act(input);
       if (value) {
@@ -155,8 +157,8 @@ export function NativeCard({
             )
           : [],
       );
-      setAccepted([]);
-      if ((input as any)?.action === "update-jd" && value?.kind === "review") {
+      if (action !== "record-website-submission") setAccepted([]);
+      if (action === "update-jd" && value?.kind === "review") {
         setRequesting(true);
         await ask(reviewRequest(value));
       }
@@ -322,6 +324,14 @@ export function NativeCard({
               >
                 官网代填
               </button>
+              {view.canRecordWebsiteSubmission && (view.websiteSubmissionAt ? (
+                <p role="status">已记入投递记录。</p>
+              ) : (
+                <button disabled={busy} onClick={() => void run({
+                  action: "record-website-submission", resumeId: view.resumeId, jobId: view.jobId,
+                  ...(view.goalId ? { goalId: view.goalId } : {}),
+                })}>记录官网已提交</button>
+              ))}
             </section>
           )}
           {bossSource && !bossReview && (

@@ -19,12 +19,21 @@ import { Careers } from "../../core/careers.js";
 import { sourceUrlSchema } from "../../infrastructure/careers/contracts.js";
 import { ResumeProfiles } from "../../core/resume-profiles.js";
 import { bossAction, bossActionSchema } from "./boss-actions.js";
+import { ApplicationFollowups, followupChannel, followupFields } from "../../core/application-followups.js";
 import {
   hasCapability,
   capabilityLabels,
   type Capability,
 } from "../../shared/capabilities.js";
 const actionSchema = z.discriminatedUnion("action", [
+  z.strictObject({
+    action: z.literal("record-website-submission"),
+    resumeId: z.uuid(), jobId: z.uuid(), goalId: z.uuid().optional(),
+  }),
+  z.strictObject({
+    action: z.literal("save-application-followup"), channel: followupChannel,
+    applicationId: z.string().min(1).max(128), revision: z.number().int().min(0), data: followupFields,
+  }),
   z.object({ action: z.literal("workspace") }).strict(),
   z.object({ action: z.literal("resume"), id: z.string() }).strict(),
   z
@@ -190,6 +199,18 @@ export async function humanAction(
   if (input.action === "profile" || input.action === "confirm-profile")
     requireCapability(workspace, "website");
   if (input.action === "workspace") return workspaceView(workspace);
+  if (input.action === "record-website-submission") {
+    requireCapability(workspace, "website");
+    const { resumeId, jobId, goalId } = input;
+    reviewView(workspace, resumeId, jobId, undefined, goalId);
+    new ApplicationFollowups(workspace).recordWebsiteSubmission(jobId);
+    return reviewView(workspace, resumeId, jobId, undefined, goalId);
+  }
+  if (input.action === "save-application-followup") {
+    requireCapability(workspace, input.channel);
+    new ApplicationFollowups(workspace).save(input.channel, input.applicationId, input.revision, input.data);
+    return workspaceView(workspace);
+  }
   if (input.action === "resume") return resumeView(workspace, input.id);
   if (input.action === "profile")
     return profileView(workspace, input.resumeId, input.jobId);

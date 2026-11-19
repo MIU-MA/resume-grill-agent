@@ -11,7 +11,7 @@ DSH 的“插件 → 添加插件 → 安装第三方插件”可以安装 npm �
 3. 使用者在 DSH 官方安装入口填写下载文件的绝对路径，安装并启用「Resume Grill」。CLI 等价方式如下，路径须替换为实际下载位置：
 
 ```powershell
-dsh plugin --profile desktop add 'C:/Downloads/resume-grill-agent-0.4.4.tgz'
+dsh plugin --profile desktop add 'C:/Downloads/resume-grill-agent-0.4.5.tgz'
 ```
 
 Web 版将 `desktop` 换成 `web`。升级时用同一入口安装新版 `.tgz`，完全退出 DSH（包括托盘菜单里的「退出」）后重新打开，让界面和后端一起加载。只刷新页面会保留运行中的后端。此包包含构建后的 Host、React 卡片、字体和插件声明，安装时仍需下载运行依赖。包尚未发布到 npm，也没有公开下载版本。
@@ -43,6 +43,8 @@ dsh plugin --profile desktop add 'link:C:/path/resume-grill-agent'
 “岗位”按公司官网实时拉取，复用原网页端的静态、动态页面读取与腾讯公开接口，记录读取时间和失败原因。点击具体职位读取当前 JD，再选择简历进行匹配；JD 更新产生独立上下文，旧建议不会套到新 JD。用户可接受 AI 建议或手动修改，并独立保存岗位版 PDF，不必提供招聘邮箱。AI 建议使用当前 DSH 会话模型，完成后同步刷新核对卡。
 
 在 DSH 设置中打开「Resume Grill 邮箱」，填写发件邮箱和 SMTP 授权码并保存；需要真实投递时开启对应选项。设置立即生效，授权码按账号隔离并存入 DSH 凭据服务；留空保留已存授权码，也可单独移除。“测试连接”只验证 SMTP 登录，不发送邮件。用户勾选核对、输入“发送”后才能提交；助手不能批准自己发信。未在页面配置邮箱时仍兼容 `RESUME_SMTP_ADDRESS`、`RESUME_SMTP_CODE`、`RESUME_SMTP_PROVIDER` 和 `RESUME_ALLOW_SEND=1` 环境配置。
+
+「投递记录」汇总 BOSS、官网和邮件记录。点「记录跟进」可保存等回复、已约面、已结束及备注，用「到期跟进」筛出今天和逾期的事项。官网在提交后从岗位卡片点「记录官网已提交」。跟进进展由你填写，邮件回执继续显示 SMTP 发送状态。
 
 资料默认在 `DSH_HOME/storages/resume-grill`，通常为 `%USERPROFILE%/.dsh/storages/resume-grill`；`RESUME_AGENT_HOME` 可指定其他绝对目录。恢复卡片重新读取当前状态，不保存批准。新 PDF 不保留原布局和照片；`sent` 只表示 SMTP 接受，回复同步和已读追踪尚未实现。
 
