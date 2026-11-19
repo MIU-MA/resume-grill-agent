@@ -1,8 +1,9 @@
-export function WhaleMark() {
+export function WhaleMark({ size = 24 }: { size?: number }) {
   return (
-    <svg className="rg-whale-mark" width="24" height="20" viewBox="0 0 24 20" fill="none" aria-hidden="true">
-      <path d="M12 17v-4m0 0C6 13 3 9 3 5c4 0 7 2 9 5 2-3 5-5 9-5 0 4-3 8-9 8Z"
-        stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <svg className="rg-whale-mark" width={size} height={size} viewBox="0 0 24 24" shapeRendering="crispEdges" aria-hidden="true">
+      <path fill="currentColor" d="M2 9h3V7h3V6h7v1h2v3h2V8h2V7h2v5h-2v2h-3v2h-3v2H7v-1H4v-2H2v-2H1v-3h1z" />
+      <path fill="#a9bbff" d="M3 13h12v2h-2v1H7v-1H5v-1H3z" />
+      <path fill="#f4f6ff" d="M5 9h2v2H5zM10 3h2v2h-2zm3-2h1v2h-1z" />
     </svg>
   );
 }

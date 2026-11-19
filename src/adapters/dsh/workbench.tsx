@@ -7,6 +7,7 @@ import { ResumeLibrary } from "./ResumeLibrary.js";
 import { WorkspaceOverview } from "./WorkspaceOverview.js";
 import { CareerBrowser } from "./CareerBrowser.js";
 import { JobList, JobListRow } from "./JobList.js";
+import { PixelIcon, type PixelIconName } from "./PixelIcon.js";
 import { viewReference } from "./card-model.js";
 import { onWorkspaceChanged, notifyWorkspaceChanged } from "./updates.js";
 import { applicationStatusLabel } from "../../shared/presentation/application-status.js";
@@ -105,14 +106,14 @@ function Workbench({
   const applications = data?.applications ?? [];
   const bossDeliveries = data?.bossDeliveries;
   const mailEnabled = hasCapability(data?.capabilities, "mail");
-  const tabs = [
+  const tabs: Array<[PixelIconName, string]> = [
     ["overview", "总览"],
     ["resumes", "简历"],
     ["jobs", "招聘官网"],
-    ...(bossDeliveries ? [["boss", "BOSS 投递"]] : []),
-    ...(mailEnabled ? [["pending", "待确认"]] : []),
-    ...(mailEnabled || bossDeliveries ? [["history", "投递记录"]] : []),
   ];
+  if (bossDeliveries) tabs.push(["boss", "BOSS 投递"]);
+  if (mailEnabled) tabs.push(["pending", "待确认"]);
+  if (mailEnabled || bossDeliveries) tabs.push(["history", "投递记录"]);
   const shownApplications = applications.filter(
     (item) =>
       tab === "history" || ["prepared", "simulated"].includes(item.status),
@@ -125,13 +126,14 @@ function Workbench({
   return (
     <section className="rg-native rg-workbench" aria-label="求职工作台">
       <style>{__NATIVE_CSS__}</style>
-      <div className="rg-toolbar">
-        <h3>求职工作台</h3>
-        <button disabled={busy} onClick={() => void run(reload)}>
+      <header className="rg-toolbar rg-workbench-header">
+        <h3><PixelIcon name="resumes" />求职工作台</h3>
+        <button className="rg-refresh" disabled={busy} onClick={() => void run(reload)}>
+          <PixelIcon name="refresh" />
           刷新求职资料
         </button>
-      </div>
-      <nav aria-label="求职分类">
+      </header>
+      <nav className="rg-workbench-nav" aria-label="求职分类">
         {tabs.map(([key, label]) => (
           <button
             key={key}
@@ -139,10 +141,8 @@ function Workbench({
             disabled={busy}
             onClick={() => navigate(key)}
           >
-            {label}
-            {key === "pending"
-              ? ` ${applications.filter((a) => ["prepared", "simulated"].includes(a.status)).length}`
-              : ""}
+            <PixelIcon name={key} />
+            <span>{label}{key === "pending" && ` ${applications.filter((a) => ["prepared", "simulated"].includes(a.status)).length}`}</span>
           </button>
         ))}
       </nav>
@@ -298,7 +298,7 @@ function Workbench({
                     BOSS · {d.company} · {d.role}
                   </strong>
                   <p>
-                    <span className="rg-status">
+                    <span className="rg-status" data-tone={d.status === "finished" ? "success" : d.status === "uncertain" ? "warning" : undefined}>
                     {
                       {
                         prepared: "待确认",
@@ -328,7 +328,7 @@ function Workbench({
                   <div>
                   <strong>{item.subject}</strong>
                   <p>
-                    <span className="rg-status">{applicationStatusLabel[item.status]}</span>
+                    <span className="rg-status" data-tone={item.status === "sent" ? "success" : item.status === "uncertain" ? "warning" : undefined}>{applicationStatusLabel[item.status]}</span>
                     <small>
                       <span>{item.recipient}</span> ·{" "}
                       {new Date(item.createdAt).toLocaleString()}
@@ -494,7 +494,7 @@ export function registerWorkbench(ctx: any, Review: any) {
         label: () => "求职工作台",
         order: 25,
       },
-      () => <span aria-hidden="true">▤</span>,
+      () => <PixelIcon name="resumes" />,
     ),
   );
   ctx.slots.inject("main", () =>

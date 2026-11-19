@@ -1,6 +1,8 @@
 import type { NativeView } from "./views.js";
 import { applicationStatusLabel } from "../../shared/presentation/application-status.js";
 import { hasCapability } from "../../shared/capabilities.js";
+import { PixelIcon, type PixelIconName } from "./PixelIcon.js";
+import { WhaleMark } from "./WhaleMark.js";
 declare const __WHALE_PREVIEW__: string;
 type Workspace = Extract<NativeView, { kind: "workspace" }>;
 // The client bundle can reload before the running DSH host is restarted.
@@ -23,16 +25,11 @@ export function WorkspaceOverview({
   );
   const sent = data.applications.filter((a) => a.status === "sent");
   const mailEnabled = hasCapability(data.capabilities, "mail");
-  const counts = [
+  const counts: Array<[PixelIconName, string, number]> = [
     ["resumes", "简历", data.resumes.length],
     ["jobs", "已保存岗位", data.jobs.length],
-    ...(mailEnabled
-      ? [
-          ["pending", "待确认邮件", pending.length],
-          ["history", "已发送", sent.length],
-        ]
-      : []),
   ];
+  if (mailEnabled) counts.push(["pending", "待确认邮件", pending.length], ["history", "已发送", sent.length]);
   if (data.bossDeliveries) {
     const verified = data.bossDeliveries.filter((d) => d.status === "finished");
     counts.push(["boss", "BOSS 已核验", verified.length]);
@@ -40,9 +37,9 @@ export function WorkspaceOverview({
   const avatar = typeof __WHALE_PREVIEW__ === "string" ? __WHALE_PREVIEW__ : "";
   return (
     <section aria-label="求职总览">
-      <header className="rg-section-heading">
+      <header className="rg-section-heading rg-overview-banner">
         <div className="rg-overview-heading">
-          {avatar && (
+          {avatar ? (
             <a
               className="rg-whale-avatar"
               href="https://github.com/Small-tailqwq/dsh-deep-whale/blob/e74fa8439b8584ed16113920894491b5e0e1e4a0/maid-atelier/NOTICE"
@@ -52,7 +49,7 @@ export function WorkspaceOverview({
             >
               <img src={avatar} alt="" width={42} height={42} />
             </a>
-          )}
+          ) : <div className="rg-whale-avatar"><WhaleMark size={48} /></div>}
           <h3>求职总览</h3>
         </div>
         <button
@@ -70,10 +67,10 @@ export function WorkspaceOverview({
           <button
             key={tab}
             disabled={busy}
-            onClick={() => navigate(String(tab))}
+            onClick={() => navigate(tab)}
           >
-            <strong>{count}</strong>
-            <span>{label}</span>
+            <span className="rg-count-value"><strong>{count}</strong><PixelIcon name={tab} /></span>
+            <span className="rg-count-label">{label}</span>
           </button>
         ))}
       </div>
