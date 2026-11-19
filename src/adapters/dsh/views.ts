@@ -10,6 +10,7 @@ import { Boss } from "../../core/boss.js";
 import { isBossSource, type BossScan, type BossRun } from "../../domain/boss.js";
 import { BossDeliveries } from "../../core/boss-deliveries.js";
 import { BossGroups } from "../../core/boss-groups.js";
+import { BossArchives } from "../../core/boss-archives.js";
 import type { BossShortlist } from "../../core/boss-shortlists.js";
 import { hasCapability } from "../../shared/capabilities.js";
 export type Proposal = {
@@ -47,6 +48,7 @@ export function bossView(
       .list<BossShortlist>("boss-shortlist")
       .slice(0, 5),
     groups: new BossGroups(workspace).list(),
+    archivedTaskIds: [...new BossArchives(workspace).ids()],
     connected: boss.connected,
     browserPreference: boss.browserPreference,
     ...(browserState ? { browserState } : {}),

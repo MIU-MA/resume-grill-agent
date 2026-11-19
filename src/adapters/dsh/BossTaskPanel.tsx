@@ -16,6 +16,7 @@ export function BossTaskPanel({
 }) {
   const [ack, setAck] = useState<Record<string, boolean>>({});
   const groups = view.groups.filter((group) => group.id === view.groupFocus);
+  const archived = view.archivedTaskIds?.includes(view.groupFocus ?? "");
   return (
     <section aria-label="BOSS 整批任务">
       {groups.map((g) => (
@@ -31,6 +32,12 @@ export function BossTaskPanel({
               }[g.status]
             }
           </h4>
+          {archived && (
+            <div>
+              <span className="rg-status">已归档</span>
+              <button disabled={busy} onClick={() => void run({ action: "boss-archive-task", kind: "group", id: g.id, archived: false })}>恢复</button>
+            </div>
+          )}
           {g.status !== "prepared" && (
             <p>已完成 {g.items.filter((i) => i.state === "finished").length}/{g.items.length}</p>
           )}
@@ -41,7 +48,7 @@ export function BossTaskPanel({
                 <strong>
                   {d?.company} · {d?.role}
                 </strong>
-                {g.status === "prepared" && g.expiresAt > 0 && g.items.length > 1 && (
+                {!archived && g.status === "prepared" && g.expiresAt > 0 && g.items.length > 1 && (
                   <button
                     disabled={busy}
                     onClick={() => void run({
@@ -68,9 +75,9 @@ export function BossTaskPanel({
               </article>
             );
           })}
-          <p>确认后按顺序发出 BOSS 账号默认招呼和简历图片。</p>
+          {!archived && g.status === "prepared" && <p>确认后按顺序发出 BOSS 账号默认招呼和简历图片。</p>}
           {g.error && <p role="alert">{g.error}</p>}
-          {g.status === "prepared" ? (
+          {g.status === "prepared" && !archived && (
             <>
               <label>
                 <input
@@ -116,7 +123,8 @@ export function BossTaskPanel({
                 </button>
               )}
             </>
-          ) : (
+          )}
+          {g.status !== "prepared" && (
             <>
               <button
                 disabled={busy}
@@ -134,7 +142,7 @@ export function BossTaskPanel({
                   完成当前步骤后暂停整批
                 </button>
               )}
-              {g.status === "paused" &&
+              {!archived && g.status === "paused" &&
                 g.items.some((i) => i.state === "queued") && (
                   <button
                     disabled={busy}

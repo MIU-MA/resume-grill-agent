@@ -5,6 +5,7 @@ import { BossTaskPanel } from "./BossTaskPanel.js";
 import { BossResumePreview } from "./BossResumePreview.js";
 import type { ReadResumeImage } from "./controls.js";
 import { JobList, JobListRow } from "./JobList.js";
+import type { BossTaskKind } from "../../core/boss-archives.js";
 
 type View = Extract<NativeView, { kind: "boss" }>;
 const deliveryStatus = {
@@ -21,11 +22,13 @@ export function BossDeliveryPanel({
   busy,
   run,
   readResumeImage,
+  archiveFilter,
 }: {
   view: View;
   busy: boolean;
   run: (input: any) => Promise<unknown>;
   readResumeImage?: ReadResumeImage;
+  archiveFilter?: { archivedOnly: boolean; setArchivedOnly: (value: boolean) => void };
 }) {
   const [ack, setAck] = useState<Record<string, boolean>>({});
   const { deliveryFocus: focusedDelivery, groupFocus: focusedGroup } = view;
@@ -36,24 +39,53 @@ export function BossDeliveryPanel({
       ? view.deliveries.filter((d) => d.id === focusedDelivery)
       : view.deliveries.filter((d) => !grouped.has(d.id));
   const groups = view.groups.filter((g) => g.expiresAt !== 0 || g.id === focusedGroup);
+  const runs = view.runs.filter((r) => !view.deliveries.some((d) => d.remoteId === r.id));
+  const archived = new Set(view.archivedTaskIds ?? []);
+  const isList = !focusedDelivery && !focusedGroup;
+  const rows = [...groups, ...deliveries, ...runs];
+  const visible = ({ id }: { id: string }) => archived.has(id) === Boolean(archiveFilter?.archivedOnly);
+  const archivedCount = rows.filter(({ id }) => archived.has(id)).length;
+  const archiveButton = (id: string, kind: BossTaskKind, executing = false) => {
+    if (!view.archivedTaskIds || executing) return null;
+    const restoring = archived.has(id);
+    return <button disabled={busy} onClick={() => void run({
+      action: "boss-archive-task", kind, id, archived: !restoring,
+    })}>{restoring ? "恢复" : "归档"}</button>;
+  };
   return (
     <>
       {focusedGroup && (
         <BossTaskPanel view={view} busy={busy} run={run} readResumeImage={readResumeImage} />
       )}
-      {!focusedDelivery && !focusedGroup && (groups.length > 0 || deliveries.length > 0) && (
+      {isList && archiveFilter && view.archivedTaskIds && (
+        <div className="rg-task-filter" role="group" aria-label="投递任务筛选">
+          <button aria-pressed={!archiveFilter.archivedOnly} onClick={() => archiveFilter.setArchivedOnly(false)}>当前任务</button>
+          <button aria-pressed={archiveFilter.archivedOnly} onClick={() => archiveFilter.setArchivedOnly(true)}>已归档 {archivedCount}</button>
+        </div>
+      )}
+      {isList && !rows.some(visible) && (
+        <p className="rg-note">{archiveFilter?.archivedOnly ? "没有已归档的任务。" : "没有当前任务。"}</p>
+      )}
+      {isList && (groups.some(visible) || deliveries.some(visible)) && (
         <JobList>
-          {groups.map((g) => (
+          {groups.filter(visible).map((g) => (
             <JobListRow key={g.id}
               title={`${g.items.length} 个岗位 · ${groupStatus[g.status]}`}
               meta={g.items.map((i) => view.deliveries.find((d) => d.id === i.deliveryId)?.company)
                 .filter(Boolean).join("、")}
-              action={<button disabled={busy} onClick={() => void run({ action: "boss", groupFocus: g.id })}>查看批次</button>}
+              action={<>
+                <button disabled={busy} onClick={() => void run({ action: "boss", groupFocus: g.id })}>查看批次</button>
+                {archiveButton(g.id, "group", g.status === "running" || view.deliveries.some((d) =>
+                  (d.status === "running" || d.status === "submitting") && g.items.some((i) => i.deliveryId === d.id))) }
+              </>}
             />
           ))}
-          {deliveries.map((d) => (
+          {deliveries.filter(visible).map((d) => (
             <JobListRow key={d.id} title={d.role} meta={`${d.company} · ${deliveryStatus[d.status]}`}
-              action={<button disabled={busy} onClick={() => void run({ action: "boss", deliveryFocus: d.id })}>查看投递</button>}
+              action={<>
+                <button disabled={busy} onClick={() => void run({ action: "boss", deliveryFocus: d.id })}>查看投递</button>
+                {archiveButton(d.id, "delivery", d.status === "running" || d.status === "submitting")}
+              </>}
             />
           ))}
         </JobList>
@@ -67,7 +99,10 @@ export function BossDeliveryPanel({
           <p>首次沟通使用 BOSS 账号默认招呼，不追加自定义文字。</p>
           <BossResumePreview images={d.images} readImage={readResumeImage} />
           {d.error && <p role="alert">{d.error}</p>}
-          {d.status === "prepared" ? (
+          {archived.has(d.id) && (
+            <div><span className="rg-status">已归档</span>{archiveButton(d.id, "delivery")}</div>
+          )}
+          {d.status === "prepared" && !archived.has(d.id) && (
             <>
               <button
                 disabled={busy || !view.connected}
@@ -107,7 +142,8 @@ export function BossDeliveryPanel({
                 确认并投递此岗位
               </button>
             </>
-          ) : (
+          )}
+          {d.status !== "prepared" && (
             <>
               <button
                 disabled={busy || !view.connected}
@@ -131,8 +167,7 @@ export function BossDeliveryPanel({
           )}
         </section>
       ))}
-      {(!focusedDelivery && !focusedGroup ? view.runs : [])
-        .filter((r) => !view.deliveries.some((d) => d.remoteId === r.id))
+      {(isList ? runs : []).filter(visible)
         .map((r) => (
           <article key={r.id}>
             <h4>批次 · {r.state}</h4>
@@ -148,6 +183,7 @@ export function BossDeliveryPanel({
             >
               更新回执
             </button>
+            {archiveButton(r.id, "run", r.state === "running")}
             {r.state === "running" && (
               <button
                 disabled={busy || !view.connected}

@@ -20,6 +20,7 @@ import { Tasks } from "../../src/core/tasks.js";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BossWorkbench } from "../../src/adapters/dsh/BossWorkbench.js";
+import { BossDeliveryPanel } from "../../src/adapters/dsh/BossDeliveryPanel.js";
 import { nativeControls } from "../../src/adapters/dsh/controls.js";
 import { bossView } from "../../src/adapters/dsh/views.js";
 import { BossExecutor } from "../../src/infrastructure/boss-executor/index.js";
@@ -636,6 +637,50 @@ test("核对附件期间移出岗位，正在等待的旧确认不能开始投�
   await pending;
   assert.equal(f.state.confirmations, undefined);
   assert.equal(groups.get(group.id).expiresAt, 0);
+});
+test("归档单条和整批后可查询恢复，旧确认不能投递且成员不会露回当前列表", async (t) => {
+  const f = await twoDeliveries(t);
+  const groups = new BossGroups(f.workspace);
+  const archive = (kind: "delivery" | "group", id: string, archived: boolean) =>
+    humanAction(f.workspace, { action: "boss-archive-task", kind, id, archived });
+  const render = (view: ReturnType<typeof bossView>, archivedOnly = false) =>
+    renderToStaticMarkup(createElement(BossDeliveryPanel, {
+      view, busy: false, run: async () => undefined,
+      archiveFilter: { archivedOnly, setArchivedOnly: () => {} },
+    }));
+  const requestCount = f.requests.length;
+
+  await archive("delivery", f.a.id, true);
+  const view = bossView(f.workspace);
+  assert.equal((render(view).match(/查看投递/g) ?? []).length, 1);
+  assert.match(render(view, true), /查看投递.*恢复/);
+  await assert.rejects(f.deliveries.confirm(f.a.id, f.a.digest), /已归档/);
+  await assert.rejects(groups.prepare([f.a.id]), /已归档/);
+  assert.equal(f.deliveries.get(f.a.id).digest, f.a.digest);
+  await archive("delivery", f.a.id, false);
+
+  const group = await groups.prepare([f.a.id, f.b.id]);
+  await archive("group", group.id, true);
+  const reopened = new Store(f.store.home);
+  try {
+    const snapshot = bossView(new Workspace(reopened));
+    assert.deepEqual(snapshot.archivedTaskIds, [group.id]);
+    assert.doesNotMatch(render(snapshot), /查看批次|查看投递/);
+    assert.match(render(snapshot, true), /查看批次.*恢复/);
+    assert.doesNotMatch(render({ ...snapshot, groupFocus: group.id }), /确认投递/);
+  } finally {
+    reopened.close();
+  }
+  await assert.rejects(groups.start(group.id, group.digest), /已归档/);
+  await assert.rejects(f.deliveries.confirm(f.a.id, f.a.digest), /批次已归档/);
+  await archive("group", group.id, false);
+  assert.equal(groups.get(group.id).digest, group.digest);
+  assert.match(render(bossView(f.workspace)), /查看批次.*归档/);
+
+  f.store.put("boss-delivery", { ...f.a, status: "submitting" });
+  await assert.rejects(archive("group", group.id, true), /仍在执行/);
+  await assert.rejects(archive("delivery", f.a.id, true), /仍在执行/);
+  assert.equal(f.requests.length, requestCount, "归档和恢复必须只读写本地数据");
 });
 test("整批一次人工确认，顺序发送各自图片；重复开始与重复岗位被拒绝", async (t) => {
   const f = await twoDeliveries(t),

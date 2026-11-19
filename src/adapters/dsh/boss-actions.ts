@@ -6,9 +6,16 @@ import { BossDeliveries } from "../../core/boss-deliveries.js";
 import { BossGroups } from "../../core/boss-groups.js";
 import { BossShortlists } from "../../core/boss-shortlists.js";
 import { BossAutoPrepare } from "../../core/boss-auto-prepare.js";
+import { BossArchives, bossTaskKinds } from "../../core/boss-archives.js";
 import { bossBrowserChoice } from "../../domain/boss.js";
 
 export const bossActionSchema = z.discriminatedUnion("action", [
+  z.strictObject({
+    action: z.literal("boss-archive-task"),
+    kind: z.enum(bossTaskKinds),
+    id: z.uuid(),
+    archived: z.boolean(),
+  }),
   z.object({ action: z.literal("boss-check") }).strict(),
   z
     .object({
@@ -140,6 +147,11 @@ export async function bossAction(
 ): Promise<NativeView> {
   const boss = new Boss(workspace);
   const groups = new BossGroups(workspace);
+  if (input.action === "boss-archive-task") {
+    if (input.kind === "group") groups.get(input.id);
+    new BossArchives(workspace).set(input.kind, input.id, input.archived);
+    return bossView(workspace);
+  }
   if (input.action === "boss-shortlist") {
     await new BossShortlists(workspace).collect(
       input.goalId,
@@ -204,10 +216,12 @@ export async function bossAction(
   if (input.action === "boss") {
     const { deliveryFocus, groupFocus } = input;
     const delivery = deliveries.list().find((d) => d.id === deliveryFocus);
-    const pendingGroup = delivery?.status === "prepared" && groups.list().find(
+    const pendingGroups = delivery?.status === "prepared" ? groups.list().filter(
       (group) => group.expiresAt !== 0 && group.status === "prepared" &&
         group.items.some((item) => item.deliveryId === delivery.id),
-    );
+    ) : [];
+    const archived = new BossArchives(workspace).ids();
+    const pendingGroup = pendingGroups.find((group) => !archived.has(group.id)) ?? pendingGroups[0];
     return bossView(workspace, {
       ...(pendingGroup ? { groupFocus: pendingGroup.id } : delivery ? { deliveryFocus } : {}),
       ...(groupFocus && groups.list().some((g) => g.id === groupFocus) ? { groupFocus } : {}),

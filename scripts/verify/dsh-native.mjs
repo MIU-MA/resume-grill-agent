@@ -552,6 +552,19 @@ try {
       path: join(output, "dsh-boss-job-list.png"),
       clip: { x: 0, y: 0, width: 1440, height: 720 },
     });
+    await boss.getByRole("button", { name: "归档", exact: true }).click();
+    const archivedTasks = boss.getByRole("button", { name: "已归档 1", exact: true });
+    await archivedTasks.waitFor();
+    assert.equal(await boss.getByRole("button", { name: "查看投递", exact: true }).count(), 0);
+    await archivedTasks.click();
+    await boss.getByRole("button", { name: "恢复", exact: true }).waitFor();
+    await page.screenshot({
+      path: join(output, "dsh-boss-task-archive.png"),
+      fullPage: true,
+    });
+    await boss.getByRole("button", { name: "恢复", exact: true }).click();
+    await boss.getByRole("button", { name: "已归档 0", exact: true }).waitFor();
+    await boss.getByRole("button", { name: "当前任务", exact: true }).click();
     await boss.getByRole("button", { name: "查看投递", exact: true }).click();
     const review = full.getByRole("region", { name: "BOSS 投递核对", exact: true });
     await review.getByRole("button", { name: "查看简历", exact: true }).click();

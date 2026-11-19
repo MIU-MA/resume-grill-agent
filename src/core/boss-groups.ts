@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Workspace } from "./workspace.js";
 import { BossDeliveries } from "./boss-deliveries.js";
+import { BossArchives } from "./boss-archives.js";
 
 export type BossGroup = {
   id: string;
@@ -64,16 +65,21 @@ export class BossGroups {
     this.list();
     return this.workspace.store.get<BossGroup>("boss-group", id);
   }
-  async prepare(ids: string[]) {
+  prepare(ids: string[]) {
+    return this.prepareGroup(ids);
+  }
+  private async prepareGroup(ids: string[], replacesId?: string) {
     z.array(z.uuid())
       .min(1)
       .max(10)
       .refine((a) => new Set(a).size === a.length)
       .parse(ids);
-    const deliveries = new BossDeliveries(this.workspace),
-      items = [];
+    const deliveries = new BossDeliveries(this.workspace);
+    const items: BossGroup["items"] = [];
+    const archives = new BossArchives(this.workspace);
     const urls = new Set<string>();
     for (const id of ids) {
+      archives.requireCurrentDelivery(id);
       const d = deliveries.get(id);
       if (d.status !== "prepared")
         throw new Error("只选择尚未执行的岗位；已执行或待核对记录不能重发。");
@@ -84,29 +90,48 @@ export class BossGroups {
       items.push({
         deliveryId: id,
         digest: d.digest,
-        state: "queued" as const,
+        state: "queued",
       });
     }
-    const digest = hash(items.map((i) => [i.deliveryId, i.digest])),
-      existing = this.list().find(
+    return this.workspace.store.transaction(() => {
+      const replaced = replacesId ? this.get(replacesId) : undefined;
+      if (replaced) {
+        archives.requireCurrent(replaced.id);
+        if (replaced.status !== "prepared" || replaced.expiresAt === 0)
+          throw new Error("原批次已经变化，请先查看当前状态。");
+      }
+      for (const item of items) {
+        archives.requireCurrentDelivery(item.deliveryId);
+        const delivery = deliveries.get(item.deliveryId);
+        if (delivery.status !== "prepared" || delivery.digest !== item.digest)
+          throw new Error("岗位任务已经变化，请重新查看。");
+      }
+      const archived = archives.ids();
+      const digest = hash(items.map((i) => [i.deliveryId, i.digest]));
+      const existing = this.list().find(
         (g) =>
           g.digest === digest &&
+          !archived.has(g.id) &&
           g.status === "prepared" &&
           g.expiresAt > Date.now(),
       );
-    if (existing) return existing;
-    const now = Date.now();
-    return this.save({
-      id: randomUUID(),
-      digest,
-      createdAt: now,
-      updatedAt: now,
-      status: "prepared",
-      expiresAt: now + 15 * 60 * 1000,
-      items,
+      const now = Date.now();
+      const group = existing ?? this.save({
+        id: randomUUID(),
+        digest,
+        createdAt: now,
+        updatedAt: now,
+        status: "prepared",
+        expiresAt: now + 15 * 60 * 1000,
+        items,
+      });
+      if (replaced) this.save({ ...replaced, expiresAt: 0 });
+      return group;
     });
   }
   async removeItem(id: string, deliveryId: string) {
+    const archives = new BossArchives(this.workspace);
+    archives.requireCurrent(id);
     const group = this.get(id);
     if (
       group.status !== "prepared" ||
@@ -115,21 +140,17 @@ export class BossGroups {
       !group.items.some((item) => item.deliveryId === deliveryId)
     )
       throw new Error("当前批次不能移出这个岗位。");
-    const next = await this.prepare(
+    return this.prepareGroup(
       group.items.filter((item) => item.deliveryId !== deliveryId)
         .map((item) => item.deliveryId),
+      id,
     );
-    this.workspace.store.transaction(() => {
-      const current = this.get(id);
-      if (current.status !== "prepared" || current.expiresAt === 0)
-        throw new Error("原批次已经变化，请先查看当前状态。");
-      this.save({ ...current, expiresAt: 0 });
-    });
-    return next;
   }
   /** Human confirmation covers these exact frozen items, never future search results. */
   async start(id: string, digest: string) {
+    const archives = new BossArchives(this.workspace);
     const requireCurrent = () => {
+      archives.requireCurrent(id);
       const group = this.get(id);
       if (
         group.status !== "prepared" ||
@@ -142,6 +163,7 @@ export class BossGroups {
     const review = requireCurrent();
     const deliveries = new BossDeliveries(this.workspace);
     for (const i of review.items) {
+      archives.requireCurrentDelivery(i.deliveryId);
       const d = deliveries.get(i.deliveryId);
       if (d.status !== "prepared" || d.digest !== i.digest)
         throw new Error("其中的岗位已执行或附件已变化。");
@@ -152,6 +174,7 @@ export class BossGroups {
       if (this.list().some((o) => o.status === "running"))
         throw new Error("已有批次执行中，或本批已确认。");
       for (const item of current.items) {
+        archives.requireCurrentDelivery(item.deliveryId);
         const d = deliveries.get(item.deliveryId);
         if (d.status !== "prepared" || d.digest !== item.digest)
           throw new Error("其中的岗位已执行或附件已变化。");
@@ -256,6 +279,7 @@ export class BossGroups {
     return this.get(id);
   }
   async remaining(id: string) {
+    new BossArchives(this.workspace).requireCurrent(id);
     const g = this.get(id);
     if (g.status === "running") throw new Error("请先暂停当前批次。");
     return this.prepare(

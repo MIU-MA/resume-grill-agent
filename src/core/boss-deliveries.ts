@@ -6,6 +6,7 @@ import type { Workspace, Job } from "./workspace.js";
 import { Boss } from "./boss.js";
 import { bossRun, bossUrl, type BossRun } from "../domain/boss.js";
 import { resumeImages } from "../infrastructure/resume-images.js";
+import { BossArchives } from "./boss-archives.js";
 const hash = (v: string | Uint8Array) =>
   createHash("sha256").update(v).digest("hex");
 export type BossDelivery = {
@@ -117,6 +118,7 @@ export class BossDeliveries {
       (d) => d.digest === digest && d.status === "prepared",
     );
     if (existing) {
+      new BossArchives(this.workspace).requireCurrentDelivery(existing.id);
       await this.check(existing);
       if ((existing.expiresAt ?? 0) > Date.now()) return existing;
       return this.preview(existing);
@@ -159,6 +161,8 @@ export class BossDeliveries {
     return this.preview(d);
   }
   async preview(d: BossDelivery) {
+    const archives = new BossArchives(this.workspace);
+    archives.requireCurrentDelivery(d.id);
     if (d.status !== "prepared")
       throw new Error("已执行或结果不明的任务不能重新准备。");
     await this.check(d);
@@ -196,6 +200,7 @@ export class BossDeliveries {
     )
       throw new Error("执行器预览与当前岗位附件不一致，不能确认。");
     return this.workspace.store.transaction(() => {
+      archives.requireCurrentDelivery(d.id);
       const current = this.get(d.id);
       if (current.status !== "prepared" || current.updatedAt !== d.updatedAt)
         throw new Error("预览期间任务状态已变化，请重新读取，不重复发送。");
@@ -207,6 +212,8 @@ export class BossDeliveries {
   }
   /** Called only by the user command channel, never an MCP/model operation. */
   async confirm(id: string, digest: string) {
+    const archives = new BossArchives(this.workspace);
+    archives.requireCurrentDelivery(id);
     const d = this.get(id);
     if (
       d.status !== "prepared" ||
@@ -218,6 +225,7 @@ export class BossDeliveries {
     await this.check(d);
     // Atomic reservation prevents double clicks, multiple windows and other instances.
     this.workspace.store.transaction(() => {
+      archives.requireCurrentDelivery(id);
       if (
         this.get(id).status !== "prepared" ||
         this.list().some(

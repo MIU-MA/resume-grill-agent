@@ -20,6 +20,7 @@ export function BossWorkbench({
 }) {
   const [query, setQuery] = useState("");
   const [selectedResume, setResume] = useState<string>();
+  const [archivedOnly, setArchivedOnly] = useState(false);
   const resumes = view.resumes.filter((resume) => !resume.jobId);
   const suggestedResume = view.directionNeededFor ?? view.scans[0]?.resumeId;
   const resumeId =
@@ -52,6 +53,7 @@ export function BossWorkbench({
     });
   const focusedDelivery = view.deliveries.find((d) => d.id === view.deliveryFocus);
   const focusedGroup = view.groups.find((g) => g.id === view.groupFocus);
+  const focusedIsArchived = view.archivedTaskIds?.includes(focusedDelivery?.id ?? focusedGroup?.id ?? "");
   const hasDeliveryWork =
     view.deliveries.length > 0 || view.groups.some((g) => g.expiresAt !== 0) || view.runs.length > 0;
   if (focusedDelivery || focusedGroup) {
@@ -60,7 +62,7 @@ export function BossWorkbench({
         <button disabled={busy} onClick={() => void run({ action: "boss" })}>
           返回岗位
         </button>
-        {!view.connected && (focusedDelivery?.status === "prepared" ||
+        {!view.connected && !focusedIsArchived && (focusedDelivery?.status === "prepared" ||
           (focusedGroup?.status === "prepared" && focusedGroup.expiresAt > 0)) && (
           <button disabled={busy} onClick={() => void run({
             action: "boss-connect",
@@ -176,7 +178,8 @@ export function BossWorkbench({
       {hasDeliveryWork && (
         <section className="rg-boss-tasks" aria-label="投递任务">
           <h4>投递任务</h4>
-          <BossDeliveryPanel view={view} busy={busy} run={run} readResumeImage={readResumeImage} />
+          <BossDeliveryPanel view={view} busy={busy} run={run} readResumeImage={readResumeImage}
+            archiveFilter={{ archivedOnly, setArchivedOnly }} />
         </section>
       )}
     </section>

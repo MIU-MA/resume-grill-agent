@@ -600,6 +600,14 @@
 }
 .rg-job-row + .rg-job-row { border-top: 1px solid var(--dsw-alias-border-l2); }
 .rg-job-row-action button { margin: 0; }
+.rg-job-row-action { display: flex; flex-wrap: wrap; gap: 6px; }
+.rg-task-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.rg-task-filter button { margin: 0; }
+.rg-task-filter button[aria-pressed="true"] {
+  border-color: var(--rg-edge);
+  background: var(--rg-tint);
+  color: var(--rg-highlight);
+}
 .rg-job-row-main .rg-note { margin-top: 2px; }
 .rg-job-row:hover { background: var(--rg-surface); }
 .rg-career-resume {
