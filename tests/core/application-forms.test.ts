@@ -51,6 +51,16 @@ test("官网填写使用所选版本与附件，不依赖邮箱，不猜测缺�
   assert.equal(context.policy.submit, false);
   assert.equal(context.policy.sendMail, false);
   assert.equal(workspace.history().length, 0);
+  const boss = workspace.addJob({
+    company: "示例",
+    role: "Go",
+    jd: "Go 开发",
+    sourceUrl: "https://www.zhipin.com/job_detail/demo.html?source=share",
+  });
+  await assert.rejects(
+    applicationFormContext(workspace, resume.id, boss.id),
+    /BOSS 招聘链接.*BOSS 投递/,
+  );
   await writeFile(resume.pdf!, "corrupted");
   await assert.rejects(
     applicationFormContext(workspace, resume.id, job.id),
@@ -71,10 +81,10 @@ test("浏览器填写检查真实工具，不把预览器或不同连接的零�
   );
   assert.throws(
     () => requireBrowserTools(["preview_document", "open_browser"]),
-    /没有可用/,
+    /官网代填不可用.*BOSS 投递不受影响/,
   );
   assert.throws(
     () => requireBrowserTools(names.map((n, i) => `mcp__browser_${i}__${n}`)),
-    /没有可用/,
+    /官网代填不可用/,
   );
 });

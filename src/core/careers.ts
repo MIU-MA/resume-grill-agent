@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Workspace } from "./workspace.js";
+import { isBossSource, requireCompanyWebsite } from "../domain/boss.js";
 import {
   discoverRecruitingPage,
   readRecruitingDetail,
@@ -24,6 +25,7 @@ export class Careers {
     readonly detail = readRecruitingDetail,
   ) {}
   private save(page: CareerPage) {
+    if (isBossSource(page.url)) return [];
     const rows = page.jobs?.length
       ? page.jobs
       : [
@@ -50,6 +52,7 @@ export class Careers {
       );
   }
   async scan(url: string, keywords: string[] = []) {
+    requireCompanyWebsite(url);
     url = sourceUrlSchema.parse(url);
     const scan: CareerScan = { id: randomUUID(), url, fetchedAt: Date.now() };
     try {
@@ -63,7 +66,9 @@ export class Careers {
     return scan;
   }
   async read(url: string) {
+    requireCompanyWebsite(url);
     const page = await this.detail(sourceUrlSchema.parse(url));
+    requireCompanyWebsite(page.url);
     const jobs = this.save(page);
     if (!jobs.length)
       throw new Error(

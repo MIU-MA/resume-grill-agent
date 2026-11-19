@@ -4,6 +4,7 @@ import { extname } from "node:path";
 import type { Job, Workspace } from "./workspace.js";
 import { ResumeProfiles } from "./resume-profiles.js";
 import { sourceUrlSchema } from "../infrastructure/careers/contracts.js";
+import { requireCompanyWebsite } from "../domain/boss.js";
 
 /** Supplies source facts to the host's browser tools; never submits a form. */
 export async function applicationFormContext(
@@ -13,6 +14,7 @@ export async function applicationFormContext(
 ) {
   const resume = workspace.resume(resumeId),
     job = workspace.store.get<Job>("job", jobId);
+  requireCompanyWebsite(job.sourceUrl);
   const url = sourceUrlSchema.parse(job.sourceUrl);
   const path = resume.pdf ?? resume.original,
     bytes = await readFile(path);

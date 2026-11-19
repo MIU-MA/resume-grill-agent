@@ -179,7 +179,7 @@ if(name){const block={type:'tool-call',id:'form-'+step,name,arguments:JSON.strin
   const full = page
     .locator('[data-global-panel="true"]')
     .getByRole("region", { name: "求职工作台", exact: true });
-  await full.getByRole("button", { name: "岗位", exact: true }).click();
+  await full.getByRole("button", { name: "招聘官网", exact: true }).click();
   await full.getByRole("button", { name: "核对简历", exact: true }).click();
   await full
     .getByRole("button", { name: "解析简历并核对资料", exact: true })
@@ -194,7 +194,7 @@ if(name){const block={type:'tool-call',id:'form-'+step,name,arguments:JSON.strin
     .click();
   await full.getByRole("button", { name: "回到当前岗位", exact: true }).click();
   await full
-    .getByRole("button", { name: "交给浏览器填写官网", exact: true })
+    .getByRole("button", { name: "开始官网代填", exact: true })
     .click();
   // Browser work remains in the normal model/tool conversation.
   await page.getByText("官网填写验证", { exact: true }).first().click();

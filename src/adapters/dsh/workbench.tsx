@@ -108,8 +108,8 @@ function Workbench({
   const tabs = [
     ["overview", "总览"],
     ["resumes", "简历"],
-    ["jobs", "岗位"],
-    ...(bossDeliveries ? [["boss", "BOSS"]] : []),
+    ["jobs", "招聘官网"],
+    ...(bossDeliveries ? [["boss", "BOSS 投递"]] : []),
     ...(mailEnabled ? [["pending", "待确认"]] : []),
     ...(mailEnabled || bossDeliveries ? [["history", "投递记录"]] : []),
   ];

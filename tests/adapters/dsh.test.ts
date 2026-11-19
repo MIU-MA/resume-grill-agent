@@ -11,9 +11,10 @@ import { mount } from "../../src/adapters/dsh/host.js";
 import { humanAction, cardAction } from "../../src/adapters/dsh/actions.js";
 import { turnCardSelector } from "../../src/adapters/dsh/card-model.js";
 import { Tasks } from "../../src/core/tasks.js";
-import { batchView, workspaceView } from "../../src/adapters/dsh/views.js";
+import { batchView, reviewView, workspaceView } from "../../src/adapters/dsh/views.js";
 import { WorkspaceOverview } from "../../src/adapters/dsh/WorkspaceOverview.js";
 import { operations } from "../../src/core/operations.js";
+import { ResumeProfiles } from "../../src/core/resume-profiles.js";
 import {
   activeCapabilities,
   NativeConfig,
@@ -92,6 +93,36 @@ test("旧宿主的工作台快照缺少 BOSS 字段时，总览仍能渲染", as
   assert.ok(overview.includes(resume.name));
   assert.doesNotMatch(overview, /BOSS 已核验/);
   assert.match(render(data), /BOSS 已核验/);
+});
+
+test("BOSS 分享链接与招聘官网分别进入自己的流程", async (t) => {
+  const f = await setup(t);
+  const sourceUrl = "https://m.zhipin.com/job_detail/demo.html?from=share";
+  const job = f.workspace.addJob({ company: "演示", role: "Go", jd: "开发", sourceUrl });
+  const profiles = new ResumeProfiles(f.workspace);
+  const draft = profiles.draft(f.resume.id);
+  profiles.confirm(draft.id, draft.data);
+  const view = reviewView(f.workspace, f.resume.id, job.id);
+  assert.equal(view.channel, "boss");
+  assert.equal(view.profile, undefined);
+  assert.equal(reviewView(f.workspace, f.resume.id, f.job.id).channel, "website");
+  assert.deepEqual(workspaceView(f.workspace).jobs.map((item) => item.id), [f.job.id]);
+  await assert.rejects(humanAction(f.workspace, { action: "read-job", url: sourceUrl }), /BOSS 投递/);
+
+  let command: any;
+  mount({
+    tools: { register: () => () => {}, resolve: async () => assert.fail("BOSS 不应检查官网浏览器工具") },
+    commands: { register: (entry) => { command = entry; return () => {}; } },
+    systemPrompt: { section: () => () => {} },
+    effect: (fn) => fn(),
+  }, f.workspace);
+  const blocked = await command.handler({
+    rawInput: JSON.stringify({ action: "browser-check", resumeId: f.resume.id, jobId: job.id }),
+    agent: { id: "session" },
+    signal: new AbortController().signal,
+  });
+  assert.equal(blocked.kind, "error");
+  assert.match(blocked.text, /BOSS 投递/);
 });
 
 test("BOSS 单独启用时只注册对应工具，旧邮件卡和官网命令不能执行", async (t) => {

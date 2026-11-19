@@ -3,7 +3,7 @@ import { resolve, join } from "node:path";
 import { homedir } from "node:os";
 import { z } from "zod";
 import { Store } from "../../infrastructure/sqlite-store.js";
-import { Workspace } from "../../core/workspace.js";
+import { Workspace, type Job } from "../../core/workspace.js";
 import { nativeMail } from "./mail-settings.js";
 import { activeCapabilities, NativeConfig } from "./config.js";
 import { importStagedResume } from "./resume-upload.js";
@@ -21,6 +21,7 @@ import { ResumeProfiles } from "../../core/resume-profiles.js";
 import { hasCapability } from "../../shared/capabilities.js";
 import { Boss } from "../../core/boss.js";
 import { BossExecutor } from "../../infrastructure/boss-executor/index.js";
+import { requireCompanyWebsite } from "../../domain/boss.js";
 
 export const name = "resume-grill";
 export const Config = NativeConfig;
@@ -120,11 +121,14 @@ export function mount(
           } = rawInput.trim() ? JSON.parse(rawInput) : { action: "workspace" };
           if (input.action === "browser-check") {
             requireCapability(workspace, "website");
+            if (typeof input.jobId !== "string")
+              throw new Error("请从「招聘官网」打开具体岗位后，再使用官网代填。");
+            requireCompanyWebsite(workspace.store.get<Job>("job", input.jobId).sourceUrl);
             if (typeof input.resumeId !== "string")
               throw new Error("请先选择简历。");
             new ResumeProfiles(workspace).confirmed(input.resumeId);
             if (!ctx.tools.resolve)
-              throw new Error("当前 DSH 版本无法检查浏览器工具。");
+              throw new Error("当前 DSH 版本无法检查官网代填工具。你仍可打开招聘官网手动申请。");
             const tools = await ctx.tools.resolve({
               agent,
               modelSelection: agent.model.current(),

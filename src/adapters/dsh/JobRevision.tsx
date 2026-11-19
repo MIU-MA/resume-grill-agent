@@ -1,5 +1,6 @@
 import { useEditDraft } from "./use-edit-draft.js";
 import type { NativeView } from "./views.js";
+import { isBossSource } from "../../domain/boss.js";
 export function JobRevision({
   view,
   busy,
@@ -19,7 +20,7 @@ export function JobRevision({
       <section>
         <h4>岗位要求</h4>
         <a href={view.job.sourceUrl} target="_blank" rel="noreferrer">
-          查看官网 ↗
+          {isBossSource(view.job.sourceUrl) ? "打开 BOSS 岗位 ↗" : "打开官网手动申请 ↗"}
         </a>
         <textarea
           aria-label="岗位 JD"

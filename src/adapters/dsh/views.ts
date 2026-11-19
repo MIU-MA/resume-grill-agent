@@ -7,7 +7,7 @@ import type { CareerScan } from "../../core/careers.js";
 import { ResumeProfiles } from "../../core/resume-profiles.js";
 import type { FormRun } from "../../core/form-runs.js";
 import { Boss } from "../../core/boss.js";
-import type { BossScan, BossRun } from "../../domain/boss.js";
+import { isBossSource, type BossScan, type BossRun } from "../../domain/boss.js";
 import { BossDeliveries } from "../../core/boss-deliveries.js";
 import { BossGroups } from "../../core/boss-groups.js";
 import type { BossShortlist } from "../../core/boss-shortlists.js";
@@ -92,7 +92,8 @@ export function reviewView(
 ) {
   const resume = workspace.resume(resumeId),
     job = workspace.store.get<Job>("job", jobId);
-  const website = hasCapability(workspace.capabilities, "website");
+  const channel = isBossSource(job.sourceUrl) ? "boss" : "website";
+  const website = channel === "website" && hasCapability(workspace.capabilities, "website");
   const profile = website
     ? new ResumeProfiles(workspace).current(resumeId)
     : undefined;
@@ -113,6 +114,7 @@ export function reviewView(
   return {
     v: 1 as const,
     kind: "review" as const,
+    channel,
     capabilities: workspace.capabilities,
     resumeId,
     jobId,
@@ -190,6 +192,7 @@ export function workspaceView(workspace: Workspace) {
       .map(summarizeResume),
     jobs: workspace.store
       .list<Job>("job")
+      .filter((job) => !isBossSource(job.sourceUrl))
       .filter(
         (job, index, all) =>
           index ===

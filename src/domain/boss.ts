@@ -4,6 +4,19 @@ export const bossBrowserChoice = z.enum(["auto", "ego", "edge", "chrome"]);
 export type BossBrowserChoice = z.infer<typeof bossBrowserChoice>;
 export type BossBrowserBackend = Exclude<BossBrowserChoice, "auto">;
 
+/** Classify the channel, independently of the stricter executor URL format. */
+export function isBossSource(value: string) {
+  const url = URL.parse(value);
+  if (!url || !["http:", "https:"].includes(url.protocol)) return false;
+  const host = url.hostname.replace(/\.$/, "");
+  return host === "zhipin.com" || host.endsWith(".zhipin.com");
+}
+
+export function requireCompanyWebsite(value: string) {
+  if (isBossSource(value))
+    throw new Error("这是 BOSS 招聘链接。请在「求职工作台 → BOSS 投递」处理。");
+}
+
 export const bossUrl = z
   .string()
   .url()

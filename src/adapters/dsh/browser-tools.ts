@@ -8,6 +8,6 @@ export function requireBrowserTools(names: string[]) {
     if (tools.every((tool) => names.includes(tool))) return tools;
   }
   throw new Error(
-    "当前会话没有可用的浏览器填写工具。请先加载招聘浏览器 MCP 配置并重新打开会话；侧栏网页预览不能代替浏览器操作。",
+    "官网代填不可用：当前会话没有启用招聘浏览器 MCP。可打开招聘官网手动申请，或启用 MCP 后重新打开会话再试。BOSS 投递不受影响。",
   );
 }

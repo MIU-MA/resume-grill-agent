@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Workspace } from "./workspace.js";
 import { applicationFormContext } from "./application-forms.js";
+import { requireCompanyWebsite } from "../domain/boss.js";
 import {
   formFieldSchema,
   matchFormField,
@@ -121,6 +122,7 @@ export class FormRuns {
     }
   }
   async plan(id: string, url: string, input: unknown) {
+    requireCompanyWebsite(url);
     const { run, context } = await this.active(id),
       fields = observedFields.parse(input);
     if (new URL(url).origin !== run.origin) {
@@ -266,6 +268,7 @@ export class FormRuns {
     values: Array<{ uid: string; value: string }>,
     uploadedName?: string,
   ) {
+    requireCompanyWebsite(url);
     const { run } = await this.active(id);
     if (new URL(url).origin !== run.origin)
       throw new Error("回读域名与填写任务不一致");

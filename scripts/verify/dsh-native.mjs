@@ -357,7 +357,7 @@ try {
   await workbench
     .getByRole("button", { name: "管理简历库", exact: true })
     .click();
-  await workbench.getByRole("button", { name: "岗位", exact: true }).click();
+  await workbench.getByRole("button", { name: "招聘官网", exact: true }).click();
   await workbench.getByText("Go 开发", { exact: true }).waitFor();
   await workbench
     .getByLabel("官网岗位关键词", { exact: true })
@@ -459,7 +459,7 @@ try {
     path: join(output, "dsh-workspace-overview.png"),
     clip: { x: 0, y: 0, width: 1440, height: 790 },
   });
-  await full.getByRole("button", { name: "BOSS", exact: true }).click();
+  await full.getByRole("button", { name: "BOSS 投递", exact: true }).click();
   const boss = full.getByRole("region", { name: "BOSS 投递", exact: true });
   await boss.getByRole("button", { name: "找岗位并准备投递", exact: true }).waitFor();
   assert.equal(await boss.locator("details").count(), 0);
@@ -531,7 +531,7 @@ try {
     path: join(output, "dsh-delivery-history.png"),
     clip: { x: 0, y: 0, width: 1440, height: 650 },
   });
-  await full.getByRole("button", { name: "岗位", exact: true }).click();
+  await full.getByRole("button", { name: "招聘官网", exact: true }).click();
   await full.getByRole("heading", { name: "招聘官网", exact: true }).waitFor();
   await page.screenshot({
     path: join(output, "dsh-career-workbench.png"),
@@ -564,11 +564,11 @@ try {
   await full.getByRole("button", { name: "回到当前岗位", exact: true }).click();
   await full.getByLabel("接受这条修改", { exact: true }).check();
   await full
-    .getByRole("button", { name: "交给浏览器填写官网", exact: true })
+    .getByRole("button", { name: "开始官网代填", exact: true })
     .click();
   await full
     .getByRole("alert")
-    .filter({ hasText: "没有可用的浏览器填写工具" })
+    .filter({ hasText: "官网代填不可用" })
     .waitFor();
   assert.equal(store.list("proposal").length, 1, "缺浏览器时不能悄悄调用模型");
   await full
@@ -608,7 +608,7 @@ try {
     .waitFor();
   await full.getByRole("button", { name: "返回清单", exact: true }).click();
   if (process.env.RESUME_VERIFY_LIVE === "1") {
-    await full.getByRole("button", { name: "岗位", exact: true }).click();
+    await full.getByRole("button", { name: "招聘官网", exact: true }).click();
     await full.getByLabel("官网岗位关键词", { exact: true }).fill("AI应用");
     await full
       .getByRole("button", { name: "实时拉取岗位", exact: true })

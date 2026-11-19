@@ -5,7 +5,7 @@ import { nativeControls, type ReadResumeImage } from "./controls.js";
 import { notifyWorkspaceChanged, onWorkspaceChanged } from "./updates.js";
 import { ResumeDocument } from "./ResumeDocument.js";
 import { BossWorkbench } from "./BossWorkbench.js";
-import { bossUrl } from "../../domain/boss.js";
+import { bossUrl, isBossSource } from "../../domain/boss.js";
 import { ResumeProfileEditor } from "./ResumeProfileEditor.js";
 import { JobRevision } from "./JobRevision.js";
 import { registerWorkbench } from "./workbench.js";
@@ -68,9 +68,13 @@ export function NativeCard({
     [accepted, setAccepted] = useState<string[]>([]),
     [selected, setSelected] = useState<string[]>([]);
   const busy = working || requesting;
-  const bossReview = view.kind === "review" &&
+  const bossSource = view.kind === "review" &&
+    (view.channel === "boss" || isBossSource(view.job.sourceUrl));
+  const bossReview = bossSource && view.kind === "review" &&
     hasCapability(view.capabilities, "boss") &&
     bossUrl.safeParse(view.job.sourceUrl).success;
+  const websiteReview = view.kind === "review" && !bossSource &&
+    hasCapability(view.capabilities, "website");
   useEffect(() => {
     let live = true;
     void act({ action: "restore", reference: viewReference(initial) })
@@ -170,13 +174,13 @@ export function NativeCard({
     if (lock.current) return;
     lock.current = true;
     setBusy(true);
-    setRequesting(view.kind === "review");
+    setRequesting(view.kind === "review" && !browser);
     setError("");
     try {
       if (browser)
         await act({
           action: "browser-check",
-          ...(view.kind === "review" ? { resumeId: view.resumeId } : {}),
+          ...(view.kind === "review" ? { resumeId: view.resumeId, jobId: view.jobId } : {}),
         });
       await ask(text, browser);
     } catch (e) {
@@ -240,12 +244,12 @@ export function NativeCard({
           <h3>
             {view.job.role} · {view.job.company || "公司待核对"}
           </h3>
-          <p>按岗位核对简历</p>
+          <p className="rg-note">{bossSource ? "BOSS 投递" : "招聘官网"} · 按岗位核对简历</p>
           {requesting && (
             <p role="status">正在通过当前会话生成建议，完成后会在这里更新。</p>
           )}
           <JobRevision key={view.jobId} view={view} busy={busy} run={run} />
-          {!bossReview && hasCapability(view.capabilities, "website") && view.formRun && (
+          {websiteReview && view.formRun && (
             <section aria-label="官网填写进度">
               <h4>
                 官网填写 ·{" "}
@@ -286,8 +290,10 @@ export function NativeCard({
                 ))}
             </section>
           )}
-          {!bossReview && hasCapability(view.capabilities, "website") && (
-            <>
+          {websiteReview && (
+            <section aria-label="招聘官网申请">
+              <h4>招聘官网申请</h4>
+              <p className="rg-note">代填需启用招聘浏览器 MCP；填写后请到官网核对并提交。</p>
               <button
                 disabled={busy}
                 onClick={() =>
@@ -316,20 +322,13 @@ export function NativeCard({
                   )
                 }
               >
-                交给浏览器填写官网
+                开始官网代填
               </button>
-              <p className="rg-note">
-                需要启用浏览器操作工具；填写和核对后停在提交前，遇到登录或验证码由你接手。
-              </p>
-            </>
+            </section>
           )}
-          {!bossReview && <details>
-            <summary>岗位要求与来源</summary>
-            <a href={view.job.sourceUrl} target="_blank" rel="noreferrer">
-              招聘原文 ↗
-            </a>
-            <p className="rg-pre">{view.job.jd}</p>
-          </details>}
+          {bossSource && !bossReview && (
+            <p className="rg-note">这是 BOSS 岗位。请从「BOSS 投递」列表打开具体岗位后再准备投递。</p>
+          )}
           {bossReview && (
             <button
               disabled={busy}
@@ -341,7 +340,7 @@ export function NativeCard({
                 })
               }
             >
-              用当前简历准备投递
+              用当前简历准备 BOSS 投递
             </button>
           )}
           {view.proposal ? (
@@ -387,14 +386,7 @@ export function NativeCard({
                     保存所选修改并核对 BOSS 图片
                   </button>
                 )}
-              {!bossReview && hasCapability(view.capabilities, "mail") &&
-                !view.job.recipient && (
-                  <p className="rg-note">
-                    此岗位没有公开投递邮箱。可保存岗位版
-                    PDF，再通过上方官网申请。
-                  </p>
-                )}
-              {!bossReview && hasCapability(view.capabilities, "mail") && (
+              {!bossSource && hasCapability(view.capabilities, "mail") && view.job.recipient && (
                 <button
                   disabled={busy || !view.job.recipient}
                   onClick={() =>
