@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { NativeView } from "./views.js";
 import { ApplicationReview } from "./ApplicationReview.js";
-import { nativeControls, type ReadResumeImage } from "./controls.js";
+import { nativeCommandError, nativeControls, type ReadResumeImage } from "./controls.js";
 import { notifyWorkspaceChanged, onWorkspaceChanged } from "./updates.js";
 import { ResumeDocument } from "./ResumeDocument.js";
 import { BossWorkbench } from "./BossWorkbench.js";
@@ -669,7 +669,7 @@ function CommandSummary({ node }: any) {
   if (input.surface === "workbench") return null;
   if (!node.outcome) return <span>正在处理求职操作…</span>;
   if (node.outcome.kind === "error")
-    return <p role="alert">求职操作未完成：{node.outcome.text}</p>;
+    return <p role="alert">求职操作未完成：{nativeCommandError(input, node.outcome.text ?? "未收到操作结果。")}</p>;
   let view: any;
   try {
     view = JSON.parse(node.outcome.text ?? "null");

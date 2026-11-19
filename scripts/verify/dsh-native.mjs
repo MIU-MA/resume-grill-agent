@@ -48,9 +48,21 @@ async function openSettings(page) {
   }
 }
 try {
+  const previous = process.env.RESUME_PREVIOUS_PLUGIN_SPEC;
+  if (previous) {
+    assert.ok(process.env.RESUME_PLUGIN_SPEC, "升级验证需要新旧两个安装包。");
+    await run("& $env:DSH_COMMAND plugin --profile web add $env:RG_PACKAGE", {
+      RG_PACKAGE: previous,
+    });
+  }
   await run("& $env:DSH_COMMAND plugin --profile web add $env:RG_PACKAGE", {
     RG_PACKAGE: process.env.RESUME_PLUGIN_SPEC ?? `link:${root}`,
   });
+  if (previous) {
+    const installed = JSON.parse(await readFile(join(env.DSH_HOME, "profiles", "web", "node_modules", "resume-grill-agent", "package.json"), "utf8"));
+    const expected = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+    assert.equal(installed.version, expected.version, "DSH 应升级到当前仓库的插件版本");
+  }
   store = new Store(env.RESUME_AGENT_HOME);
   const workspace = new Workspace(store);
   const file = join(home, "演示简历.txt");

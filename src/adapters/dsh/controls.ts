@@ -12,6 +12,19 @@ export type ReadResumeImage = (
   signal: AbortSignal,
 ) => Promise<string>;
 
+export function nativeCommandError(input: unknown, message: string) {
+  const action = (input as { action?: string } | null)?.action;
+  if (typeof action !== "string" || !/invalid_union|invalid discriminator/i.test(message)) return message;
+  if (action === "website-fill" && (
+    /"discriminator"\s*:\s*"action"/i.test(message) ||
+    /invalid discriminator value.*expected.*['"]workspace['"]/i.test(message)
+  ))
+    return "DSH 当前加载的鲸历后端还不支持官网代填。请完全退出 DSH 后重新打开；如果安装的是旧版插件包，请先更新鲸历。";
+  if (action === "boss" || action.startsWith("boss-"))
+    return "BOSS 界面与后端版本可能不同。请完全退出 DSH 后重新打开，再核对投递记录。";
+  return message;
+}
+
 export function nativeControls(ctx: any, sessionId: string, surface?: string) {
   const readResumeImage: ReadResumeImage = async ({ path, size, sha256 }, signal) => {
     if (!Number.isInteger(size) || size <= 0 || size > 5 * 1024 * 1024)
@@ -49,16 +62,10 @@ export function nativeControls(ctx: any, sessionId: string, surface?: string) {
         `/resume-grill ${JSON.stringify({ ...(input as object), ...(surface ? { surface } : {}) })}`,
         [],
       );
-      if (!response.ok) throw new Error(response.error.message);
+      if (!response.ok) throw new Error(nativeCommandError(input, response.error.message));
       const result = response.value?.result;
-      if (!result || result.kind !== "success") {
-        const action = (input as { action?: string })?.action;
-        const error = result?.text ?? "未收到操作结果。";
-        if (typeof action === "string" && (action === "boss" || action.startsWith("boss-")) &&
-            /invalid_union|Invalid discriminator/i.test(error))
-          throw new Error("BOSS 界面与后端版本可能不同。请完全退出 DSH 后重新打开，再核对投递记录。");
-        throw new Error(error);
-      }
+      if (!result || result.kind !== "success")
+        throw new Error(nativeCommandError(input, result?.text ?? "未收到操作结果。"));
       return JSON.parse(result.text);
     },
     ask: async (text: string) => {

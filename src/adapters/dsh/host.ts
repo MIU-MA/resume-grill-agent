@@ -45,6 +45,12 @@ type Context = {
   systemPrompt: { section: (value: any) => () => void };
   effect: (fn: () => () => void) => unknown;
 };
+const websiteFillAction = z.strictObject({
+  action: z.literal("website-fill"),
+  resumeId: z.string().min(1),
+  jobId: z.string().min(1),
+  goalId: z.string().min(1).optional(),
+});
 // DSH's schema subset omits min/max/format. Zod still enforces the full schema in execute.
 export function nativeSchema(schema: any): any {
   const result: any = {};
@@ -124,12 +130,9 @@ export function mount(
           } = rawInput.trim() ? JSON.parse(rawInput) : { action: "workspace" };
           if (input.action === "website-fill") {
             requireCapability(workspace, "website");
-            const { resumeId, jobId, goalId } = z.strictObject({
-              action: z.literal("website-fill"),
-              resumeId: z.string(),
-              jobId: z.string(),
-              goalId: z.string().optional(),
-            }).parse(input);
+            const request = websiteFillAction.safeParse(input);
+            if (!request.success) throw new Error("官网代填缺少简历或岗位，请重新打开岗位卡片再试。");
+            const { resumeId, jobId, goalId } = request.data;
             if (!websiteFill) throw new Error("当前宿主未启用内置官网代填。");
             reviewView(workspace, resumeId, jobId, undefined, goalId);
             const websiteNotice = await websiteFill.fill(resumeId, jobId, signal);

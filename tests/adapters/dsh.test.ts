@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Store } from "../../src/infrastructure/sqlite-store.js";
 import { Workspace } from "../../src/core/workspace.js";
 import { mount } from "../../src/adapters/dsh/host.js";
+import { nativeControls } from "../../src/adapters/dsh/controls.js";
 import { humanAction, cardAction } from "../../src/adapters/dsh/actions.js";
 import { turnCardSelector } from "../../src/adapters/dsh/card-model.js";
 import { Tasks } from "../../src/core/tasks.js";
@@ -93,6 +94,28 @@ test("旧宿主的工作台快照缺少 BOSS 字段时，总览仍能渲染", as
   assert.ok(overview.includes(resume.name));
   assert.doesNotMatch(overview, /BOSS 已核验/);
   assert.match(render(data), /BOSS 已核验/);
+});
+
+test("官网代填遇到旧版宿主时提示重启或更新插件，普通填写错误原样保留", async () => {
+  const legacyError = JSON.stringify([{
+    code: "invalid_union", discriminator: "action", path: ["action"],
+    message: "Invalid discriminator value. Expected 'workspace' | 'review'",
+  }]);
+  const request = { action: "website-fill", resumeId: "resume", jobId: "job" };
+  for (const response of [
+    { ok: true, value: { result: { kind: "error", text: legacyError } } },
+    { ok: false, error: { message: legacyError } },
+  ]) {
+    const controls = nativeControls({ remote: { commands: { execute: async () => response } } }, "session");
+    await assert.rejects(controls.act(request), /后端还不支持官网代填.*完全退出 DSH.*更新鲸历/);
+    await assert.rejects(controls.act({ action: "review" }), { message: legacyError });
+  }
+  for (const message of ["请先核对并确认简历资料。", '{"code":"invalid_union","discriminator":"type"}']) {
+    const controls = nativeControls({ remote: { commands: { execute: async () => ({
+      ok: true, value: { result: { kind: "error", text: message } },
+    }) } } }, "session");
+    await assert.rejects(controls.act(request), { message });
+  }
 });
 
 test("BOSS 分享链接与招聘官网分别进入自己的流程", async (t) => {
