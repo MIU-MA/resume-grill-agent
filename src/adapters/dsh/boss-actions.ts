@@ -11,6 +11,18 @@ import { bossBrowserChoice } from "../../domain/boss.js";
 
 export const bossActionSchema = z.discriminatedUnion("action", [
   z.strictObject({
+    action: z.literal("boss-queue-add"), scanId: z.string().min(1), url: z.string().min(1),
+    resumeId: z.string().min(1), groupId: z.uuid().optional(),
+  }),
+  z.strictObject({
+    action: z.literal("boss-queue-resume"), deliveryId: z.uuid(), resumeId: z.string().min(1),
+    groupId: z.uuid().optional(),
+  }),
+  z.strictObject({
+    action: z.literal("boss-queue-move"), id: z.uuid(), deliveryId: z.uuid(), step: z.literal([-1, 1]),
+  }),
+  z.strictObject({ action: z.literal("boss-queue-remove"), id: z.uuid() }),
+  z.strictObject({
     action: z.literal("boss-archive-task"),
     kind: z.enum(bossTaskKinds),
     id: z.uuid(),
@@ -147,6 +159,23 @@ export async function bossAction(
 ): Promise<NativeView> {
   const boss = new Boss(workspace);
   const groups = new BossGroups(workspace);
+  if (input.action === "boss-queue-add") {
+    const job = await boss.detail(input.scanId, input.url);
+    await groups.add(input.resumeId, job.id, input.groupId);
+    return bossView(workspace, { note: `已加入待投：${job.company} · ${job.role}` });
+  }
+  if (input.action === "boss-queue-resume") {
+    const group = await groups.replaceResume(input.deliveryId, input.resumeId, input.groupId);
+    return bossView(workspace, { groupFocus: group.id });
+  }
+  if (input.action === "boss-queue-move") {
+    const group = await groups.move(input.id, input.deliveryId, input.step);
+    return bossView(workspace, { groupFocus: group.id });
+  }
+  if (input.action === "boss-queue-remove") {
+    groups.removeStandalone(input.id);
+    return bossView(workspace, { note: "已移出待投。" });
+  }
   if (input.action === "boss-archive-task") {
     if (input.kind === "group") groups.get(input.id);
     new BossArchives(workspace).set(input.kind, input.id, input.archived);
@@ -177,7 +206,7 @@ export async function bossAction(
   }
   if (input.action === "boss-group-remove") {
     const group = await groups.removeItem(input.id, input.deliveryId);
-    return bossView(workspace, { groupFocus: group.id });
+    return bossView(workspace, group ? { groupFocus: group.id } : { note: "已移出待投。" });
   }
   if (input.action === "boss-group-remaining") {
     const group = await groups.remaining(input.id);

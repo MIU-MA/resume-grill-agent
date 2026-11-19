@@ -21,6 +21,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BossWorkbench } from "../../src/adapters/dsh/BossWorkbench.js";
 import { BossDeliveryPanel } from "../../src/adapters/dsh/BossDeliveryPanel.js";
+import { bossQueueStatus } from "../../src/adapters/dsh/boss-task-view.js";
 import { nativeControls } from "../../src/adapters/dsh/controls.js";
 import { bossView } from "../../src/adapters/dsh/views.js";
 import { BossExecutor } from "../../src/infrastructure/boss-executor/index.js";
@@ -681,6 +682,60 @@ test("归档单条和整批后可查询恢复，旧确认不能投递且成员�
   await assert.rejects(archive("group", group.id, true), /仍在执行/);
   await assert.rejects(archive("delivery", f.a.id, true), /仍在执行/);
   assert.equal(f.requests.length, requestCount, "归档和恢复必须只读写本地数据");
+});
+test("待投清单可追加、调序、换 PDF 和移出，旧核对及旧附件不可确认", async (t) => {
+  const f = await fixture(t);
+  f.boss.connect(f.link);
+  const secondUrl = "https://www.zhipin.com/job_detail/second.html";
+  f.state.rows = [
+    { url: f.url, title: "Go开发", company: "演示" },
+    { url: secondUrl, title: "Go开发", company: "第二公司" },
+  ];
+  f.state.details = { [secondUrl]: { ...f.state.detail, url: secondUrl, company: "第二公司" } };
+  const scan = await f.boss.read();
+  const original = await f.workspace.createResume("主简历", "负责 Go API 开发。"),
+    replacement = await f.workspace.createResume("备用简历", "负责 Go API 测试。");
+  const run = async (input: unknown) => {
+    const view = await humanAction(f.workspace, input);
+    assert.equal(view.kind, "boss");
+    return view;
+  };
+  const add = (url: string, groupId?: string) => run({ action: "boss-queue-add", scanId: scan.id, url,
+    resumeId: original.id, ...(groupId ? { groupId } : {}),
+  });
+  const groups = new BossGroups(f.workspace);
+  await add(f.url);
+  const first = groups.list()[0];
+  const item = first.items[0];
+  await assert.rejects(add(f.url, first.id), /重复联系|已有待投/);
+  const joined = await add(secondUrl, first.id);
+  assert.equal(bossQueueStatus(joined, f.url), "已加入");
+  const pair = groups.list()[0];
+  assert.equal(pair.items.length, 2);
+  await assert.rejects(groups.start(first.id, first.digest), /过期/);
+
+  const ordered = await run({ action: "boss-queue-move", id: pair.id, deliveryId: item.deliveryId, step: 1 });
+  const moved = groups.get(ordered.groupFocus!);
+  assert.equal(moved.items[1].deliveryId, item.deliveryId);
+  const updated = await run({ action: "boss-queue-resume", groupId: moved.id, deliveryId: item.deliveryId, resumeId: replacement.id });
+  const reviewed = groups.get(updated.groupFocus!);
+  const newItem = reviewed.items[1];
+  const deliveries = new BossDeliveries(f.workspace);
+  assert.equal(deliveries.get(newItem.deliveryId).resumeId, replacement.id);
+  assert.notEqual(newItem.digest, item.digest);
+  assert.ok(deliveries.get(item.deliveryId).withdrawnAt);
+  await assert.rejects(deliveries.confirm(item.deliveryId, item.digest), /过期|重新核对/);
+  await assert.rejects(groups.start(moved.id, moved.digest), /过期/);
+
+  const remaining = await run({ action: "boss-group-remove", id: reviewed.id, deliveryId: newItem.deliveryId });
+  assert.equal(bossQueueStatus(remaining, f.url), undefined);
+  const last = groups.get(remaining.groupFocus!);
+  const empty = await run({ action: "boss-group-remove", id: last.id, deliveryId: last.items[0].deliveryId });
+  assert.equal(bossQueueStatus(empty, secondUrl), undefined);
+  assert.equal(empty.groups.filter((group) => group.expiresAt !== 0).length, 0);
+  await add(f.url);
+  assert.equal(groups.list()[0].items.length, 1);
+  assert.ok(f.requests.every((route) => !route.startsWith("/boss-batch/")), "编辑待投不调用投递执行器");
 });
 test("整批一次人工确认，顺序发送各自图片；重复开始与重复岗位被拒绝", async (t) => {
   const f = await twoDeliveries(t),

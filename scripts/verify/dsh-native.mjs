@@ -514,6 +514,13 @@ try {
   });
   if (process.env.RESUME_VERIFY_BOSS_PREVIEW === "1") {
     const pdf = await workspace.createResume("BOSS 预览演示", "演示用户\n项目经历\n负责 Go API 开发。");
+    const alternate = await workspace.createResume("BOSS 备用简历", "演示用户\n项目经历\n负责 Go API 测试。");
+    const bossJob = workspace.addJob({
+      company: "演示软件", role: "Go 开发", jd: "开发 Go API",
+      sourceUrl: "https://www.zhipin.com/job_detail/demo.html",
+    });
+    const jdHash = createHash("sha256").update(bossJob.jd).digest("hex");
+    store.put("boss-evidence", { id: `boss-evidence:${bossJob.id}`, jobId: bossJob.id, jdHash });
     const { resumeImages } = await import("../../dist/infrastructure/resume-images.js");
     const rendered = await resumeImages(pdf.pdf);
     const image = rendered.images[0];
@@ -536,9 +543,8 @@ try {
     });
     const deliveryId = "10000000-0000-4000-8000-000000000011";
     store.put("boss-delivery", {
-      id: deliveryId, jobId: job.id, resumeId: pdf.id, resumeName: pdf.name,
-      company: "BOSS 预览演示", role: "Go 开发", url: "https://www.zhipin.com/job_detail/demo.html",
-      jdHash: createHash("sha256").update(job.jd).digest("hex"),
+      id: deliveryId, jobId: bossJob.id, resumeId: pdf.id, resumeName: pdf.name,
+      company: bossJob.company, role: bossJob.role, url: bossJob.sourceUrl, jdHash,
       pdfPath: pdf.pdf, pdfHash: rendered.pdfHash,
       images: [{ path: imagePath, name: "简历-1.png", sha256: image.sha256, size: image.bytes.length }],
       digest: "preview-fixture", createdAt: Date.now(), updatedAt: Date.now(),
@@ -548,6 +554,7 @@ try {
     const results = boss.getByRole("region", { name: "搜索结果", exact: true });
     await results.getByRole("listitem").first().waitFor();
     assert.equal(await results.getByRole("listitem").count(), 3);
+    await results.getByText("已加入", { exact: true }).waitFor();
     await page.screenshot({
       path: join(output, "dsh-boss-job-list.png"),
       clip: { x: 0, y: 0, width: 1440, height: 720 },
@@ -581,6 +588,18 @@ try {
     await rm(imagePath, { force: true });
     await review.getByRole("button", { name: "查看简历", exact: true }).click();
     await review.getByRole("alert").filter({ hasText: "第 1 页无法预览" }).waitFor();
+    await review.getByRole("button", { name: "换简历", exact: true }).click();
+    await review.getByLabel("为「Go 开发」选择简历", { exact: true }).selectOption(alternate.id);
+    await review.getByRole("button", { name: "保存并重新核对", exact: true }).click();
+    const batch = review.getByRole("region", { name: "BOSS 整批任务" });
+    await batch.getByText(/简历：BOSS 备用简历/).waitFor();
+    const checked = batch.getByLabel("已逐项核对全部公司、岗位、简历图片和默认招呼方式");
+    assert.equal(await checked.isChecked(), false);
+    assert.equal(await batch.getByRole("button", { name: "确认投递 1 个岗位" }).isDisabled(), true);
+    await page.screenshot({ path: join(output, "dsh-boss-edit-queue.png"), fullPage: true });
+    await batch.getByRole("button", { name: "移出待投", exact: true }).click();
+    await boss.getByText("已移出待投。", { exact: true }).waitFor();
+    assert.equal(store.list("boss-run").length, 0);
   }
   await full.getByRole("button", { name: "投递记录", exact: true }).click();
   await full.getByRole("heading", { name: "投递记录", exact: true }).waitFor();

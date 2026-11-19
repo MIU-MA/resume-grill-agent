@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, unlink, rmdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { z } from "zod";
 import type { Workspace, Job } from "./workspace.js";
@@ -30,6 +30,7 @@ export type BossDelivery = {
   expiresAt?: number;
   remoteId: string;
   error?: string;
+  withdrawnAt?: number;
 };
 const previewSchema = z.object({
   id: z.string().min(1),
@@ -83,6 +84,22 @@ export class BossDeliveries {
     await this.check(d);
   }
   async prepare(resumeId: string, jobId: string) {
+    const { delivery, existing } = await this.freeze(resumeId, jobId, true);
+    if (existing && (delivery.expiresAt ?? 0) > Date.now()) return delivery;
+    if (!existing) this.save(delivery);
+    return this.preview(delivery);
+  }
+  async withDraft<T>(resumeId: string, jobId: string, use: (draft: BossDelivery) => Promise<T>) {
+    const { delivery } = await this.freeze(resumeId, jobId, false);
+    try {
+      return await use(delivery);
+    } catch (error) {
+      await Promise.allSettled(delivery.images.map((image) => unlink(image.path)));
+      await rmdir(join(this.workspace.store.home, "boss-images", delivery.id)).catch(() => {});
+      throw error;
+    }
+  }
+  private async freeze(resumeId: string, jobId: string, reuse: boolean) {
     const resume = this.workspace.resume(resumeId),
       job = this.workspace.store.get<Job>("job", jobId);
     bossUrl.parse(job.sourceUrl);
@@ -114,14 +131,13 @@ export class BossDeliveries {
         images: rendered.images.map((i) => i.sha256),
       }),
     );
-    const existing = this.list().find(
-      (d) => d.digest === digest && d.status === "prepared",
+    const existing = reuse && this.list().find(
+      (d) => d.digest === digest && d.status === "prepared" && !d.withdrawnAt,
     );
     if (existing) {
       new BossArchives(this.workspace).requireCurrentDelivery(existing.id);
       await this.check(existing);
-      if ((existing.expiresAt ?? 0) > Date.now()) return existing;
-      return this.preview(existing);
+      return { delivery: existing, existing: true };
     }
     const id = randomUUID(),
       folder = join(this.workspace.store.home, "boss-images", id);
@@ -157,13 +173,12 @@ export class BossDeliveries {
       status: "prepared",
       remoteId: randomUUID(),
     };
-    this.save(d);
-    return this.preview(d);
+    return { delivery: d, existing: false };
   }
   async preview(d: BossDelivery) {
     const archives = new BossArchives(this.workspace);
     archives.requireCurrentDelivery(d.id);
-    if (d.status !== "prepared")
+    if (d.status !== "prepared" || d.withdrawnAt)
       throw new Error("已执行或结果不明的任务不能重新准备。");
     await this.check(d);
     const images = await Promise.all(
@@ -202,7 +217,7 @@ export class BossDeliveries {
     return this.workspace.store.transaction(() => {
       archives.requireCurrentDelivery(d.id);
       const current = this.get(d.id);
-      if (current.status !== "prepared" || current.updatedAt !== d.updatedAt)
+      if (current.status !== "prepared" || current.withdrawnAt || current.updatedAt !== d.updatedAt)
         throw new Error("预览期间任务状态已变化，请重新读取，不重复发送。");
       d.previewId = p.id;
       d.expiresAt = p.expiresAt;
@@ -217,6 +232,7 @@ export class BossDeliveries {
     const d = this.get(id);
     if (
       d.status !== "prepared" ||
+      d.withdrawnAt ||
       d.digest !== digest ||
       !d.previewId ||
       (d.expiresAt ?? 0) <= Date.now()
@@ -227,7 +243,7 @@ export class BossDeliveries {
     this.workspace.store.transaction(() => {
       archives.requireCurrentDelivery(id);
       if (
-        this.get(id).status !== "prepared" ||
+        this.get(id).status !== "prepared" || this.get(id).withdrawnAt ||
         this.list().some(
           (o) => o.id !== id && o.url === d.url && o.status !== "prepared",
         )

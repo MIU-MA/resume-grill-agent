@@ -608,6 +608,9 @@
   background: var(--rg-tint);
   color: var(--rg-highlight);
 }
+.rg-boss-item-actions { display: flex; align-items: start; flex-wrap: wrap; gap: 6px; }
+.rg-boss-item-actions > button { margin-inline-end: 0; }
+.rg-boss-resume-switch { flex-basis: 100%; padding: 0 12px; background: var(--rg-surface); }
 .rg-job-row-main .rg-note { margin-top: 2px; }
 .rg-job-row:hover { background: var(--rg-surface); }
 .rg-career-resume {

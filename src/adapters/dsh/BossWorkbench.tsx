@@ -4,6 +4,7 @@ import { BossDeliveryPanel } from "./BossDeliveryPanel.js";
 import type { ReadResumeImage } from "./controls.js";
 import { JobList, JobListRow } from "./JobList.js";
 import { WorkbenchHeading } from "./WorkbenchHeading.js";
+import { bossQueueStatus } from "./boss-task-view.js";
 
 export function BossWorkbench({
   view,
@@ -29,6 +30,7 @@ export function BossWorkbench({
     resumes[0]?.id ??
     "";
   const hasResume = resumes.some((resume) => resume.id === resumeId);
+  const selected = resumes.find((resume) => resume.id === resumeId);
   const latest = view.scans[0];
   const needsDirection = hasResume && view.directionNeededFor === resumeId;
   const scan =
@@ -55,14 +57,17 @@ export function BossWorkbench({
   const focusedGroup = view.groups.find((g) => g.id === view.groupFocus);
   const focusedIsArchived = view.archivedTaskIds?.includes(focusedDelivery?.id ?? focusedGroup?.id ?? "");
   const hasDeliveryWork =
-    view.deliveries.length > 0 || view.groups.some((g) => g.expiresAt !== 0) || view.runs.length > 0;
+    view.deliveries.some((d) => !d.withdrawnAt) || view.groups.some((g) => g.expiresAt !== 0) || view.runs.length > 0;
+  const pendingGroup = view.groups.find((g) => g.status === "prepared" && g.expiresAt !== 0 &&
+    !view.archivedTaskIds?.includes(g.id) && g.items.every((item) => view.deliveries.some((d) =>
+      d.id === item.deliveryId && d.status === "prepared" && !d.withdrawnAt && !view.archivedTaskIds?.includes(d.id))));
   if (focusedDelivery || focusedGroup) {
     return (
       <section aria-label="BOSS 投递核对">
         <button disabled={busy} onClick={() => void run({ action: "boss" })}>
           返回岗位
         </button>
-        {!view.connected && !focusedIsArchived && (focusedDelivery?.status === "prepared" ||
+        {!view.connected && !focusedIsArchived && ((focusedDelivery?.status === "prepared" && !focusedDelivery.withdrawnAt) ||
           (focusedGroup?.status === "prepared" && focusedGroup.expiresAt > 0)) && (
           <button disabled={busy} onClick={() => void run({
             action: "boss-connect",
@@ -149,14 +154,20 @@ export function BossWorkbench({
           ) : (
             <>
               <h4>岗位列表 <small>{scan.query ? `${scan.query} · ` : ""}{scan.jobs.length} 个</small></h4>
+              {view.canEditQueue && selected && !selected.hasPdf && <p className="rg-note">加入待投前，请选一份 PDF 简历。</p>}
               <JobList>
-                {scan.jobs.map((job) => (
+                {scan.jobs.map((job) => {
+                  const queueStatus = bossQueueStatus(view, job.url);
+                  return (
                   <JobListRow
                     key={job.url}
                     icon="boss"
                     title={job.title}
-                    meta={[job.company, job.salary].filter(Boolean).join(" · ")}
-                    action={
+                    meta={<>
+                      {queueStatus && <span className="rg-status" data-tone={queueStatus === "已投递" ? "success" : undefined}>{queueStatus}</span>}
+                      {[job.company, job.salary].filter(Boolean).join(" · ")}
+                    </>}
+                    action={<>
                       <button
                         disabled={busy || !view.connected}
                         onClick={() => {
@@ -167,9 +178,19 @@ export function BossWorkbench({
                       >
                         查看岗位
                       </button>
-                    }
+                      {view.canEditQueue && !queueStatus && (
+                        <button className="rg-quiet-action" disabled={busy || !view.connected || !selected?.hasPdf}
+                          onClick={() => void run({
+                            action: "boss-queue-add", scanId: scan.id, url: job.url, resumeId,
+                            ...(pendingGroup && pendingGroup.items.length < 10 ? { groupId: pendingGroup.id } : {}),
+                          })}>
+                          加入待投
+                        </button>
+                      )}
+                    </>}
                   />
-                ))}
+                  );
+                })}
               </JobList>
             </>
           )}

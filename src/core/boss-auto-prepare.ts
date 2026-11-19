@@ -69,11 +69,12 @@ export class BossAutoPrepare {
       );
 
     const deliveries = new BossDeliveries(this.workspace);
+    const seen = new Set(deliveries.list().map((delivery) => delivery.url));
     const ids: string[] = [];
     let skipped = 0;
-    for (const { jobId } of candidates) {
+    for (const { jobId, url } of candidates) {
       if (ids.length >= batchSize) break;
-      if (!jobId) continue;
+      if (!jobId || seen.has(url)) continue;
       try {
         ids.push((await deliveries.prepare(resumeId, jobId)).id);
       } catch {
@@ -83,7 +84,9 @@ export class BossAutoPrepare {
     const note = skipped
       ? `${skipped} 个岗位未能准备附件，可打开岗位单独检查。`
       : !ids.length
-        ? "这页没有符合条件、且能读到完整 JD 的岗位。"
+        ? candidates.some(({ url }) => seen.has(url))
+          ? "这页匹配的岗位已有待投或处理记录，可在列表中查看。"
+          : "这页没有符合条件、且能读到完整 JD 的岗位。"
         : undefined;
     if (!ids.length) return { note };
     const group = await new BossGroups(this.workspace).prepare(ids);

@@ -3,6 +3,7 @@ import type { NativeView } from "./views.js";
 import { groupedBossDeliveryIds } from "./boss-task-view.js";
 import { BossTaskPanel } from "./BossTaskPanel.js";
 import { BossResumePreview } from "./BossResumePreview.js";
+import { BossResumeSwitch } from "./BossResumeSwitch.js";
 import type { ReadResumeImage } from "./controls.js";
 import { JobList, JobListRow } from "./JobList.js";
 import type { BossTaskKind } from "../../core/boss-archives.js";
@@ -37,7 +38,7 @@ export function BossDeliveryPanel({
     ? []
     : focusedDelivery
       ? view.deliveries.filter((d) => d.id === focusedDelivery)
-      : view.deliveries.filter((d) => !grouped.has(d.id));
+      : view.deliveries.filter((d) => !d.withdrawnAt && !grouped.has(d.id));
   const groups = view.groups.filter((g) => g.expiresAt !== 0 || g.id === focusedGroup);
   const runs = view.runs.filter((r) => !view.deliveries.some((d) => d.remoteId === r.id));
   const archived = new Set(view.archivedTaskIds ?? []);
@@ -102,8 +103,15 @@ export function BossDeliveryPanel({
           {archived.has(d.id) && (
             <div><span className="rg-status">已归档</span>{archiveButton(d.id, "delivery")}</div>
           )}
-          {d.status === "prepared" && !archived.has(d.id) && (
+          {d.withdrawnAt && <p role="status">这条任务已移出待投，请查看当前清单。</p>}
+          {d.status === "prepared" && !d.withdrawnAt && !archived.has(d.id) && (
             <>
+              {view.canEditQueue && (
+                <div className="rg-boss-item-actions">
+                  <BossResumeSwitch view={view} delivery={d} busy={busy} run={run} />
+                  <button disabled={busy} onClick={() => void run({ action: "boss-queue-remove", id: d.id })}>移出待投</button>
+                </div>
+              )}
               <button
                 disabled={busy || !view.connected}
                 onClick={() => void run({ action: "boss-preview", id: d.id })}

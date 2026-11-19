@@ -11,7 +11,7 @@ DSH 的“插件 → 添加插件 → 安装第三方插件”可以安装 npm �
 3. 使用者在 DSH 官方安装入口填写下载文件的绝对路径，安装并启用「Resume Grill」。CLI 等价方式如下，路径须替换为实际下载位置：
 
 ```powershell
-dsh plugin --profile desktop add 'C:/Downloads/resume-grill-agent-0.4.3.tgz'
+dsh plugin --profile desktop add 'C:/Downloads/resume-grill-agent-0.4.4.tgz'
 ```
 
 Web 版将 `desktop` 换成 `web`。升级时用同一入口安装新版 `.tgz`，完全退出 DSH（包括托盘菜单里的「退出」）后重新打开，让界面和后端一起加载。只刷新页面会保留运行中的后端。此包包含构建后的 Host、React 卡片、字体和插件声明，安装时仍需下载运行依赖。包尚未发布到 npm，也没有公开下载版本。

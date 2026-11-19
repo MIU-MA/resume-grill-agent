@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Workspace } from "./workspace.js";
-import { BossDeliveries } from "./boss-deliveries.js";
+import { BossDeliveries, type BossDelivery } from "./boss-deliveries.js";
 import { BossArchives } from "./boss-archives.js";
 
 export type BossGroup = {
@@ -20,6 +20,7 @@ export type BossGroup = {
   }[];
   error?: string;
 };
+type Edit = { groupId?: string; draft?: BossDelivery; standaloneId?: string; adding?: boolean };
 type Control = { stop: boolean; done?: Promise<void> };
 const workers = new Map<string, Control>();
 const key = (w: Workspace, id: string) => `${w.store.home}:${id}`;
@@ -68,7 +69,37 @@ export class BossGroups {
   prepare(ids: string[]) {
     return this.prepareGroup(ids);
   }
-  private async prepareGroup(ids: string[], replacesId?: string) {
+  private requireEditable(id: string) {
+    new BossArchives(this.workspace).requireCurrent(id);
+    const group = this.get(id);
+    const deliveries = new BossDeliveries(this.workspace);
+    if (group.status !== "prepared" || group.expiresAt === 0 || group.items.some((item) => {
+      const delivery = deliveries.get(item.deliveryId);
+      return delivery.status !== "prepared" || delivery.withdrawnAt;
+    }))
+      throw new Error("原批次已经变化，请先查看当前状态。");
+    return group;
+  }
+  private requireStandalone(id: string) {
+    new BossArchives(this.workspace).requireCurrentDelivery(id);
+    const delivery = new BossDeliveries(this.workspace).get(id);
+    if (delivery.status !== "prepared" || delivery.withdrawnAt || this.inGroup(id))
+      throw new Error("这条任务已变更，请从当前待投清单打开。");
+    return delivery;
+  }
+  private inGroup(id: string) {
+    return this.workspace.store.list<BossGroup>("boss-group").some((group) =>
+      group.expiresAt !== 0 && group.items.some((item) => item.deliveryId === id));
+  }
+  private withdrawUnused(ids: string[]) {
+    const deliveries = new BossDeliveries(this.workspace);
+    for (const id of ids) {
+      const delivery = deliveries.get(id);
+      if (delivery.status === "prepared" && !this.inGroup(id))
+        this.workspace.store.put("boss-delivery", { ...delivery, withdrawnAt: Date.now() });
+    }
+  }
+  private async prepareGroup(ids: string[], edit: Edit = {}) {
     z.array(z.uuid())
       .min(1)
       .max(10)
@@ -77,11 +108,12 @@ export class BossGroups {
     const deliveries = new BossDeliveries(this.workspace);
     const items: BossGroup["items"] = [];
     const archives = new BossArchives(this.workspace);
+    const getDelivery = (id: string) => edit.draft?.id === id ? edit.draft : deliveries.get(id);
     const urls = new Set<string>();
     for (const id of ids) {
       archives.requireCurrentDelivery(id);
-      const d = deliveries.get(id);
-      if (d.status !== "prepared")
+      const d = getDelivery(id);
+      if (d.status !== "prepared" || d.withdrawnAt)
         throw new Error("只选择尚未执行的岗位；已执行或待核对记录不能重发。");
       if (urls.has(d.url))
         throw new Error("同一岗位不能选择多个版本重复联系。");
@@ -94,27 +126,28 @@ export class BossGroups {
       });
     }
     return this.workspace.store.transaction(() => {
-      const replaced = replacesId ? this.get(replacesId) : undefined;
-      if (replaced) {
-        archives.requireCurrent(replaced.id);
-        if (replaced.status !== "prepared" || replaced.expiresAt === 0)
-          throw new Error("原批次已经变化，请先查看当前状态。");
-      }
+      const replaced = edit.groupId ? this.requireEditable(edit.groupId) : undefined;
+      const standalone = edit.standaloneId ? this.requireStandalone(edit.standaloneId) : undefined;
+      const draft = edit.draft;
+      if (draft && deliveries.list().some((d) => d.url === draft.url &&
+        (d.status !== "prepared" || (edit.adding && !d.withdrawnAt))))
+        throw new Error("这个岗位已有待投或执行记录，请先查看现有任务。");
       for (const item of items) {
         archives.requireCurrentDelivery(item.deliveryId);
-        const delivery = deliveries.get(item.deliveryId);
-        if (delivery.status !== "prepared" || delivery.digest !== item.digest)
+        const delivery = getDelivery(item.deliveryId);
+        if (delivery.status !== "prepared" || delivery.withdrawnAt || delivery.digest !== item.digest)
           throw new Error("岗位任务已经变化，请重新查看。");
       }
       const archived = archives.ids();
       const digest = hash(items.map((i) => [i.deliveryId, i.digest]));
-      const existing = this.list().find(
+      const existing = replaced || draft ? undefined : this.list().find(
         (g) =>
           g.digest === digest &&
           !archived.has(g.id) &&
           g.status === "prepared" &&
           g.expiresAt > Date.now(),
       );
+      if (draft) this.workspace.store.put("boss-delivery", draft);
       const now = Date.now();
       const group = existing ?? this.save({
         id: randomUUID(),
@@ -126,7 +159,45 @@ export class BossGroups {
         items,
       });
       if (replaced) this.save({ ...replaced, expiresAt: 0 });
+      this.withdrawUnused([
+        ...(replaced?.items.filter((item) => !ids.includes(item.deliveryId)).map((item) => item.deliveryId) ?? []),
+        ...(standalone ? [standalone.id] : []),
+      ]);
       return group;
+    });
+  }
+  async add(resumeId: string, jobId: string, groupId?: string) {
+    const group = groupId ? this.requireEditable(groupId) : undefined;
+    if ((group?.items.length ?? 0) >= 10) throw new Error("每批最多 10 个岗位，请先处理当前批次。");
+    const ids = group?.items.map((item) => item.deliveryId) ?? [];
+    return new BossDeliveries(this.workspace).withDraft(resumeId, jobId, (draft) =>
+      this.prepareGroup([...ids, draft.id], { groupId, draft, adding: true }));
+  }
+  async replaceResume(deliveryId: string, resumeId: string, groupId?: string) {
+    const group = groupId ? this.requireEditable(groupId) : undefined;
+    if (group && !group.items.some((item) => item.deliveryId === deliveryId))
+      throw new Error("这个岗位不在当前批次。");
+    const deliveries = new BossDeliveries(this.workspace);
+    const delivery = group ? deliveries.get(deliveryId) : this.requireStandalone(deliveryId);
+    if (delivery.status !== "prepared" || delivery.withdrawnAt || delivery.resumeId === resumeId)
+      throw new Error("请为待确认岗位选择另一份简历。");
+    return deliveries.withDraft(resumeId, delivery.jobId, (draft) => this.prepareGroup(
+      group?.items.map((item) => item.deliveryId === deliveryId ? draft.id : item.deliveryId) ?? [draft.id],
+      { groupId, draft, standaloneId: group ? undefined : deliveryId },
+    ));
+  }
+  async move(id: string, deliveryId: string, step: -1 | 1) {
+    const ids = this.requireEditable(id).items.map((item) => item.deliveryId);
+    const index = ids.indexOf(deliveryId);
+    if (index < 0 || index + step < 0 || index + step >= ids.length)
+      throw new Error("这个岗位不能继续调整顺序。");
+    [ids[index], ids[index + step]] = [ids[index + step], ids[index]];
+    return this.prepareGroup(ids, { groupId: id });
+  }
+  removeStandalone(id: string) {
+    this.workspace.store.transaction(() => {
+      this.requireStandalone(id);
+      this.withdrawUnused([id]);
     });
   }
   async removeItem(id: string, deliveryId: string) {
@@ -136,14 +207,23 @@ export class BossGroups {
     if (
       group.status !== "prepared" ||
       group.expiresAt === 0 ||
-      group.items.length < 2 ||
       !group.items.some((item) => item.deliveryId === deliveryId)
     )
       throw new Error("当前批次不能移出这个岗位。");
+    if (group.items.length === 1) {
+      this.workspace.store.transaction(() => {
+        const current = this.requireEditable(id);
+        const delivery = new BossDeliveries(this.workspace).get(deliveryId);
+        if (delivery.status !== "prepared") throw new Error("岗位任务已经变化，请重新查看。");
+        this.save({ ...current, expiresAt: 0 });
+        this.withdrawUnused([deliveryId]);
+      });
+      return;
+    }
     return this.prepareGroup(
       group.items.filter((item) => item.deliveryId !== deliveryId)
         .map((item) => item.deliveryId),
-      id,
+      { groupId: id },
     );
   }
   /** Human confirmation covers these exact frozen items, never future search results. */
@@ -165,7 +245,7 @@ export class BossGroups {
     for (const i of review.items) {
       archives.requireCurrentDelivery(i.deliveryId);
       const d = deliveries.get(i.deliveryId);
-      if (d.status !== "prepared" || d.digest !== i.digest)
+      if (d.status !== "prepared" || d.withdrawnAt || d.digest !== i.digest)
         throw new Error("其中的岗位已执行或附件已变化。");
       await deliveries.validate(d);
     }
@@ -176,7 +256,7 @@ export class BossGroups {
       for (const item of current.items) {
         archives.requireCurrentDelivery(item.deliveryId);
         const d = deliveries.get(item.deliveryId);
-        if (d.status !== "prepared" || d.digest !== item.digest)
+        if (d.status !== "prepared" || d.withdrawnAt || d.digest !== item.digest)
           throw new Error("其中的岗位已执行或附件已变化。");
       }
       current.status = "running";
