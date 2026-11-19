@@ -252,7 +252,25 @@ try {
     name: "鲸历",
     exact: true,
   });
-  await workbench.getByRole("region", { name: "求职总览", exact: true }).waitFor();
+  const narrow = workbench.getByRole("region", { name: "求职总览", exact: true });
+  const narrowPortrait = narrow.getByRole("img", { name: "像素风 DS 娘" });
+  await narrowPortrait.waitFor();
+  assert.equal(await narrowPortrait.evaluate(async (image) => {
+    await image.decode();
+    return image.naturalWidth;
+  }), 256);
+  assert.equal(await narrow.locator(".rg-overview-grid").evaluate((grid) =>
+    getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).length,
+  ), 1, "窄侧栏应使用单列");
+  assert.deepEqual(await narrow.locator(".rg-overview-counts > button").evaluateAll((buttons) => {
+    const perRow = new Map();
+    for (const button of buttons) {
+      const top = button.getBoundingClientRect().top;
+      perRow.set(top, (perRow.get(top) ?? 0) + 1);
+    }
+    return [...perRow.values()];
+  }), [3, 2], "窄侧栏的五张统计卡应平衡分成两行");
+  await workbench.screenshot({ path: join(output, "dsh-workspace-sidebar.png") });
   await workbench.getByRole("button", { name: "简历库", exact: true }).click();
   await workbench.getByText("演示简历.txt", { exact: true }).waitFor();
   await workbench.getByLabel("选择简历文件", { exact: true }).setInputFiles({
@@ -461,9 +479,13 @@ try {
   });
   await full.getByRole("button", { name: "总览", exact: true }).click();
   await full.getByRole("region", { name: "求职总览", exact: true }).waitFor();
+  await full.locator(".rg-overview-actions .rg-primary:enabled").waitFor();
+  assert.equal(await full.locator(".rg-overview-grid").evaluate((grid) =>
+    getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).length,
+  ), 2, "宽版总览应使用双列");
   await page.screenshot({
     path: join(output, "dsh-workspace-overview.png"),
-    clip: { x: 0, y: 0, width: 1440, height: 790 },
+    clip: { x: 0, y: 0, width: 1440, height: 835 },
   });
   await full.getByRole("button", { name: "BOSS 投递", exact: true }).click();
   const boss = full.getByRole("region", { name: "BOSS 投递", exact: true });

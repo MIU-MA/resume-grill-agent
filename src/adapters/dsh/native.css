@@ -556,6 +556,15 @@
   .rg-overview-grid { grid-template-columns: minmax(0, 1fr); }
   .rg-workbench-nav button { padding-inline: 8px; }
 }
+@container (420px < width <= 650px) {
+  .rg-overview-counts:has(> button:nth-child(5)) {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .rg-overview-counts:has(> button:nth-child(5)) > button { grid-column: span 2; }
+  .rg-overview-counts:has(> button:nth-child(5)) > button:nth-last-child(-n+2) {
+    grid-column: span 3;
+  }
+}
 @container (max-width: 420px) {
   .rg-overview-banner {
     min-height: 134px;
@@ -563,6 +572,7 @@
   }
   .rg-overview-heading { padding: 12px; }
   .rg-overview-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rg-overview-counts > button:last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 .rg-search {
   padding-bottom: 16px;
