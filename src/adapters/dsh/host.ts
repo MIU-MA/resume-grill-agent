@@ -7,7 +7,7 @@ import { Workspace, type Job } from "../../core/workspace.js";
 import { nativeMail } from "./mail-settings.js";
 import { activeCapabilities, NativeConfig } from "./config.js";
 import { importStagedResume } from "./resume-upload.js";
-import { workspaceView } from "./views.js";
+import { reviewView, workspaceView } from "./views.js";
 import { operations } from "../../core/operations.js";
 import {
   humanAction,
@@ -22,6 +22,8 @@ import { hasCapability } from "../../shared/capabilities.js";
 import { Boss } from "../../core/boss.js";
 import { BossExecutor } from "../../infrastructure/boss-executor/index.js";
 import { requireCompanyWebsite } from "../../domain/boss.js";
+import { WebsiteFill } from "../../core/website-fill.js";
+import { WebsiteBrowser } from "../../infrastructure/website-browser.js";
 
 export const name = "resume-grill";
 export const Config = NativeConfig;
@@ -73,6 +75,7 @@ export function mount(
   verifyMail?: () => Promise<unknown>,
   refreshMail?: () => Promise<void>,
   importUpload?: (agent: any, receiptId: string) => Promise<unknown>,
+  websiteFill?: WebsiteFill,
 ) {
   for (const operation of operations(workspace))
     ctx.effect(() =>
@@ -119,6 +122,22 @@ export function mount(
             surface: _surface,
             ...input
           } = rawInput.trim() ? JSON.parse(rawInput) : { action: "workspace" };
+          if (input.action === "website-fill") {
+            requireCapability(workspace, "website");
+            const { resumeId, jobId, goalId } = z.strictObject({
+              action: z.literal("website-fill"),
+              resumeId: z.string(),
+              jobId: z.string(),
+              goalId: z.string().optional(),
+            }).parse(input);
+            if (!websiteFill) throw new Error("当前宿主未启用内置官网代填。");
+            reviewView(workspace, resumeId, jobId, undefined, goalId);
+            const websiteNotice = await websiteFill.fill(resumeId, jobId, signal);
+            return {
+              kind: "success",
+              text: JSON.stringify(reviewView(workspace, resumeId, jobId, undefined, goalId, websiteNotice)),
+            };
+          }
           if (input.action === "browser-check") {
             requireCapability(workspace, "website");
             if (typeof input.jobId !== "string")
@@ -276,7 +295,12 @@ export async function apply(ctx: Context, config: any) {
       void executor.close().catch(() => {});
     });
   }
-  mount(ctx, workspace, mail?.verify, mail?.refresh, (agent, receiptId) =>
-    importStagedResume(ctx, workspace, agent, receiptId),
+  const website = hasCapability(active, "website")
+    ? new WebsiteBrowser(join(store.home, "website-browser"))
+    : undefined;
+  if (website) ctx.effect(() => () => { void website.close().catch(() => {}); });
+  mount(ctx, workspace, mail?.verify, mail?.refresh,
+    (agent, receiptId) => importStagedResume(ctx, workspace, agent, receiptId),
+    website && new WebsiteFill(workspace, (jobId, url) => website.open(jobId, url)),
   );
 }

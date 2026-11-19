@@ -60,7 +60,7 @@ try {
       company: "演示公司",
       role: "Go 开发",
       jd: "演示公司招聘 Go 开发，负责 Go API 开发与测试。",
-      sourceUrl: "https://example.com/jobs/native",
+      sourceUrl: "https://127.0.0.1/jobs/native",
       recipient: "hr@example.com",
     });
   const context = workspace.reviewContext(resume.id, job.id),
@@ -564,13 +564,13 @@ try {
   await full.getByRole("button", { name: "回到当前岗位", exact: true }).click();
   await full.getByLabel("接受这条修改", { exact: true }).check();
   await full
-    .getByRole("button", { name: "开始官网代填", exact: true })
+    .getByRole("button", { name: "官网代填", exact: true })
     .click();
   await full
     .getByRole("alert")
-    .filter({ hasText: "官网代填不可用" })
+    .filter({ hasText: "招聘页必须使用公网地址" })
     .waitFor();
-  assert.equal(store.list("proposal").length, 1, "缺浏览器时不能悄悄调用模型");
+  assert.equal(store.list("proposal").length, 1, "代填失败不能调用模型");
   await full
     .getByRole("button", { name: "重新生成建议", exact: true })
     .click();

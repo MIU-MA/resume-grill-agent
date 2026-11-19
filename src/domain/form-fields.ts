@@ -32,7 +32,7 @@ export function matchFormField(
   )
     return { reason: "由用户处理，不自动填写或勾选" };
   if (field.type === "file")
-    return /简历|resume|cv/.test(label)
+    return /简历|résumé|resume|cv/.test(label)
       ? { path: "attachment" }
       : { reason: "不是明确的简历上传入口" };
   if (/期望|希望|意向|desired|expected.*salary/.test(label))

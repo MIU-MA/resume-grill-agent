@@ -61,8 +61,7 @@ export function nativeControls(ctx: any, sessionId: string, surface?: string) {
       }
       return JSON.parse(result.text);
     },
-    ask: async (text: string, browser = false) => {
-      if (browser) ctx.layout.selectPanel(null);
+    ask: async (text: string) => {
       // A main panel unmounts the chat view. Retain and open its session while
       // submitting, rather than borrowing a scope that may be retiring.
       return ctx.sessions.using(sessionId, { source: "gateway" }, async () => {

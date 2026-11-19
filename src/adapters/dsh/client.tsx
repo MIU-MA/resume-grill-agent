@@ -35,7 +35,7 @@ type Props = {
   callId: string;
   block: any;
   act: Action;
-  ask: (text: string, browser?: boolean) => Promise<unknown>;
+  ask: (text: string) => Promise<unknown>;
   openFile: (path: string) => void;
   readResumeImage?: ReadResumeImage;
 };
@@ -170,19 +170,14 @@ export function NativeCard({
       setBusy(false);
     }
   };
-  const question = async (text: string, browser = false) => {
+  const question = async (text: string) => {
     if (lock.current) return;
     lock.current = true;
     setBusy(true);
-    setRequesting(view.kind === "review" && !browser);
+    setRequesting(view.kind === "review");
     setError("");
     try {
-      if (browser)
-        await act({
-          action: "browser-check",
-          ...(view.kind === "review" ? { resumeId: view.resumeId, jobId: view.jobId } : {}),
-        });
-      await ask(text, browser);
+      await ask(text);
     } catch (e) {
       setRequesting(false);
       setError(e instanceof Error ? e.message : "未能提交给助手。");
@@ -293,7 +288,8 @@ export function NativeCard({
           {websiteReview && (
             <section aria-label="招聘官网申请">
               <h4>招聘官网申请</h4>
-              <p className="rg-note">代填需启用招聘浏览器 MCP；填写后请到官网核对并提交。</p>
+              <p className="rg-note">用专用窗口填写。遇到登录或验证，处理完再点一次代填。</p>
+              {view.websiteNotice && <p role="status">{view.websiteNotice}</p>}
               <button
                 disabled={busy}
                 onClick={() =>
@@ -316,13 +312,15 @@ export function NativeCard({
               <button
                 disabled={busy || !view.profile?.confirmedAt}
                 onClick={() =>
-                  void question(
-                    `请先调用 resume_grill_start_form_run 保存或恢复任务，再调用 resume_grill_application_form_context 读取已确认资料，resumeId=${view.resumeId}，jobId=${view.jobId}。只使用当前会话中实际可用的浏览器工具，打开返回的官网地址并找到申请表；按页面能力选择先上传解析或逐项填写，读取真实字段后调用 resume_grill_plan_form_fill，只执行 write=true 的动作；填写、上传后重新读取实际字段值与附件名，调用 resume_grill_verify_form_fill 保存检查结果。失败最多核查两次，页面值冲突不覆盖。没有工具、需要登录/验证码、必填资料缺失或社招/校招不匹配就明确停下。不要把项目经历当工作经历。不要用邮件工具，不要最终提交，不要代勾同意声明，不要把尚未执行的动作说成完成。`,
-                    true,
-                  )
+                  void run({
+                    action: "website-fill",
+                    resumeId: view.resumeId,
+                    jobId: view.jobId,
+                    ...(view.goalId ? { goalId: view.goalId } : {}),
+                  })
                 }
               >
-                开始官网代填
+                官网代填
               </button>
             </section>
           )}

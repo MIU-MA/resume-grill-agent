@@ -44,6 +44,8 @@ try {
     "dist/infrastructure/boss-executor/chromium-cdp-connection.js",
     "dist/core/operations/mail.js",
     "dist/core/operations/website.js",
+    "dist/core/website-fill.js",
+    "dist/infrastructure/website-browser.js",
     "dist/web/panel/index.html",
   ])
     assert.ok(files.has(entry.replace(/^\.\//, "")), `插件包缺少 ${entry}`);

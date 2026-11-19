@@ -68,6 +68,7 @@ export class FormRuns {
       resumeId,
       jobId,
     );
+    const origin = new URL(context.url).origin;
     return this.workspace.store.transaction(() => {
       const existing = this.workspace.store
         .list<FormRun>("form-run")
@@ -75,6 +76,7 @@ export class FormRuns {
           (r) =>
             r.resumeId === resumeId &&
             r.jobId === jobId &&
+            r.origin === origin &&
             r.profileId === context.profileId &&
             r.attachmentHash === context.attachment.sha256 &&
             r.status !== "stale",
@@ -87,7 +89,7 @@ export class FormRuns {
         jobId,
         profileId: context.profileId,
         attachmentHash: context.attachment.sha256,
-        origin: new URL(context.url).origin,
+        origin,
         createdAt: now,
         updatedAt: now,
         revision: 0,
@@ -110,7 +112,8 @@ export class FormRuns {
       );
       if (
         context.profileId !== run.profileId ||
-        context.attachment.sha256 !== run.attachmentHash
+        context.attachment.sha256 !== run.attachmentHash ||
+        new URL(context.url).origin !== run.origin
       )
         throw new Error("资料或附件已变化");
       return { run, context };

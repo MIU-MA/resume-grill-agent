@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { extname } from "node:path";
+import { extname, win32 } from "node:path";
 import type { Job, Workspace } from "./workspace.js";
 import { ResumeProfiles } from "./resume-profiles.js";
 import { sourceUrlSchema } from "../infrastructure/careers/contracts.js";
@@ -22,6 +22,10 @@ export async function applicationFormContext(
   if (resume.pdf && (!resume.pdfHash || sha256 !== resume.pdfHash))
     throw new Error("简历附件已改变，请重新生成或上传后再填写。");
   const profile = new ResumeProfiles(workspace).confirmed(resumeId);
+  const extension = extname(path);
+  const originalName = win32.basename(resume.name) || "resume";
+  const name = extname(originalName).toLowerCase() === extension.toLowerCase()
+    ? originalName : `${originalName}${extension}`;
   const facts = Object.entries(profile.data.contact)
     .filter(([, value]) => value)
     .map(([field, value]) => ({
@@ -41,8 +45,8 @@ export async function applicationFormContext(
     facts,
     attachment: {
       path,
-      name: resume.name,
-      extension: extname(path),
+      name,
+      extension,
       sha256,
       bytes: bytes.length,
     },

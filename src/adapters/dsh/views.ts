@@ -89,6 +89,7 @@ export function reviewView(
   jobId: string,
   proposalId?: string,
   goalId?: string,
+  websiteNotice?: string,
 ) {
   const resume = workspace.resume(resumeId),
     job = workspace.store.get<Job>("job", jobId);
@@ -122,6 +123,7 @@ export function reviewView(
     job,
     ...(profile ? { profile } : {}),
     ...(formRun ? { formRun } : {}),
+    ...(websiteNotice ? { websiteNotice } : {}),
     ...(goalId ? { goalId } : {}),
     ...(proposal ? { proposal } : {}),
   };
