@@ -557,7 +557,7 @@ try {
     await results.getByText("已加入", { exact: true }).waitFor();
     await page.screenshot({
       path: join(output, "dsh-boss-job-list.png"),
-      clip: { x: 0, y: 0, width: 1440, height: 720 },
+      clip: { x: 0, y: 0, width: 1440, height: 935 },
     });
     await boss.getByRole("button", { name: "归档", exact: true }).click();
     const archivedTasks = boss.getByRole("button", { name: "已归档 1", exact: true });
@@ -626,14 +626,12 @@ try {
     .getByRole("button", { name: "核对简历", exact: true })
     .click();
   const firstChange = full.getByLabel("接受这条修改", { exact: true });
-  await firstChange.evaluate((field) => field.scrollIntoView({ block: "center" }));
-  const checkbox = await firstChange.boundingBox();
-  assert.ok(checkbox, "找不到可截图的修改建议");
-  const top = Math.max(0, Math.floor(checkbox.y) - 60);
-  await page.screenshot({
+  await firstChange.waitFor();
+  await page.setViewportSize({ width: 1440, height: 1280 });
+  await full.getByRole("region", { name: "Resume Grill 求职卡片", exact: true }).screenshot({
     path: join(output, "dsh-job-review.png"),
-    clip: { x: 290, y: top, width: 1150, height: 1050 - top },
   });
+  await page.setViewportSize({ width: 1440, height: 1050 });
   await full
     .getByRole("button", { name: "解析简历并核对资料", exact: true })
     .click();

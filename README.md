@@ -1,8 +1,16 @@
 # Resume Grill
 
-一个 DSH 求职插件。在工作台里找岗位、按 JD 修改简历、准备投递，简历和记录保存在本机。也提供 [MCP 接口](docs/mcp.md)。
+<p align="center">
+  <img src="https://img.shields.io/badge/React-19-149eca?logo=react&amp;logoColor=white" alt="React 19">
+  <img src="https://img.shields.io/badge/TypeScript-6-3178c6?logo=typescript&amp;logoColor=white" alt="TypeScript 6">
+  <img src="https://img.shields.io/badge/Node.js-24%2B-339933?logo=nodedotjs&amp;logoColor=white" alt="Node.js 24+">
+  <img src="https://img.shields.io/badge/SQLite-%E6%9C%AC%E5%9C%B0%E5%AD%98%E5%82%A8-003b57?logo=sqlite&amp;logoColor=white" alt="SQLite 本地存储">
+  <img src="https://img.shields.io/badge/MCP-SDK_1.32-24292f" alt="MCP SDK 1.32">
+  <img src="https://img.shields.io/badge/Playwright-1.65-2e9d50" alt="Playwright 1.65">
+  <a href="https://linux.do/"><img src="https://img.shields.io/badge/LINUX%20DO-%E7%A4%BE%E5%8C%BA-f5c76b?labelColor=555" alt="LINUX DO 社区"></a>
+</p>
 
-![Resume Grill 的像素 DS 娘头像](plugin/branding/ds-chan.webp)
+一个 DSH 求职插件。在工作台里找岗位、按 JD 修改简历、准备投递，简历和记录保存在本机。也提供 [MCP 接口](docs/mcp.md)。
 
 ## 安装
 
@@ -19,6 +27,8 @@ npm run package:plugin
 
 ## 功能
 
+![Resume Grill 在 DSH 中的求职总览](docs/screenshots/dsh-overview.png)
+
 | 入口 | 可以做什么 |
 | --- | --- |
 | 简历库 | 导入 PDF、DOCX、TXT 或 Markdown，查看原文件、编辑另存、管理版本和回收站。 |
@@ -30,18 +40,14 @@ npm run package:plugin
 
 ### 按岗位改简历
 
-打开岗位 JD，勾选要采纳的修改，也可以手动改正文。原简历保留，新的岗位版 PDF 采用文本排版。
-
-![根据岗位 JD 核对简历修改](docs/screenshots/dsh-job-review.png)
+打开岗位 JD，勾选要采纳的修改，也可以手动改正文。原简历保留，新的岗位版 PDF 采用文本排版。[查看简历核对截图](docs/screenshots/dsh-job-review.png)
 
 ### BOSS 投递
 
-在 **Resume Grill → BOSS 投递** 选主简历，点「找岗位并准备投递」。插件搜索、读 JD，并用选定的简历准备最多 3 个岗位，核对后一次确认投递。[BOSS 使用说明](docs/boss.md)
+在 **Resume Grill → BOSS 投递** 选主简历，点「找岗位并准备投递」。插件搜索、读 JD，并准备最多 3 个岗位。核对前可增减岗位、换简历或调整顺序。[BOSS 使用说明](docs/boss.md)
 
-![DSH 的 BOSS 页面已连接 Microsoft Edge](docs/screenshots/dsh-boss.png)
+![DSH 中的 BOSS 岗位列表和待投任务，使用演示数据](docs/screenshots/dsh-boss.png)
 
 ## 开发
-
-TypeScript · React · SQLite · MCP
 
 `npm run check` 检查类型，`npm test` 运行测试。[开发说明](docs/development.md) · [来源与许可](THIRD_PARTY.md)
