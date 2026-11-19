@@ -259,9 +259,9 @@ try {
     path: join(output, "dsh-native-attachment.png"),
     fullPage: true,
   });
-  await page.getByRole("button", { name: "鲸历快开", exact: true }).click();
+  await page.getByRole("button", { name: "求职快开", exact: true }).click();
   const workbench = page.getByRole("region", {
-    name: "鲸历",
+    name: "Resume Grill",
     exact: true,
   });
   const narrow = workbench.getByRole("region", { name: "求职总览", exact: true });
@@ -428,8 +428,8 @@ try {
     fullPage: true,
   });
   await openSettings(page);
-  await page.getByText("鲸历邮箱", { exact: true }).click();
-  const mailSettings = page.getByRole("region", { name: "鲸历邮箱设置" });
+  await page.getByText("Resume Grill 邮箱", { exact: true }).click();
+  const mailSettings = page.getByRole("region", { name: "Resume Grill 邮箱设置" });
   await mailSettings
     .getByLabel("发件邮箱", { exact: true })
     .fill("demo@qq.com");
@@ -455,7 +455,7 @@ try {
   });
   await page.reload();
   await openSettings(page);
-  await page.getByText("鲸历邮箱", { exact: true }).click();
+  await page.getByText("Resume Grill 邮箱", { exact: true }).click();
   await mailSettings
     .getByText("此邮箱的授权码已保存。", { exact: false })
     .waitFor();
@@ -471,13 +471,13 @@ try {
     .waitFor();
   await page.keyboard.press("Escape");
   await page.getByText("插件", { exact: true }).first().click();
-  await page.getByText("鲸历", { exact: true }).first().waitFor();
-  await page.getByRole("button", { name: "鲸历快开", exact: true }).click();
-  await page.getByRole("region", { name: "鲸历", exact: true }).waitFor();
-  await page.getByRole("button", { name: "鲸历", exact: true }).click();
+  await page.getByText("Resume Grill", { exact: true }).first().waitFor();
+  await page.getByRole("button", { name: "求职快开", exact: true }).click();
+  await page.getByRole("region", { name: "Resume Grill", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Resume Grill", exact: true }).click();
   const full = page
     .locator('[data-global-panel="true"]')
-    .getByRole("region", { name: "鲸历", exact: true });
+    .getByRole("region", { name: "Resume Grill", exact: true });
   const portrait = full.getByRole("img", { name: "像素风 DS 娘" });
   await portrait.waitFor();
   assert.equal(await portrait.evaluate((image) => image.decode().then(() => image.naturalWidth)), 256);

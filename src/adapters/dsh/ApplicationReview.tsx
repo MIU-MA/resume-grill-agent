@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import type { NativeView } from "./views.js";
 import type { ApplicationMail } from "../../domain/application-mail.js";
 import { applicationStatusLabel } from "../../shared/presentation/application-status.js";
+import { mailSettingsName } from "./branding.js";
 
 export function ApplicationReview({
   view,
@@ -167,7 +168,7 @@ export function ApplicationReview({
           </button>
           {!sendingEnabled && (
             <p className="rg-note">
-              未启用真实发送。请在 DSH 设置的「鲸历邮箱」中保存邮箱和授权码，再开启真实发送。
+              未启用真实发送。请在 DSH 设置的「{mailSettingsName}」中保存邮箱和授权码，再开启真实发送。
             </p>
           )}
         </>

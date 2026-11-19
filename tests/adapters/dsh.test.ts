@@ -107,7 +107,7 @@ test("官网代填遇到旧版宿主时提示重启或更新插件，普通填�
     { ok: false, error: { message: legacyError } },
   ]) {
     const controls = nativeControls({ remote: { commands: { execute: async () => response } } }, "session");
-    await assert.rejects(controls.act(request), /后端还不支持官网代填.*完全退出 DSH.*更新鲸历/);
+    await assert.rejects(controls.act(request), /Resume Grill 后端还不支持官网代填.*完全退出 DSH.*更新插件/);
     await assert.rejects(controls.act({ action: "review" }), { message: legacyError });
   }
   for (const message of ["请先核对并确认简历资料。", '{"code":"invalid_union","discriminator":"type"}']) {

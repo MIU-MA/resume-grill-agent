@@ -1,5 +1,7 @@
-export const brandName = "鲸历";
-export const quickEntryName = "鲸历快开";
+export const brandName = "Resume Grill";
+export const quickEntryName = "求职快开";
+export const mailSettingsName = `${brandName} 邮箱`;
+export const moduleSettingsName = `${brandName} 模块`;
 
 declare const __DS_CHAN__: string;
 

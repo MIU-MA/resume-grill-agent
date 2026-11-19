@@ -8,7 +8,7 @@ import { WorkspaceOverview } from "./WorkspaceOverview.js";
 import { CareerBrowser } from "./CareerBrowser.js";
 import { JobList, JobListRow } from "./JobList.js";
 import { PixelIcon, type PixelIconName } from "./PixelIcon.js";
-import { brandName, DsPortrait, quickEntryName } from "./branding.js";
+import { brandName, DsPortrait, mailSettingsName, moduleSettingsName, quickEntryName } from "./branding.js";
 import { WorkbenchHeading } from "./WorkbenchHeading.js";
 import { viewReference } from "./card-model.js";
 import { onWorkspaceChanged, notifyWorkspaceChanged } from "./updates.js";
@@ -372,7 +372,7 @@ function Entry({ useSessions, usePanelInfo, selectConversation, open }: any) {
   return (
     <button
       className="rg-entry"
-      title={error || (sessionId ? `打开${brandName}侧栏` : "先打开一个会话")}
+      title={error || (sessionId ? `打开 ${brandName} 侧栏` : "先打开一个会话")}
       disabled={!sessionId}
       onClick={() => {
         if (panelId === null) show();
@@ -500,7 +500,7 @@ export function registerWorkbench(ctx: any, Review: any) {
         name: "settings.section",
         id: "resume-grill-modules",
         order: 44,
-        label: () => `${brandName}模块`,
+        label: () => moduleSettingsName,
         inject: () => ({ scope }),
       },
       CapabilitySettings,
@@ -512,7 +512,7 @@ export function registerWorkbench(ctx: any, Review: any) {
         name: "settings.section",
         id: "resume-grill-mail",
         order: 45,
-        label: () => `${brandName}邮箱`,
+        label: () => mailSettingsName,
         inject: () => ({
           scope,
           credentials: ctx.remote.credentials,

@@ -1,12 +1,12 @@
-# 鲸历 · Resume Grill Agent
+# Resume Grill
 
 一个 DSH 求职插件。在工作台里找岗位、按 JD 修改简历、准备投递，简历和记录保存在本机。也提供 [MCP 接口](docs/mcp.md)。
 
-![鲸历的像素 DS 娘头像](plugin/branding/ds-chan.webp)
+![Resume Grill 的像素 DS 娘头像](plugin/branding/ds-chan.webp)
 
 ## 安装
 
-在 DSH 打开 **插件 → 添加插件 → 安装第三方插件**，填写预构建 `.tgz` 的绝对路径，启用「鲸历」。
+在 DSH 打开 **插件 → 添加插件 → 安装第三方插件**，填写预构建 `.tgz` 的绝对路径，启用「Resume Grill」。
 
 当前可从本仓库生成安装包，需要 Node.js 24+：
 
@@ -15,7 +15,7 @@ npm ci
 npm run package:plugin
 ```
 
-终端会给出 `artifacts/` 下的插件包路径。安装后从 DSH 左侧打开 **鲸历**。详见 [DSH 安装说明](docs/dsh.md)。
+终端会给出 `artifacts/` 下的插件包路径。安装后从 DSH 左侧打开 **Resume Grill**。详见 [DSH 安装说明](docs/dsh.md)。
 
 ## 功能
 
@@ -35,7 +35,7 @@ npm run package:plugin
 
 ### BOSS 投递
 
-在 **鲸历 → BOSS 投递** 选主简历，点「找岗位并准备投递」。插件搜索、读 JD，并用选定的简历准备最多 3 个岗位，核对后一次确认投递。[BOSS 使用说明](docs/boss.md)
+在 **Resume Grill → BOSS 投递** 选主简历，点「找岗位并准备投递」。插件搜索、读 JD，并用选定的简历准备最多 3 个岗位，核对后一次确认投递。[BOSS 使用说明](docs/boss.md)
 
 ![DSH 的 BOSS 页面已连接 Microsoft Edge](docs/screenshots/dsh-boss.png)
 

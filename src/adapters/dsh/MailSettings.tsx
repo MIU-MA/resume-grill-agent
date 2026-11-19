@@ -11,6 +11,7 @@ import {
   type MailSettings as Settings,
 } from "../../shared/mail-settings.js";
 import { selectedSessionId } from "./controls.js";
+import { mailSettingsName } from "./branding.js";
 import { hasCapability, type Capability } from "../../shared/capabilities.js";
 
 declare const __NATIVE_CSS__: string;
@@ -114,7 +115,7 @@ function MailSettingsForm({
     setMessage("");
   };
   return (
-    <section className="rg-native rg-settings" aria-label="鲸历邮箱设置">
+    <section className="rg-native rg-settings" aria-label={`${mailSettingsName}设置`}>
       <style>{__NATIVE_CSS__}</style>
       <h3>发件邮箱</h3>
       <p className="rg-note">授权码由 DSH 凭据服务保存。</p>

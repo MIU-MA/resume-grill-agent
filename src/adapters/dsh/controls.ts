@@ -1,3 +1,5 @@
+import { brandName } from "./branding.js";
+
 /** DSH 0.2.2 keeps main-view ownership on catalog entries, older hosts expose current. */
 export function selectedSessionId(state: any): string | undefined {
   return (
@@ -19,7 +21,7 @@ export function nativeCommandError(input: unknown, message: string) {
     /"discriminator"\s*:\s*"action"/i.test(message) ||
     /invalid discriminator value.*expected.*['"]workspace['"]/i.test(message)
   ))
-    return "DSH 当前加载的鲸历后端还不支持官网代填。请完全退出 DSH 后重新打开；如果安装的是旧版插件包，请先更新鲸历。";
+    return `DSH 当前加载的 ${brandName} 后端还不支持官网代填。请完全退出 DSH 后重新打开；如果安装的是旧版插件包，请先更新插件。`;
   if (action === "boss" || action.startsWith("boss-"))
     return "BOSS 界面与后端版本可能不同。请完全退出 DSH 后重新打开，再核对投递记录。";
   return message;
