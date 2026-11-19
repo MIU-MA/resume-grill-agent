@@ -3,7 +3,6 @@ import type { NativeView } from "./views.js";
 import { BossDeliveryPanel } from "./BossDeliveryPanel.js";
 import type { ReadResumeImage } from "./controls.js";
 import { JobList, JobListRow } from "./JobList.js";
-import { WhaleMark } from "./WhaleMark.js";
 
 export function BossWorkbench({
   view,
@@ -82,7 +81,7 @@ export function BossWorkbench({
   }
   return (
     <section aria-label="BOSS 投递">
-      <h3 className="rg-marked-heading">BOSS 投递 <WhaleMark /></h3>
+      <h3>BOSS 投递</h3>
       <div className="rg-boss-start">
       {resumes.length === 1 && <p>简历：{resumes[0].name}</p>}
       {resumes.length > 1 && (

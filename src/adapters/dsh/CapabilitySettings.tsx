@@ -41,9 +41,9 @@ export function CapabilitySettings({ scope }: { scope: SettingsScope }) {
   const available = snapshot.status === "ready" && Array.isArray(saved);
 
   return (
-    <section className="rg-native rg-settings" aria-label="求职模块">
+    <section className="rg-native rg-settings" aria-label="鲸历模块">
       <style>{__NATIVE_CSS__}</style>
-      <h3>求职模块</h3>
+      <h3>鲸历模块</h3>
       <p className="rg-note">
         简历库、岗位读取和 JD 核对始终可用。模块设置在重启 DSH Profile 后生效。
       </p>

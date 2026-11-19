@@ -14,7 +14,7 @@ export function isBossSource(value: string) {
 
 export function requireCompanyWebsite(value: string) {
   if (isBossSource(value))
-    throw new Error("这是 BOSS 招聘链接。请在「求职工作台 → BOSS 投递」处理。");
+    throw new Error("这是 BOSS 招聘链接。请从「BOSS 投递」处理。");
 }
 
 export const bossUrl = z

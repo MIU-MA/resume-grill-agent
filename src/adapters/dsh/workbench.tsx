@@ -8,6 +8,7 @@ import { WorkspaceOverview } from "./WorkspaceOverview.js";
 import { CareerBrowser } from "./CareerBrowser.js";
 import { JobList, JobListRow } from "./JobList.js";
 import { PixelIcon, type PixelIconName } from "./PixelIcon.js";
+import { brandName, DsPortrait, quickEntryName } from "./branding.js";
 import { viewReference } from "./card-model.js";
 import { onWorkspaceChanged, notifyWorkspaceChanged } from "./updates.js";
 import { applicationStatusLabel } from "../../shared/presentation/application-status.js";
@@ -25,7 +26,7 @@ function Workbench({
   sessionId,
 }: any) {
   const [data, setData] = useState<Snapshot>(),
-    [tab, setTab] = useState("resumes"),
+    [tab, setTab] = useState("overview"),
     [detail, setDetail] = useState<NativeView | null>(null),
     [resumeId, setResume] = useState(""),
     [busy, setBusy] = useState(false),
@@ -108,7 +109,7 @@ function Workbench({
   const mailEnabled = hasCapability(data?.capabilities, "mail");
   const tabs: Array<[PixelIconName, string]> = [
     ["overview", "总览"],
-    ["resumes", "简历"],
+    ["resumes", "简历库"],
     ["jobs", "招聘官网"],
   ];
   if (bossDeliveries) tabs.push(["boss", "BOSS 投递"]);
@@ -124,10 +125,10 @@ function Workbench({
       ["submitting", "running", "uncertain", "paused"].includes(d.status),
   );
   return (
-    <section className="rg-native rg-workbench" aria-label="求职工作台">
+    <section className="rg-native rg-workbench" aria-label={brandName}>
       <style>{__NATIVE_CSS__}</style>
       <header className="rg-toolbar rg-workbench-header">
-        <h3><PixelIcon name="resumes" />求职工作台</h3>
+        <h3><DsPortrait size={36} />{brandName}</h3>
         <button className="rg-refresh" disabled={busy} onClick={() => void run(reload)}>
           <PixelIcon name="refresh" />
           刷新求职资料
@@ -392,7 +393,7 @@ function Entry({ useSessions, usePanelInfo, selectConversation, open }: any) {
   return (
     <button
       className="rg-entry"
-      title={error || (sessionId ? "打开求职工作台" : "先打开一个会话")}
+      title={error || (sessionId ? `打开${brandName}侧栏` : "先打开一个会话")}
       disabled={!sessionId}
       onClick={() => {
         if (panelId === null) show();
@@ -402,7 +403,7 @@ function Entry({ useSessions, usePanelInfo, selectConversation, open }: any) {
         }
       }}
     >
-      求职
+      {quickEntryName}
     </button>
   );
 }
@@ -423,9 +424,10 @@ function WorkbenchPage({ useSessions, bind, lastSession, retain, enter }: any) {
   return face ? (
     <Workbench key={id} {...face} />
   ) : (
-    <section className="rg-native">
-      <h3>求职工作台</h3>
-      <p>先打开一个 DSH 会话，再进入求职。无需发送消息。</p>
+    <section className="rg-native" aria-label={brandName}>
+      <style>{__NATIVE_CSS__}</style>
+      <h3>{brandName}</h3>
+      <p>先打开一个 DSH 会话即可使用。</p>
     </section>
   );
 }
@@ -491,10 +493,10 @@ export function registerWorkbench(ctx: any, Review: any) {
       {
         name: "sidebar.panellist",
         id: "resume-grill-workspace",
-        label: () => "求职工作台",
+        label: () => brandName,
         order: 25,
       },
-      () => <PixelIcon name="resumes" />,
+      () => <DsPortrait size={18} />,
     ),
   );
   ctx.slots.inject("main", () =>
@@ -519,7 +521,7 @@ export function registerWorkbench(ctx: any, Review: any) {
         name: "settings.section",
         id: "resume-grill-modules",
         order: 44,
-        label: () => "求职模块",
+        label: () => `${brandName}模块`,
         inject: () => ({ scope }),
       },
       CapabilitySettings,
@@ -531,7 +533,7 @@ export function registerWorkbench(ctx: any, Review: any) {
         name: "settings.section",
         id: "resume-grill-mail",
         order: 45,
-        label: () => "求职邮箱",
+        label: () => `${brandName}邮箱`,
         inject: () => ({
           scope,
           credentials: ctx.remote.credentials,
@@ -552,11 +554,11 @@ export function registerWorkbench(ctx: any, Review: any) {
     ctx.sidebarRightTabs.register({
       id: "resume-grill-workbench",
       kind: "resume-grill",
-      title: () => "求职",
+      title: () => brandName,
       guide: [
         {
           order: 30,
-          title: () => "求职",
+          title: () => brandName,
           description: () => "简历、岗位、待确认邮件与投递记录",
         },
       ],

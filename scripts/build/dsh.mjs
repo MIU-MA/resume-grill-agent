@@ -1,8 +1,6 @@
 import { build } from "esbuild";
 import { readFile } from "node:fs/promises";
-const whalePreview = process.env.RESUME_WHALE_PREVIEW === "1"
-  ? `data:image/webp;base64,${(await readFile(".resume-agent/preview/whale-avatar.webp")).toString("base64")}`
-  : "";
+const portrait = await readFile("plugin/branding/ds-chan.webp");
 await build({
   entryPoints: ["src/adapters/dsh/client.tsx"],
   outfile: "dist/adapters/dsh/client.js",
@@ -12,7 +10,7 @@ await build({
   jsx: "automatic",
   external: ["react", "react/jsx-runtime"],
   define: {
-    __WHALE_PREVIEW__: JSON.stringify(whalePreview),
+    __DS_CHAN__: JSON.stringify(`data:image/webp;base64,${portrait.toString("base64")}`),
     __NATIVE_CSS__: JSON.stringify(
       await readFile("src/adapters/dsh/native.css", "utf8"),
     ),

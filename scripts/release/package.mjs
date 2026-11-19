@@ -34,6 +34,7 @@ try {
     manifest.exports["./client"],
     manifest.dsh.bundle.patch,
     "plugin/icon.svg",
+    "plugin/branding/ds-chan.webp",
     "plugin/locale/zh.json",
     "assets/NotoSansSC-Regular.ttf",
     "assets/OFL.txt",

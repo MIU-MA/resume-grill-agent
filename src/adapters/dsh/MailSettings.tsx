@@ -114,7 +114,7 @@ function MailSettingsForm({
     setMessage("");
   };
   return (
-    <section className="rg-native rg-settings" aria-label="求职邮箱设置">
+    <section className="rg-native rg-settings" aria-label="鲸历邮箱设置">
       <style>{__NATIVE_CSS__}</style>
       <h3>发件邮箱</h3>
       <p className="rg-note">授权码由 DSH 凭据服务保存。</p>
