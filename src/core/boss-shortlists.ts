@@ -5,6 +5,8 @@ import { Boss } from "./boss.js";
 import { BossDeliveries } from "./boss-deliveries.js";
 import { isGenericJobTitle, matchesJob } from "../domain/job-search.js";
 import {
+  bossDirection,
+  bossDirectionConflict,
   bossSkillEvidence,
   checkBossRequirements,
   classifyBossRecruitment,
@@ -80,9 +82,7 @@ export class BossShortlists {
       budget,
       items: rows.map(({ item }) => item),
     };
-    const directions = goal.directions.map((value) =>
-      value.trim().replace(/\s*(?:日常实习|暑期实习|寒假实习|实习生?|校招|社招|全职)$/u, "").trim() || value,
-    );
+    const directions = goal.directions.map(bossDirection);
     const rank = (kind: Recruitment["kind"]) =>
       recruitment === "all" || kind === recruitment ? 0 : kind === "unknown" ? 1 : 2;
     rows.sort((a, b) => rank(a.kind) - rank(b.kind));
@@ -108,6 +108,11 @@ export class BossShortlists {
         item.reasons.push("岗位名称与职责未匹配目标方向");
         continue;
       }
+      if (!row.company.trim()) {
+        item.status = "needs_review";
+        item.reasons.push("列表未显示公司名称，暂无法核对岗位身份");
+        continue;
+      }
       if (stopped || run.detailsRead >= Math.min(budget, goal.limit)) {
         item.reasons.push(stopped ? "前一岗位读取失败，已停止后续读取" : "已达到本次详情读取上限");
         continue;
@@ -116,9 +121,16 @@ export class BossShortlists {
         run.detailsRead++;
         const job = await boss.detail(scanId, row.url);
         item.jobId = job.id;
-        item.recruitment = classifyBossRecruitment(job.role, row.description, job.jd);
+        item.recruitment = classifyBossRecruitment(job.role, row.description, job.jd, job.facts);
         const { kind, conflict } = item.recruitment;
-        item.requirements = checkBossRequirements(job.jd, resume.text, goal.cities, kind);
+        item.requirements = checkBossRequirements(job.jd, resume.text, goal.cities, kind, {
+          title: job.role, facts: job.facts,
+        });
+        const otherRole = bossDirectionConflict(job.jd, directions);
+        if (otherRole) {
+          item.requirements.push({ label: "岗位职责", quote: otherRole, status: "unknown" });
+          item.reasons.push("JD 中写的招聘岗位与标题方向不一致");
+        }
         item.skillMatches = bossSkillEvidence(job.jd, resume.text);
         item.evidence = [...new Set(item.skillMatches.map((match) => match.resumeQuote))].slice(0, 3);
 

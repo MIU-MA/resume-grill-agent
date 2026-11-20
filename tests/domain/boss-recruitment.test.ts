@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bossSkillEvidence, checkBossRequirements, classifyBossRecruitment } from "../../src/domain/boss-recruitment.js";
+import {
+  bossDirectionConflict,
+  bossSearchQuery,
+  bossSkillEvidence,
+  checkBossRequirements,
+  classifyBossRecruitment,
+} from "../../src/domain/boss-recruitment.js";
 
 test("只有明确的招聘类型信号才确认类型，实习的届别限制不改变岗位类型", () => {
   const classify = classifyBossRecruitment;
@@ -57,4 +63,42 @@ test("技能依据保留 JD 和简历原文，并合并 Go 别名", () => {
     "使用 Golang 和 PostgreSQL 开发；使用 Go 维护服务。",
     "负责 Go 服务开发。\n暂无 PostgreSQL 经验。",
   ), [{ skill: "Go", quote: "使用 Golang 和 PostgreSQL 开发", resumeQuote: "负责 Go 服务开发。" }]);
+});
+
+test("核对真实 BOSS 页头格式和标题中的届别", () => {
+  const facts = { city: "广安", education: "本科", experience: "1-3年", salary: "10-11K" };
+  const jd = "负责企业 Web 前端开发";
+  const resume = "2028 届本科生\n可每周到岗 4 天\n可实习 3 个月";
+  assert.equal(classifyBossRecruitment("前端开发工程师", "", jd, facts).kind, "fulltime");
+  const earlyCareer = { ...facts, experience: "1年以内" };
+  assert.equal(classifyBossRecruitment("前端开发工程师", "", jd, earlyCareer).kind, "fulltime");
+  assert.equal(checkBossRequirements(jd, "工作年限：0 年", [], "fulltime", {
+    title: "前端开发工程师", facts: earlyCareer,
+  }).find(({ label }) => label === "工作年限")?.status, "matched");
+  assert.equal(classifyBossRecruitment("前端开发工程师（可兼职）", "", jd, facts).kind, "unknown");
+  assert.equal(classifyBossRecruitment("前端开发实习生", "", jd, { ...facts, experience: "5天/周 3个月" }).kind, "internship");
+  assert.equal(classifyBossRecruitment("前端开发实习生", "", "可以是长期兼职、全职，也可以是在校大学生").conflict, true);
+  const fulltime = checkBossRequirements(jd, resume, ["广安"], "fulltime", { title: "前端开发工程师", facts });
+  assert.deepEqual(fulltime.map(({ label, status, source }) => [label, status, source]), [
+    ["学历", "matched", "page"], ["工作年限", "unknown", "page"], ["工作地点", "matched", "page"],
+  ]);
+  const campus = checkBossRequirements(jd, resume, [], "campus", { title: "前端开发工程师（ 27届校招）" });
+  assert.equal(campus[0]?.status, "mismatch");
+  assert.equal(campus[0]?.source, "title");
+  const internship = checkBossRequirements(jd, resume, [], "internship", {
+    title: "前端开发实习生", facts: { ...facts, experience: "5天/周 3个月" },
+  });
+  assert.deepEqual(internship.map(({ label, status }) => [label, status]), [
+    ["学历", "matched"], ["每周到岗", "mismatch"], ["实习时长", "matched"],
+  ]);
+});
+
+test("按招聘类型搜索并识别 JD 开头明示的岗位方向冲突", () => {
+  assert.equal(bossSearchQuery("前端开发", "internship"), "前端开发实习");
+  assert.equal(bossSearchQuery("前端开发", "campus"), "前端开发校招");
+  assert.equal(bossSearchQuery("前端开发实习", "campus"), "前端开发校招");
+  assert.equal(bossSearchQuery("前端开发", "fulltime"), "前端开发");
+  const jd = "招聘文员，负责统计和汇总报表。";
+  assert.equal(bossDirectionConflict(jd, ["前端"]), "招聘文员，负责统计和汇总报表");
+  assert.equal(bossDirectionConflict(jd, ["文员"]), undefined);
 });

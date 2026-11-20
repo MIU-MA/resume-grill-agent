@@ -5,6 +5,7 @@ import type { Goal } from "./tasks.js";
 import { BossGateway } from "../infrastructure/boss-gateway.js";
 import type { BossExecutor } from "../infrastructure/boss-executor/index.js";
 import { resumeSearchDirection } from "../domain/resume-search-direction.js";
+import { bossSearchQuery, type BossRecruitmentFilter } from "../domain/boss-recruitment.js";
 import {
   bossBrowserChoice,
   bossInspection,
@@ -120,6 +121,7 @@ export class Boss {
     resumeId: string,
     query?: string,
     backend?: BossBrowserChoice,
+    recruitment?: BossRecruitmentFilter,
   ) {
     const resume = this.workspace.resume(resumeId);
     const goal = this.workspace.store
@@ -136,7 +138,7 @@ export class Boss {
       ]);
     if (!keyword) return { needsDirection: true as const };
     if (this.needsBrowserConnection(backend)) await this.browserConnect(backend);
-    return { scan: await this.search(keyword, resumeId) };
+    return { scan: await this.search(bossSearchQuery(keyword, recruitment), resumeId) };
   }
   async search(query: string, resumeId?: string) {
     const keyword = z.string().trim().min(1).max(120).parse(query);
@@ -234,8 +236,9 @@ export class Boss {
       jobId: job.id,
       scanId,
       jdHash: createHash("sha256").update(job.jd).digest("hex"),
+      ...(detail.facts ? { facts: detail.facts } : {}),
     });
-    return job;
+    return { ...job, facts: detail.facts };
   }
   async recent() {
     const rows = z

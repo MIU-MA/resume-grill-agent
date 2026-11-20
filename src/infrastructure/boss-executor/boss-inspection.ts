@@ -77,6 +77,12 @@ export function readBossDetailDocument() {
     title,
     company,
     description: description.slice(0, 20000),
+    facts: {
+      city: text(".job-banner .text-city").slice(0, 80),
+      education: text(".job-banner .text-degree").slice(0, 80),
+      experience: text(".job-banner .text-experiece, .job-banner .text-experience").slice(0, 80),
+      salary: text(".job-banner .name .salary").slice(0, 80),
+    },
     truncated: description.length > 20000,
     communication: {
       count: buttons.length,

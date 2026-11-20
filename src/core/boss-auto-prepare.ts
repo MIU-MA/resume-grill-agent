@@ -5,7 +5,7 @@ import { BossShortlists } from "./boss-shortlists.js";
 import type { Goal } from "./tasks.js";
 import type { Workspace } from "./workspace.js";
 import { bossBatchLimit, type BossBrowserChoice, type BossScan } from "../domain/boss.js";
-import type { BossRecruitmentFilter } from "../domain/boss-recruitment.js";
+import { bossSearchQuery, type BossRecruitmentFilter } from "../domain/boss-recruitment.js";
 import { extname } from "node:path";
 
 export class BossAutoPrepare {
@@ -18,7 +18,7 @@ export class BossAutoPrepare {
     readCurrent?: boolean;
     recruitment?: BossRecruitmentFilter;
   }) {
-    const { resumeId, query, backend, readCurrent } = input;
+    const { resumeId, query, backend, readCurrent, recruitment } = input;
     const resume = this.workspace.resume(resumeId);
     if (resume.jobId)
       return { note: "请选一份主简历。岗位专用版本只用于它对应的岗位。" };
@@ -30,8 +30,8 @@ export class BossAutoPrepare {
         .find((scan) => scan.resumeId === resumeId)
       : undefined;
     const found = readCurrent && !boss.needsBrowserConnection(backend)
-      ? { scan: await boss.read(resumeId, query ?? previous?.requestedQuery ?? previous?.query) }
-      : await boss.findForResume(resumeId, query ?? previous?.requestedQuery, backend);
+      ? { scan: await boss.read(resumeId, query ? bossSearchQuery(query, recruitment) : previous?.requestedQuery ?? previous?.query) }
+      : await boss.findForResume(resumeId, query ?? previous?.requestedQuery, backend, recruitment);
     if (!found.scan) return { directionNeededFor: resumeId };
     const scan = found.scan;
     if (scan.blocked || !scan.jobs.length)
@@ -54,7 +54,7 @@ export class BossAutoPrepare {
       limit: saved?.limit ?? bossBatchLimit,
     };
     const shortlist = await new BossShortlists(this.workspace)
-      .collectForGoal(goal, scan.id, bossBatchLimit, input.recruitment);
+      .collectForGoal(goal, scan.id, bossBatchLimit, recruitment);
     if (!hasPdf) return { note: "岗位筛选结果已更新。添加待投附件需要 PDF，可上传 PDF 或保存岗位版 PDF。" };
 
     const candidates = shortlist.items

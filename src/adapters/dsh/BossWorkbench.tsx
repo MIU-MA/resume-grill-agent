@@ -3,6 +3,7 @@ import type { NativeView } from "./views.js";
 import { bossBatchLimit, type BossBrowserChoice } from "../../domain/boss.js";
 import {
   bossRecruitmentFilter,
+  bossSearchQuery,
   classifyBossRecruitment,
   recruitmentLabels,
   type BossRecruitmentFilter,
@@ -32,7 +33,7 @@ const requirementLabels = {
   mismatch: "不符",
   unknown: "待核对",
 } as const;
-const evidenceSources = { title: "岗位名称", list: "列表", jd: "JD" } as const;
+const evidenceSources = { title: "岗位名称", list: "列表", jd: "JD", page: "BOSS 岗位信息" } as const;
 
 function BossMatchDetails({ item }: { item: BossShortlistItem }) {
   return (
@@ -42,10 +43,10 @@ function BossMatchDetails({ item }: { item: BossShortlistItem }) {
         {item.recruitment?.evidence.map(({ source, quote }) => (
           <li key={source + quote}>{evidenceSources[source]}：「{quote}」</li>
         ))}
-        {item.requirements?.map(({ label, quote, status, resumeQuote }, index) => (
+        {item.requirements?.map(({ label, quote, source, status, resumeQuote }, index) => (
           <li key={`${label}-${index}`}>
             {label} · {requirementLabels[status]}
-            {quote && <div>JD：「{quote}」</div>}
+            {quote && <div>{evidenceSources[source ?? "jd"]}：「{quote}」</div>}
             {resumeQuote && <div>简历：「{resumeQuote}」</div>}
           </li>
         ))}
@@ -106,15 +107,16 @@ export function BossWorkbench({
   const switchingBrowser = view.connected && browserChoice !== "auto" && browserChoice !== browser;
   const state = view.connected && !switchingBrowser ? scan?.state : undefined;
   const keyword = query.trim();
+  const searchKeyword = bossSearchQuery(keyword, recruitment);
   const previousKeyword = scan?.requestedQuery ?? scan?.query;
-  const readCurrent = (!keyword || keyword === previousKeyword) &&
+  const readCurrent = (!searchKeyword || searchKeyword === previousKeyword) &&
     (state === "verification" || (state === "loading" && !scan?.searchDeferred));
   const resumeAction =
     state === "login"
       ? "登录后继续"
       : state === "verification"
         ? "验证后继续"
-        : state === "loading" && (!keyword || keyword === previousKeyword)
+        : state === "loading" && (!searchKeyword || searchKeyword === previousKeyword)
           ? scan?.searchDeferred ? "继续搜索" : "查看搜索结果"
           : "找岗位并准备投递";
   const resumeSearch = (override?: string, readCurrent = false) =>
@@ -273,7 +275,7 @@ export function BossWorkbench({
                     details={item?.jobId && (item.recruitment?.evidence.length || item.requirements?.length || item.skillMatches?.length)
                       ? <BossMatchDetails item={item} /> : undefined}
                     action={<>
-                      <button
+                      {job.company.trim() ? <button
                         disabled={busy || !view.connected}
                         onClick={() => void run({
                           action: "boss-detail",
@@ -283,8 +285,8 @@ export function BossWorkbench({
                         })}
                       >
                         查看岗位
-                      </button>
-                      {view.canEditQueue && !queueStatus && (
+                      </button> : <a href={job.url} target="_blank" rel="noopener noreferrer">查看官网</a>}
+                      {view.canEditQueue && !queueStatus && !!job.company.trim() && (
                         <button className="rg-quiet-action" disabled={busy || !view.connected || !selected?.hasPdf}
                           onClick={() => void run({
                             action: "boss-queue-add", scanId: scan.id, url: job.url, resumeId,

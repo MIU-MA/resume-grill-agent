@@ -754,27 +754,31 @@ test("BOSS 优先核对指定类型，只准备完整 JD 硬条件有依据的�
     ["unknown", "Go开发", "开发 Go 服务\n接受应届生"],
     ["conflict", "Go开发实习生", "开发 Go 服务\n岗位类型：全职"],
     ["pending", "Go开发实习生", "开发 Go 服务\n每周至少 4 天\n实习至少 4 个月"],
+    ["missing-company", "Go开发实习生", "开发 Go 服务"],
     ["matched", "Go开发实习生", "开发 Go 服务\n面向 2027 届毕业生\n每周至少 4 天\n实习至少 3 个月"],
     ["missing", "Go开发实习生", "开发 Go 服务\n每周 3–5 天"],
+    ["wrong-role", "Go开发实习生", "招聘文员，负责统计报表。"],
   ];
   const jobs = cases.map(([id, title]) => ({
-    url: `https://www.zhipin.com/job_detail/${id}.html`, title, company: id,
+    url: `https://www.zhipin.com/job_detail/${id}.html`, title, company: id === "missing-company" ? "" : id,
   }));
   f.state.searchRows = jobs;
   f.state.details = Object.fromEntries(jobs.map((job, index) => [
     job.url, { ...f.state.detail, ...job, description: cases[index][2] },
   ]));
   const view = await humanAction(f.workspace, {
-    action: "boss-auto-prepare", resumeId: resume.id, query: "Go开发实习", recruitment: "internship",
+    action: "boss-auto-prepare", resumeId: resume.id, query: "Go开发", recruitment: "internship",
   });
   assert.equal(view.kind, "boss");
   assert.equal(f.state.inspected[0], jobs[2].url);
+  assert.equal(f.state.searched, "Go开发实习");
   assert.deepEqual(view.shortlists[0].items.map(({ status }) => status), [
-    "excluded", "needs_review", "needs_review", "excluded", "candidate", "needs_review",
+    "excluded", "needs_review", "needs_review", "excluded", "needs_review", "candidate", "needs_review", "needs_review",
   ]);
-  assert.equal(view.shortlists[0].items[4].skillMatches?.[0].resumeQuote, "负责 Go 服务开发。");
-  assert.deepEqual(view.deliveries.map(({ url }) => url), [jobs[4].url]);
-  assert.match(view.note ?? "", /3 个岗位待核对/);
+  assert.equal(view.shortlists[0].items[5].skillMatches?.[0].resumeQuote, "负责 Go 服务开发。");
+  assert.ok(!f.state.inspected.includes(jobs[4].url));
+  assert.deepEqual(view.deliveries.map(({ url }) => url), [jobs[5].url]);
+  assert.match(view.note ?? "", /5 个岗位待核对/);
   assert.equal(f.state.confirmations, undefined);
 
   const html = renderToStaticMarkup(createElement(BossWorkbench, {

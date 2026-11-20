@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { bossJobFacts } from "./boss-inspection.js";
 
 export const bossBatchLimit = 10;
 
@@ -46,6 +47,7 @@ export const bossInspection = z.object({
   title: z.string(),
   company: z.string(),
   description: z.string().max(20000),
+  facts: bossJobFacts.optional(),
   truncated: z.boolean(),
   matched: z.boolean(),
   blockers: z.array(z.string()),
