@@ -35,6 +35,23 @@ npm run package:plugin
 
 终端会给出 `artifacts/` 下的插件包路径。安装后从 DSH 左侧打开 **Resume Grill**。详见 [DSH 安装说明](docs/dsh.md)。
 
+### 让 AI 安装
+
+把下面的提示词复制给能在你本机运行终端命令的 AI 助手。
+
+```text
+请把 Resume Grill 安装到我本机的 DSH 桌面版。
+源码仓库 https://github.com/MIU-MA/resume-grill-agent
+
+1. 优先用我提供的 .tgz。没有安装包时，用本地已有源码或克隆仓库。
+   确认 Node.js 24+，在仓库目录运行 npm ci 和 npm run package:plugin。
+2. 使用实际 .tgz 路径运行 dsh plugin --profile desktop add "<.tgz 绝对路径>"。
+   dsh 不在 PATH 时查找桌面版自带的 CLI。若无法调用 CLI，把包的绝对路径给我，
+   我会粘贴到 DSH 的「安装第三方插件」。
+3. 告诉我安装结果。若 DSH 已在运行，请提醒我完全退出并重新打开，
+   然后从左侧打开 Resume Grill。做到安装这一步就可以了。
+```
+
 ## 功能
 
 ![Resume Grill 在 DSH 中的求职总览](docs/screenshots/dsh-overview.png)
@@ -60,4 +77,4 @@ npm run package:plugin
 
 ## 开发
 
-`npm run check` 检查类型，`npm test` 运行测试。[开发说明](docs/development.md) · [来源与许可](THIRD_PARTY.md)
+`npm run check` 检查类型，`npm test` 运行 `tests/` 中的测试。GitHub CI 也会运行这些测试，安装包会排除该目录。[开发说明](docs/development.md) · [来源与许可](THIRD_PARTY.md)
