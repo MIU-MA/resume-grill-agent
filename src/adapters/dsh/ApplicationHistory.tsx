@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { useWorkbenchPreference } from "./workbench-state.js";
 import type { Followup, FollowupFields, FollowupChannel } from "../../core/application-followups.js";
 import { applicationStatusLabel } from "../../shared/presentation/application-status.js";
 import type { NativeView } from "./views.js";
@@ -93,7 +94,7 @@ export function ApplicationHistory({ data, pending, busy, open, save }: {
   open: (action: unknown) => void;
   save: (action: unknown) => Promise<boolean>;
 }) {
-  const [dueOnly, setDueOnly] = useState(false);
+  const [dueOnly, setDueOnly] = useWorkbenchPreference<boolean>(pending ? "pending-due" : "history-due", false);
   const [editing, setEditing] = useState<string>();
   const today = localDate();
   const followups = new Map((data.applicationFollowups ?? []).map((item) => [`${item.channel}:${item.applicationId}`, item]));

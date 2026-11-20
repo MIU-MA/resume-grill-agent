@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useWorkbenchPreference } from "./workbench-state.js";
 import type { NativeView } from "./views.js";
 import { bossBatchLimit, type BossBrowserChoice } from "../../domain/boss.js";
 import { BossDeliveryPanel } from "./BossDeliveryPanel.js";
@@ -27,14 +27,14 @@ export function BossWorkbench({
   open?: (input: any) => void;
   readResumeImage?: ReadResumeImage;
 }) {
-  const [query, setQuery] = useState("");
-  const [browserChoice, setBrowserChoice] = useState<BossBrowserChoice>("auto");
-  const [selectedResume, setResume] = useState<string>();
-  const [archivedOnly, setArchivedOnly] = useState(false);
+  const [query, setQuery] = useWorkbenchPreference<string>("boss-query", "");
+  const [browserChoice, setBrowserChoice] = useWorkbenchPreference<BossBrowserChoice>("boss-browser", "auto");
+  const [selectedResume, setResume] = useWorkbenchPreference<string>("boss-resume", "");
+  const [archivedOnly, setArchivedOnly] = useWorkbenchPreference<boolean>("boss-archived", false);
   const resumes = view.resumes.filter((resume) => !resume.jobId);
   const suggestedResume = view.directionNeededFor ?? view.scans[0]?.resumeId;
   const resumeId =
-    selectedResume ??
+    resumes.find((resume) => resume.id === selectedResume)?.id ??
     resumes.find((resume) => resume.id === suggestedResume)?.id ??
     resumes[0]?.id ??
     "";

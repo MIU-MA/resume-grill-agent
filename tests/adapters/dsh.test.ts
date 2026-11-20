@@ -10,8 +10,9 @@ import { Store } from "../../src/infrastructure/sqlite-store.js";
 import { Workspace } from "../../src/core/workspace.js";
 import { mount } from "../../src/adapters/dsh/host.js";
 import { nativeControls } from "../../src/adapters/dsh/controls.js";
-import { humanAction, cardAction } from "../../src/adapters/dsh/actions.js";
-import { turnCardSelector } from "../../src/adapters/dsh/card-model.js";
+import { humanAction, cardAction, restoreView } from "../../src/adapters/dsh/actions.js";
+import { turnCardSelector, viewReference } from "../../src/adapters/dsh/card-model.js";
+import { rememberPage, rememberedPage } from "../../src/adapters/dsh/workbench-state.js";
 import { Tasks } from "../../src/core/tasks.js";
 import { batchView, reviewView, workspaceView } from "../../src/adapters/dsh/views.js";
 import { WorkspaceOverview } from "../../src/adapters/dsh/WorkspaceOverview.js";
@@ -77,6 +78,40 @@ async function setup(t: any) {
   const proposal = workspace.propose(resume.id, job.id, plan);
   return { workspace, store, resume, job, proposal, sends: () => sends };
 }
+
+test("工作台按会话和页面恢复记录引用，返回时读取最新数据", async (t) => {
+  const entries = new Map<string, string>();
+  const original = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+  Object.defineProperty(globalThis, "sessionStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => entries.get(key) ?? null,
+      setItem: (key: string, value: string) => entries.set(key, value),
+      removeItem: (key: string) => entries.delete(key),
+    },
+  });
+  t.after(() => {
+    if (original) Object.defineProperty(globalThis, "sessionStorage", original);
+    else Reflect.deleteProperty(globalThis, "sessionStorage");
+  });
+
+  const { workspace, resume, job, sends } = await setup(t);
+  const opened = await humanAction(workspace, { action: "resume", id: resume.id });
+  rememberPage("session-a", "resumes", viewReference(opened));
+  rememberPage("session-a", "jobs", { action: "review", resumeId: resume.id, jobId: job.id });
+  assert.equal(rememberedPage("session-b", "resumes"), null);
+  assert.equal(sends(), 0);
+
+  await humanAction(workspace, { action: "rename-resume", id: resume.id, name: "新的文件名" });
+  const reopened = await restoreView(workspace, rememberedPage("session-a", "resumes"));
+  assert.equal(reopened?.kind === "resume" && reopened.resume.name, "新的文件名");
+
+  rememberPage("session-a", "resumes");
+  assert.equal(rememberedPage("session-a", "resumes"), null);
+  const review = await restoreView(workspace, rememberedPage("session-a", "jobs"));
+  assert.equal(review?.kind === "review" && review.jobId, job.id);
+  assert.equal(sends(), 0);
+});
 
 test("旧宿主的工作台快照缺少 BOSS 字段时，总览仍能渲染", async (t) => {
   const { workspace, resume } = await setup(t);

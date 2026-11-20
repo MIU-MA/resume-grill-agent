@@ -44,6 +44,7 @@ function reviewRequest(view: Extract<NativeView, { kind: "review" }>) {
 }
 export function NativeCard({
   initial,
+  initialIsCurrent = false,
   act,
   ask,
   openFile,
@@ -51,17 +52,18 @@ export function NativeCard({
   sessionId,
 }: {
   initial: NativeView;
+  initialIsCurrent?: boolean;
   act: Action;
   ask: Props["ask"];
   openFile: Props["openFile"];
   readResumeImage?: ReadResumeImage;
   sessionId?: string;
 }) {
-  const lock = useRef(true);
+  const lock = useRef(!initialIsCurrent);
   const refreshVersion = useRef(0);
   const [view, setView] = useState(initial),
-    [working, setBusy] = useState(true),
-    [restored, setRestored] = useState(false),
+    [working, setBusy] = useState(!initialIsCurrent),
+    [restored, setRestored] = useState(initialIsCurrent),
     [restoreAttempt, setRestoreAttempt] = useState(0),
     [requesting, setRequesting] = useState(false),
     [error, setError] = useState(""),
@@ -76,6 +78,7 @@ export function NativeCard({
   const websiteReview = view.kind === "review" && !bossSource &&
     hasCapability(view.capabilities, "website");
   useEffect(() => {
+    if (initialIsCurrent) return;
     let live = true;
     void act({ action: "restore", reference: viewReference(initial) })
       .then((value) => {
@@ -94,7 +97,7 @@ export function NativeCard({
     return () => {
       live = false;
     };
-  }, [restoreAttempt]);
+  }, [initialIsCurrent, restoreAttempt]);
   useEffect(() => {
     if (!restored || !sessionId || view.kind !== "review") return;
     let live = true;

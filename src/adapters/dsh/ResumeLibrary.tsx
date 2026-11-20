@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { NativeView } from "./views.js";
 import { ResumeUpload } from "./ResumeUpload.js";
 import { useEditDraft } from "./use-edit-draft.js";
+import { useWorkbenchPreference } from "./workbench-state.js";
 import { WorkbenchHeading } from "./WorkbenchHeading.js";
 import { PixelIcon } from "./PixelIcon.js";
 
@@ -19,9 +20,9 @@ export function ResumeLibrary({
   onUpload: (file: File) => void;
   openFile: (path: string) => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("all");
-  const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useWorkbenchPreference<string>("resume-query", "");
+  const [filter, setFilter] = useWorkbenchPreference<string>("resume-filter", "all");
+  const [creating, setCreating] = useWorkbenchPreference<boolean>("new-resume-open", false);
   const [renaming, setRenaming] = useState("");
   const [name, setName] = useState("");
   const [removed, setRemoved] = useState<{ id: string; name: string }>();

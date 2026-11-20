@@ -13,10 +13,32 @@ import { ApplicationHistory } from "./ApplicationHistory.js";
 import { viewReference } from "./card-model.js";
 import { onWorkspaceChanged, notifyWorkspaceChanged } from "./updates.js";
 import { hasCapability } from "../../shared/capabilities.js";
+import { rememberPage, rememberedPage, useWorkbenchPreference, WorkbenchSession } from "./workbench-state.js";
 declare const __NATIVE_CSS__: string;
 type Snapshot = Extract<NativeView, { kind: "workspace" }>;
 
-function Workbench({
+function workbenchTabs(data?: Snapshot): Array<[PixelIconName, string]> {
+  const tabs: Array<[PixelIconName, string]> = [
+    ["overview", "总览"],
+    ["resumes", "简历库"],
+    ["jobs", "招聘官网"],
+  ];
+  const mail = hasCapability(data?.capabilities, "mail");
+  if (data?.bossDeliveries) tabs.push(["boss", "BOSS 投递"]);
+  if (mail) tabs.push(["pending", "待确认"]);
+  if (mail || data?.bossDeliveries || data?.websiteSubmissions) tabs.push(["history", "投递记录"]);
+  return tabs;
+}
+
+function Workbench(props: any) {
+  return (
+    <WorkbenchSession.Provider value={props.sessionId}>
+      <WorkbenchContent key={props.sessionId} {...props} />
+    </WorkbenchSession.Provider>
+  );
+}
+
+function WorkbenchContent({
   act,
   ask,
   openFile,
@@ -26,33 +48,54 @@ function Workbench({
   sessionId,
 }: any) {
   const [data, setData] = useState<Snapshot>(),
-    [tab, setTab] = useState("overview"),
     [detail, setDetail] = useState<NativeView | null>(null),
-    [resumeId, setResume] = useState(""),
-    [busy, setBusy] = useState(false),
+    [busy, setBusy] = useState(true),
     [error, setError] = useState("");
-  const lock = useRef(false);
+  const [tab, setTab] = useWorkbenchPreference<string>("tab", "overview");
+  const [selectedResume, setResume] = useWorkbenchPreference<string>("career-resume", "");
+  const lock = useRef(true);
   const [detailKey, setDetailKey] = useState(0);
-  const reload = async () => {
-    const value = await act({ action: "workspace" });
-    setData(value);
-    setResume((id: string) =>
-      value.resumes.some((r: any) => r.id === id)
-        ? id
-        : (value.resumes[0]?.id ?? ""),
-    );
+  const resumeId = data?.resumes.find((resume) => resume.id === selectedResume)?.id ??
+    data?.resumes[0]?.id ?? "";
+  const reload = async () => setData(await act({ action: "workspace" }));
+  const openDetail = (value: NativeView | null) => {
+    setDetail(value);
+    rememberPage(sessionId, tab, value ? viewReference(value) : undefined);
+  };
+  const loadDetail = async (page: string) => {
+    const reference = rememberedPage(sessionId, page);
+    let message = "";
+    if (reference) {
+      try {
+        const view: NativeView | null = await act({ action: "restore", reference });
+        if (view && view.kind !== "workspace") return { view, message };
+      } catch (error) {
+        message = error instanceof Error ? error.message : "无法恢复上次打开的记录。";
+      }
+    }
+    const view: NativeView | null = page === "boss" ? await act({ action: "boss" }) : null;
+    return { view, message };
   };
   useEffect(() => {
     let live = true;
     void act({ action: "workspace" })
-      .then((value: Snapshot) => {
-        if (live) {
-          setData(value);
-          setResume(value.resumes[0]?.id ?? "");
-        }
+      .then(async (value: Snapshot) => {
+        if (!live) return;
+        const page = workbenchTabs(value).some(([key]) => key === tab) ? tab : "overview";
+        const { view, message } = await loadDetail(page);
+        if (!live) return;
+        setTab(page);
+        setDetail(view);
+        setData(value);
+        setError(message);
       })
-      .catch((e: Error) => {
-        if (live) setError(e.message);
+      .catch((error: Error) => {
+        if (live) setError(error.message);
+      })
+      .finally(() => {
+        if (!live) return;
+        lock.current = false;
+        setBusy(false);
       });
     return () => {
       live = false;
@@ -90,31 +133,24 @@ function Workbench({
       const value = await act(input);
       if (value.kind === "workspace") setData(value);
       else {
-        setDetail(value);
+        openDetail(value);
         if (value.kind === "resume") setResume(value.resume.id);
       }
       await reload();
     });
   const navigate = (next: string) => {
-    setTab(next);
-    setDetail(null);
-    if (next === "boss") {
-      void openAction({ action: "boss" });
-      return;
-    }
-    void run(reload);
+    if (next === tab && !error) return;
+    void run(async () => {
+      const { view, message } = await loadDetail(next);
+      setTab(next);
+      setDetail(view);
+      setDetailKey((key) => key + 1);
+      await reload();
+      if (message) setError(message);
+    });
   };
   const applications = data?.applications ?? [];
-  const bossDeliveries = data?.bossDeliveries;
-  const mailEnabled = hasCapability(data?.capabilities, "mail");
-  const tabs: Array<[PixelIconName, string]> = [
-    ["overview", "总览"],
-    ["resumes", "简历库"],
-    ["jobs", "招聘官网"],
-  ];
-  if (bossDeliveries) tabs.push(["boss", "BOSS 投递"]);
-  if (mailEnabled) tabs.push(["pending", "待确认"]);
-  if (mailEnabled || bossDeliveries || data?.websiteSubmissions) tabs.push(["history", "投递记录"]);
+  const tabs = workbenchTabs(data);
   return (
     <section className="rg-native rg-workbench" aria-label={brandName}>
       <style>{__NATIVE_CSS__}</style>
@@ -142,28 +178,28 @@ function Workbench({
         <>
           <button
             disabled={busy}
-            onClick={() => {
-              if (tab === "boss")
-                void run(async () => {
-                  setDetail(await act({ action: "boss" }));
-                  setDetailKey((n) => n + 1);
-                  await reload();
-                });
-              else {
-                setDetail(null);
-                void run(reload);
-              }
-            }}
+            onClick={() => void run(async () => {
+              openDetail(tab === "boss" ? await act({ action: "boss" }) : null);
+              setDetailKey((key) => key + 1);
+              await reload();
+            })}
           >
             返回清单
           </button>
           <Review
             key={`${detailKey}:${JSON.stringify(viewReference(detail))}`}
             initial={detail}
+            initialIsCurrent
             act={async (input: any) => {
-              const view = await act(input);
+              const previous = JSON.stringify(rememberedPage(sessionId, tab));
+              const view: NativeView | null = await act(input);
               if (view?.kind === "resume") setResume(view.resume.id);
-              if (input.action !== "restore") void reload().catch(() => {});
+              if (input.action !== "restore") {
+                if (view && view.kind !== "workspace" &&
+                    previous === JSON.stringify(rememberedPage(sessionId, tab)))
+                  rememberPage(sessionId, tab, viewReference(view));
+                void reload().catch(() => {});
+              }
               return view;
             }}
             ask={ask}
@@ -200,9 +236,7 @@ function Workbench({
                     importedId &&
                     hasCapability(value.capabilities, "website")
                   )
-                    setDetail(
-                      await act({ action: "profile", resumeId: importedId }),
-                    );
+                    openDetail(await act({ action: "profile", resumeId: importedId }));
                 })
               }
             />
@@ -242,7 +276,7 @@ function Workbench({
                       ...(resumeId ? { resumeId } : {}),
                     });
                     if (value.kind === "workspace") setData(value);
-                    else setDetail(value);
+                    else openDetail(value);
                     await reload();
                   })
                 }
@@ -256,7 +290,7 @@ function Workbench({
                       disabled={busy || !resumeId}
                       onClick={() =>
                         void run(async () =>
-                          setDetail(
+                          openDetail(
                             await act({
                               action: "review",
                               resumeId,

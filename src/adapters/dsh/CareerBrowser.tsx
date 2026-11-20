@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useWorkbenchPreference } from "./workbench-state.js";
 import type { NativeView } from "./views.js";
 import { JobList, JobListRow } from "./JobList.js";
 import { isBossSource } from "../../domain/boss.js";
@@ -17,14 +18,12 @@ export function CareerBrowser({
   onScan: (url: string, keywords: string[]) => void;
   onRead: (url: string) => void;
 }) {
-  const [url, setUrl] = useState(
-      () =>
-        data.sites.find((s) => s.company === "腾讯")?.url ??
-        data.sites[0]?.url ??
-        "",
-    ),
-    [keywords, setKeywords] = useState(""),
-    [jobUrl, setJobUrl] = useState("");
+  const [source, setUrl] = useWorkbenchPreference<string>("career-source", "");
+  const [keywords, setKeywords] = useWorkbenchPreference<string>("career-keywords", "");
+  const [jobUrl, setJobUrl] = useState("");
+  const url = data.sites.find((site) => site.url === source)?.url ??
+    data.sites.find((site) => site.company === "腾讯")?.url ??
+    data.sites[0]?.url ?? "";
   const scan = data.scans.find((item) => item.url === url);
   const jobs = [...new Map([
     ...(scan?.result?.links.filter((link) => link.kind === "job") ?? []).map(
