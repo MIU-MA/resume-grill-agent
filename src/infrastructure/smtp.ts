@@ -1,7 +1,8 @@
 import nodemailer from "nodemailer";
 import type { Send, Workspace } from "../core/workspace.js";
+import { smtpEndpoint } from "../shared/mail-settings.js";
 
-export type SmtpConfig = { address: string; pass: string; provider: string };
+export type SmtpConfig = { address: string; pass: string; provider: string; host?: string; port?: number; security?: string };
 export function mailSendingEnabled(workspace: Workspace) {
   return (
     !!workspace.send &&
@@ -10,26 +11,26 @@ export function mailSendingEnabled(workspace: Workspace) {
       : process.env.RESUME_ALLOW_SEND === "1" && smtpConfigured())
   );
 }
-function environmentConfig(): SmtpConfig {
+export function smtpEnvironmentConfig(): SmtpConfig {
   return {
     address: process.env.RESUME_SMTP_ADDRESS ?? "",
     pass: process.env.RESUME_SMTP_CODE ?? "",
     provider: process.env.RESUME_SMTP_PROVIDER ?? "qq",
+    host: process.env.RESUME_SMTP_HOST,
+    port: Number(process.env.RESUME_SMTP_PORT ?? 465),
+    security: process.env.RESUME_SMTP_SECURITY ?? "tls",
   };
 }
-function transportFor({ address, pass, provider }: SmtpConfig) {
-  const host = (
-    {
-      qq: "smtp.qq.com",
-      "163": "smtp.163.com",
-      "126": "smtp.126.com",
-    } as Record<string, string>
-  )[provider];
-  if (!address || !pass || !host) throw new Error("邮箱配置不完整。");
+function transportFor(config: SmtpConfig) {
+  const { address, pass } = config;
+  const endpoint = smtpEndpoint(config);
+  if (!address || !pass || !endpoint) throw new Error("请核对发件邮箱、授权码及 SMTP 服务器设置。");
+  const secure = endpoint.security === "tls";
   return nodemailer.createTransport({
-    host,
-    port: 465,
-    secure: true,
+    host: endpoint.host,
+    port: endpoint.port,
+    secure,
+    requireTLS: !secure,
     auth: { user: address, pass },
     tls: { minVersion: "TLSv1.2", rejectUnauthorized: true },
     connectionTimeout: 15000,
@@ -55,15 +56,12 @@ export async function verifySmtp(config: SmtpConfig) {
 }
 
 export function smtpConfigured() {
-  return (
-    !!process.env.RESUME_SMTP_ADDRESS &&
-    !!process.env.RESUME_SMTP_CODE &&
-    ["qq", "163", "126"].includes(process.env.RESUME_SMTP_PROVIDER ?? "qq")
-  );
+  const config = smtpEnvironmentConfig();
+  return !!(config.address && config.pass && smtpEndpoint(config));
 }
 
 export function smtpSender(
-  resolveConfig: () => Promise<SmtpConfig> = async () => environmentConfig(),
+  resolveConfig: () => Promise<SmtpConfig> = async () => smtpEnvironmentConfig(),
 ): Send {
   return async (mail) => {
     const config = await resolveConfig(),
@@ -78,7 +76,7 @@ export function smtpSender(
         messageId: mail.messageId,
         attachments: [
           {
-            filename: "resume.pdf",
+            filename: mail.attachmentName,
             content: Buffer.from(mail.attachment),
             contentType: "application/pdf",
           },

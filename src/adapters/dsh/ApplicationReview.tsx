@@ -115,7 +115,7 @@ export function ApplicationReview({
         </>
       )}
       <button disabled={busy} onClick={() => openFile(item.attachment)}>
-        打开实际 PDF 附件
+          打开附件 {item.attachmentName ?? "resume.pdf"}
       </button>
       <details>
         <summary>附件校验与发送回执</summary>

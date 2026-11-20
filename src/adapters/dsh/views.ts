@@ -46,9 +46,7 @@ export function bossView(
     kind: "boss" as const,
     ...options,
     goals: workspace.store.list<Goal>("goal"),
-    shortlists: workspace.store
-      .list<BossShortlist>("boss-shortlist")
-      .slice(0, 5),
+    shortlists: workspace.store.list<BossShortlist>("boss-shortlist", 5),
     groups: new BossGroups(workspace).list(),
     archivedTaskIds: [...new BossArchives(workspace).ids()],
     canEditQueue: true,

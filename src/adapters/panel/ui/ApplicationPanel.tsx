@@ -94,7 +94,7 @@ export function ApplicationPanel({
             <dt>主题</dt>
             <dd>{application.subject}</dd>
             <dt>附件</dt>
-            <dd>{resume.name} · PDF</dd>
+            <dd>{application.attachmentName ?? "resume.pdf"}</dd>
           </dl>
           <p className="pre mail-body">{application.body}</p>
           {application.status === "superseded" && application.replacedBy && (

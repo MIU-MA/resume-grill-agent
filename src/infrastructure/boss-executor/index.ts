@@ -12,6 +12,7 @@ import type { BossJob, BossJobRead } from "../../domain/boss-search.js";
 import { BossBrowserReader } from "./boss-reader.js";
 import { createBossBatch } from "./boss-batch.js";
 import { inspectBossDetail } from "./boss-inspection.js";
+import { BossDetailError } from "../../domain/boss-inspection.js";
 import { readBossJobList } from "./boss-job-list.js";
 
 type Page = NonNullable<Awaited<ReturnType<BossBrowserReader["openBossPage"]>>>;
@@ -283,7 +284,7 @@ export class BossExecutor {
       readId !== snapshot.id ||
       page.url() !== snapshot.address
     )
-      throw new Error("岗位列表已变化，请重新读取。");
+      throw new BossDetailError("岗位列表已变化，请重新读取。", "session");
     const result = await this.browser!.withJobPage(
       url,
       page,
@@ -308,7 +309,7 @@ export class BossExecutor {
       },
     );
     if (page.url() !== snapshot.address)
-      throw new Error("读取期间列表已变化，请重新读取。");
+      throw new BossDetailError("读取期间列表已变化，请重新读取。", "session");
     return result;
   }
 

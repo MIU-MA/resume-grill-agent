@@ -117,7 +117,7 @@ export function baseOperations(workspace: Workspace): OperationModule {
       );
       tool(
         "save_resume_version",
-        "校验宿主给出的建议，仅应用用户选择的 sectionId:lineIndex，保存岗位副本和新 PDF。原 PDF 保留；当前新 PDF 为简洁文本排版，不保留原布局及照片。",
+        "校验宿主建议并应用用户选择的 sectionId:lineIndex。文本未改动时沿用原 PDF；改写后使用新的单栏分节版式。",
         {
           resumeId: z.string(),
           jobId: z.string(),

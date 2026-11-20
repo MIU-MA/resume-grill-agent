@@ -1,8 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { PDFDocument } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { renderPdf } from "../../src/infrastructure/documents.js";
+import { readResume, renderPdf } from "../../src/infrastructure/documents.js";
 test("实际渲染的每一个中文、英文字母、数字都存在可见字形", async () => {
   const canvasModule = await import("@napi-rs/canvas");
   Object.assign(globalThis, {
@@ -64,4 +67,39 @@ test("实际渲染的每一个中文、英文字母、数字都存在可见字�
   } finally {
     await task.destroy();
   }
+});
+
+test("岗位 PDF 保留可选文字，联系图标和特殊符号可降级", async (t) => {
+  const home = await mkdtemp(join(tmpdir(), "resume-pdf-symbols-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const path = join(home, "岗位版.pdf");
+  await writeFile(path, await renderPdf("林沐\n📱 13800000000\n📧 lin@example.com\n📍 上海\n项目经历\n▪ 负责 Go API 开发 🧪"));
+  const { text } = await readResume(path);
+  for (const phrase of ["林沐", "13800000000", "lin@example.com", "上海", "项目经历", "Go API"])
+    assert.ok(text.includes(phrase), phrase);
+});
+
+test("OCR 只接收栅格化扫描页，原 PDF 字节仍可复用", async (t) => {
+  const home = await mkdtemp(join(tmpdir(), "resume-pdf-ocr-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const { createCanvas } = await import("@napi-rs/canvas");
+  const canvas = createCanvas(100, 50);
+  const context = canvas.getContext("2d");
+  context.fillText("Resume", 8, 18);
+  const pdf = await PDFDocument.create();
+  const image = await pdf.embedPng(canvas.toBuffer("image/png"));
+  pdf.addPage([300, 400]).drawImage(image, { x: 20, y: 300, width: 200, height: 100 });
+  pdf.addPage([300, 400]);
+  const bytes = Buffer.from(await pdf.save());
+  const path = join(home, "扫描版.pdf");
+  await writeFile(path, bytes);
+  let calls = 0;
+  const result = await readResume(path, { ocr: async (png) => {
+    calls++;
+    assert.equal(png.subarray(1, 4).toString("ascii"), "PNG");
+    return "扫描简历正文";
+  } });
+  assert.equal(calls, 1);
+  assert.equal(result.text.trim(), "扫描简历正文");
+  assert.deepEqual(result.bytes, bytes);
 });

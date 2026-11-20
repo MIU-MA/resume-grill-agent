@@ -2,19 +2,24 @@ import Schema from "@deepseek-ai/schemastery";
 import { z } from "zod";
 import {
   mailCredentialRef,
+  smtpEndpoint,
   type MailSettings,
 } from "../../shared/mail-settings.js";
 import {
   smtpSender,
   smtpConfigured,
+  smtpEnvironmentConfig,
   verifySmtp,
 } from "../../infrastructure/smtp.js";
 
 export const mailSettingsInput = z.object({
   address: z.union([z.literal(""), z.email()]),
-  provider: z.enum(["qq", "163", "126"]),
+  provider: z.enum(["qq", "163", "126", "custom"]),
   enabled: z.boolean(),
-});
+  host: z.string().max(253).optional(),
+  port: z.number().int().min(1).max(65535).optional(),
+  security: z.enum(["tls", "starttls"]).optional(),
+}).refine((value) => !!smtpEndpoint(value), "自定义 SMTP 需要服务器、端口和加密方式。");
 /** Native credentials are resolved on use and never copied to plugin data or tool results. */
 export async function nativeMail(ctx: any, entryConfig?: any) {
   const scope =
@@ -25,6 +30,9 @@ export async function nativeMail(ctx: any, entryConfig?: any) {
             address: Schema.string().default(""),
             provider: Schema.string().default("qq"),
             enabled: Schema.boolean().default(false),
+            host: Schema.string().default(""),
+            port: Schema.number().default(465),
+            security: Schema.string().default("tls"),
           }),
           {
             applies: "live",
@@ -37,7 +45,7 @@ export async function nativeMail(ctx: any, entryConfig?: any) {
           get: () =>
             mailSettingsInput.parse(
               Object.fromEntries(
-                ["address", "provider", "enabled"].map((key) => [
+                ["address", "provider", "enabled", "host", "port", "security"].map((key) => [
                   key,
                   entryConfig[key]?.get
                     ? entryConfig[key].get()
@@ -53,7 +61,7 @@ export async function nativeMail(ctx: any, entryConfig?: any) {
   const refresh = async () => {
     const turn = ++generation,
       settings: MailSettings = scope.get();
-    const ref = mailCredentialRef(settings.address, settings.provider);
+    const ref = mailCredentialRef(settings.address, settings.provider, settings);
     try {
       const info = await ctx.credentials.describe(ref);
       if (turn === generation) {
@@ -70,18 +78,12 @@ export async function nativeMail(ctx: any, entryConfig?: any) {
   ctx.effect(() => ctx.on("credentials/reference-updated", refresh));
   const config = async () => {
     const settings: MailSettings = scope.get();
-    if (!settings.address)
-      return {
-        address: process.env.RESUME_SMTP_ADDRESS ?? "",
-        pass: process.env.RESUME_SMTP_CODE ?? "",
-        provider: process.env.RESUME_SMTP_PROVIDER ?? "qq",
-      };
+    if (!settings.address) return smtpEnvironmentConfig();
     const hit = await ctx.credentials.resolve(
-      mailCredentialRef(settings.address, settings.provider),
+      mailCredentialRef(settings.address, settings.provider, settings),
     );
     return {
-      address: settings.address,
-      provider: settings.provider,
+      ...settings,
       pass: hit?.value ?? "",
     };
   };
@@ -95,7 +97,7 @@ export async function nativeMail(ctx: any, entryConfig?: any) {
       return (
         settings.enabled &&
         configured &&
-        readyRef === mailCredentialRef(settings.address, settings.provider)
+        readyRef === mailCredentialRef(settings.address, settings.provider, settings)
       );
     },
     verify: async () => {

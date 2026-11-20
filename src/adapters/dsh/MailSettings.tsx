@@ -8,6 +8,7 @@ import {
 import {
   defaultMailSettings,
   mailCredentialRef,
+  smtpEndpoint,
   type MailSettings as Settings,
 } from "../../shared/mail-settings.js";
 import { mailSettingsName } from "./branding.js";
@@ -71,12 +72,12 @@ function MailSettingsForm({
     id = useId();
   useEffect(() => {
     if (!dirty && snapshot.value) {
-      const { address, provider, enabled } = snapshot.value;
-      setDraft({ address, provider, enabled });
+      const { address, provider, enabled, host = "", port = 465, security = "tls" } = snapshot.value;
+      setDraft({ address, provider, enabled, host, port, security });
       setRevision(snapshot.revision);
     }
   }, [snapshot, dirty]);
-  const ref = mailCredentialRef(draft.address, draft.provider);
+  const ref = mailCredentialRef(draft.address, draft.provider, draft);
   useEffect(() => {
     let live = true;
     setConfigured(false);
@@ -137,6 +138,7 @@ function MailSettingsForm({
         onSubmit={(event) => {
           event.preventDefault();
           void run(async () => {
+            if (!smtpEndpoint(draft)) throw new Error("请填写有效的 SMTP 服务器、端口和加密方式。");
             if (code.trim()) {
               const result = await credentials.set(ref, code.trim());
               if (!result.ok) throw new Error(result.error.message);
@@ -177,7 +179,23 @@ function MailSettingsForm({
           <option value="qq">QQ 邮箱</option>
           <option value="163">163 邮箱</option>
           <option value="126">126 邮箱</option>
+          <option value="custom">自定义 SMTP</option>
         </select>
+        {draft.provider === "custom" && (
+          <>
+            <label htmlFor={`${id}-host`}>SMTP 服务器</label>
+            <input id={`${id}-host`} value={draft.host ?? ""} required disabled={busy}
+              placeholder="smtp.example.com" onChange={(e) => change({ host: e.target.value.trim() })} />
+            <label htmlFor={`${id}-port`}>端口</label>
+            <input id={`${id}-port`} type="number" min={1} max={65535} required disabled={busy}
+              value={draft.port || ""} onChange={(e) => change({ port: Number(e.target.value) })} />
+            <label htmlFor={`${id}-security`}>加密方式</label>
+            <select id={`${id}-security`} value={draft.security ?? "tls"} disabled={busy}
+              onChange={(e) => change({ security: e.target.value as Settings["security"] })}>
+              <option value="tls">TLS</option><option value="starttls">STARTTLS</option>
+            </select>
+          </>
+        )}
         <label htmlFor={`${id}-address`}>发件邮箱</label>
         <input
           id={`${id}-address`}

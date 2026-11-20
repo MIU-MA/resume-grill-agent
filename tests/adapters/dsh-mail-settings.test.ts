@@ -72,6 +72,13 @@ test("原生邮箱设置实时生效，凭据按账号隔离，删除授权码�
   await changed();
   assert.equal(mail.enabled(), false);
   assert.ok(!JSON.stringify(value).includes("authorization-code"));
+  value = { address: "candidate@example.com", provider: "custom", enabled: true, host: "smtp.example.com", port: 587, security: "starttls" };
+  secrets.set(mailCredentialRef(value.address, value.provider, value), "fake-company-code");
+  await watch();
+  assert.equal(mail.enabled(), true);
+  value = { ...value, host: "smtp.other.com" };
+  await watch();
+  assert.equal(mail.enabled(), false);
   for (const dispose of effects) dispose();
 });
 

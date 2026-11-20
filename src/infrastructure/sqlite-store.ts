@@ -12,10 +12,14 @@ export class Store {
     this.db
       .exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS objects(id TEXT PRIMARY KEY, kind TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS objects_kind ON objects(kind);
       CREATE UNIQUE INDEX IF NOT EXISTS application_digest ON objects(json_extract(data,'$.digest')) WHERE kind='application';
       CREATE UNIQUE INDEX IF NOT EXISTS batch_request ON objects(json_extract(data,'$.requestHash')) WHERE kind='batch';
       CREATE TABLE IF NOT EXISTS approvals(application_id TEXT PRIMARY KEY, digest TEXT NOT NULL, expires INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, application_id TEXT NOT NULL REFERENCES objects(id), created_at INTEGER NOT NULL, type TEXT NOT NULL, detail TEXT NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, application_id TEXT NOT NULL REFERENCES objects(id), created_at INTEGER NOT NULL, type TEXT NOT NULL, detail TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS events_application ON events(application_id);
+      CREATE INDEX IF NOT EXISTS application_active_job ON objects(json_extract(data,'$.jobId'))
+        WHERE kind='application' AND json_extract(data,'$.status') IN ('sent','sending','uncertain');`);
   }
   put<T extends { id: string }>(kind: string, value: T) {
     this.db
@@ -31,11 +35,39 @@ export class Store {
     if (!row) throw new Error("记录不存在。");
     return JSON.parse(String(row.data)) as T;
   }
-  list<T>(kind: string): T[] {
+  list<T>(kind: string, limit = -1): T[] {
     return this.db
-      .prepare("SELECT data FROM objects WHERE kind=? ORDER BY rowid DESC")
-      .all(kind)
+      .prepare("SELECT data FROM objects WHERE kind=? ORDER BY rowid DESC LIMIT ?")
+      .all(kind, limit)
       .map((row) => JSON.parse(String(row.data)));
+  }
+  applicationByDigest<T>(digest: string): T | undefined {
+    const row = this.db.prepare(
+      "SELECT data FROM objects WHERE kind='application' AND json_extract(data,'$.digest')=?",
+    ).get(digest);
+    return row ? JSON.parse(String(row.data)) as T : undefined;
+  }
+  applicationEvents() {
+    const events = new Map<string, Array<{ created_at: number; type: string; detail: string }>>();
+    for (const row of this.db.prepare(`
+      SELECT e.application_id,e.created_at,e.type,e.detail
+      FROM events e JOIN objects o ON o.id=e.application_id
+      WHERE o.kind='application' ORDER BY e.id
+    `).iterate()) {
+      const id = String(row.application_id);
+      const history = events.get(id) ?? [];
+      history.push({ created_at: Number(row.created_at), type: String(row.type), detail: String(row.detail) });
+      events.set(id, history);
+    }
+    return events;
+  }
+  activeApplicationJobs<T>(): T[] {
+    return this.db.prepare(`
+      SELECT j.data FROM objects j JOIN (
+        SELECT DISTINCT json_extract(data,'$.jobId') AS job_id
+        FROM objects WHERE kind='application' AND json_extract(data,'$.status') IN ('sent','sending','uncertain')
+      ) a ON j.id=a.job_id WHERE j.kind='job'
+    `).all().map(({ data }) => JSON.parse(String(data)) as T);
   }
   event(id: string, type: string, detail: string) {
     this.db

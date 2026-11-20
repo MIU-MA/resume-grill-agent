@@ -57,7 +57,7 @@ export function parseResumeStructure(rawText: string): ParsedResumeSection[] {
   let current = sections[0];
 
   for (const text of mergeWrappedResumeLines(rawText)) {
-    const heading = matchHeading(text);
+    const heading = resumeSectionHeading(text);
     if (heading) {
       current = { kind: heading.kind, title: heading.title, lines: [] };
       sections.push(current);
@@ -79,7 +79,7 @@ function mergeWrappedResumeLines(rawText: string): string[] {
       previous &&
       !/[。.!！?？；;：:]$/.test(previous) &&
       isBulletLine(previous) &&
-      !matchHeading(text) &&
+      !resumeSectionHeading(text) &&
       !isBulletLine(text) &&
       !looksLikeEntryHeader(text)
     ) {
@@ -107,7 +107,7 @@ function joinResumeLine(previous: string, current: string): string {
   return `${left}${needsSpace ? " " : ""}${right}`;
 }
 
-function matchHeading(
+export function resumeSectionHeading(
   line: string,
 ): { kind: ResumeSectionKind; title: string } | null {
   const explicitlyMarked = /^#+\s*/.test(line) || /[：:]\s*$/.test(line);

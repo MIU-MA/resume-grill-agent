@@ -20,3 +20,9 @@ export type BossInspection = {
   matched: boolean;
   blockers: string[];
 };
+
+export class BossDetailError extends Error {
+  constructor(message: string, readonly scope: "session" | "job" | "transient") {
+    super(message);
+  }
+}

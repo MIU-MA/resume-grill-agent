@@ -65,7 +65,7 @@ export function RevisionReview({
             disabled={busy}
           />
           <p className="muted">
-            当前新 PDF 为文本排版，不含原布局与照片。原文件会保留。
+            保留原文时沿用原 PDF，改写后生成新的单栏版式。
           </p>
           <button
             className="primary"

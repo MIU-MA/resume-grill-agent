@@ -6,6 +6,7 @@ import { join, dirname, basename } from "node:path";
 import { Store } from "../../src/infrastructure/sqlite-store.js";
 import { Workspace } from "../../src/core/workspace.js";
 import { renderPdf, readResume } from "../../src/infrastructure/documents.js";
+import { tailoringSections } from "../../src/domain/resume-tailoring.js";
 
 test("SMTP 回执随投递记录持久化，重开存储仍可查询", async (t) => {
   const receipt = {
@@ -53,6 +54,41 @@ test("并行准备相同内容只生成一条投递记录", async (t) => {
     f.workspace.history().filter((item) => item.subject === "新主题").length,
     1,
   );
+});
+
+test("直投邮件默认引用简历中的姓名与岗位，预览使用冻结的附件名", async (t) => {
+  let sentName: string | undefined;
+  const f = await fixture(t, async (mail) => { sentName = mail.attachmentName; });
+  const resume = await f.workspace.createResume("林沐简历", "姓名：林沐\n手机：13800000000\n求职意向：后端开发\n项目经历\n开发 Go 服务。");
+  const initial = await f.workspace.prepareDirectMail(resume.id, "hr@example.com");
+  assert.equal(initial.attachmentName, "后端开发-林沐-13800000000.pdf");
+  assert.equal(initial.subject, "应聘后端开发 - 林沐");
+  assert.match(initial.body, /林沐[\s\S]*后端开发[\s\S]*13800000000/);
+  const revised = await f.workspace.reviseApplication(initial.id, initial.digest, {
+    recipient: initial.recipient, subject: "更新主题", body: initial.body,
+  });
+  assert.equal(revised.attachmentName, initial.attachmentName);
+  const previous = process.env.RESUME_ALLOW_SEND;
+  process.env.RESUME_ALLOW_SEND = "1";
+  try {
+    f.workspace.approve(revised.id, revised.digest);
+    await f.workspace.execute(revised.id, false);
+    assert.equal(sentName, initial.attachmentName);
+  } finally {
+    if (previous === undefined) delete process.env.RESUME_ALLOW_SEND;
+    else process.env.RESUME_ALLOW_SEND = previous;
+  }
+});
+
+test("保留原文的岗位版直接使用原 PDF 字节", async (t) => {
+  const f = await fixture(t);
+  const original = await f.workspace.importResume(f.version.pdf!);
+  const version = await f.workspace.saveVersion(original.id, f.job.id, {
+    company: "", role: "", sectionOrder: tailoringSections(original.text).map(({ id }) => id),
+    changes: [], highlights: [], gaps: [],
+  }, []);
+  assert.deepEqual(await readFile(version.pdf!), await readFile(original.original));
+  assert.equal(version.text, original.text);
 });
 
 test("修改邮件冻结新预览，沿用原附件，旧确认及旧预览不能发送", async (t) => {

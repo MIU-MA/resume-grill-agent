@@ -70,7 +70,7 @@ export function bossOperations(workspace: Workspace): OperationModule {
       );
       tool(
         "boss_shortlist",
-        "按保存目标和招聘类型筛选当前 BOSS 列表。优先读取目标类型的完整 JD，返回招聘类型、硬条件和简历原文依据。无法确认的岗位保留待核对。最多读取 budget 个，读取失败停止。",
+        "按保存目标和招聘类型筛选当前 BOSS 列表。优先读取目标类型的完整 JD，返回招聘类型、硬条件和简历原文依据。最多读取 budget 个岗位。单个岗位读取失败时单独记录，遇到登录、验证或会话变化时暂停。",
         {
           goalId: z.string(),
           scanId: z.string(),
@@ -104,8 +104,8 @@ export function bossOperations(workspace: Workspace): OperationModule {
       );
     }),
     snapshot: () => ({
-      bossScans: workspace.store.list("boss-scan").slice(0, 5),
-      bossShortlists: workspace.store.list("boss-shortlist").slice(0, 5),
+      bossScans: workspace.store.list("boss-scan", 5),
+      bossShortlists: workspace.store.list("boss-shortlist", 5),
       bossGroups: new BossGroups(workspace).list(),
       bossDeliveries: new BossDeliveries(workspace)
         .list()

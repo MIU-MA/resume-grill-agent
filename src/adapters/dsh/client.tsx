@@ -367,8 +367,7 @@ export function NativeCard({
                 disabled={busy}
               />
               <p className="rg-note">
-                只应用勾选的修改。新 PDF
-                为文本排版，不含原布局和照片，原文件会保留。
+                应用勾选的修改后生成单栏 PDF。保留原文时沿用原 PDF。
               </p>
               <button
                 disabled={busy}

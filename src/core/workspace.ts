@@ -7,8 +7,12 @@ import { readResume, renderPdf } from "../infrastructure/documents.js";
 import { capabilities as defaultCapabilities, type Capability } from "../shared/capabilities.js";
 import {
   applicationMail,
+  applicationAttachmentName,
+  directMailDraft,
   type ApplicationMail,
 } from "../domain/application-mail.js";
+import { parseResumeProfile } from "../domain/resume-profile.js";
+import { ResumeProfiles } from "./resume-profiles.js";
 import {
   tailoringSections,
   tailoringRequirements,
@@ -48,6 +52,7 @@ export type Application = {
   subject: string;
   body: string;
   attachment: string;
+  attachmentName?: string;
   attachmentHash: string;
   digest: string;
   messageId: string;
@@ -75,6 +80,7 @@ export type Send = (mail: {
   body: string;
   messageId: string;
   attachment: Uint8Array;
+  attachmentName: string;
 }) => Promise<void | SmtpReceipt>;
 
 export class Workspace {
@@ -245,7 +251,11 @@ export class Workspace {
     );
     const id = randomUUID(),
       pdf = resolve(this.store.home, `${id}.pdf`),
-      bytes = await renderPdf(text);
+      sourcePdf = source.pdf ?? source.original,
+      keepPdf = text === source.text && extname(sourcePdf).toLowerCase() === ".pdf",
+      bytes = keepPdf ? await readFile(sourcePdf) : await renderPdf(text);
+    if (keepPdf && source.pdfHash && hash(bytes) !== source.pdfHash)
+      throw new Error("原简历 PDF 已变化，请重新上传后再保存。");
     await writeFile(pdf, bytes, { flag: "wx", mode: 0o600 });
     const version: Resume = {
       id,
@@ -324,19 +334,32 @@ export class Workspace {
     return this.freezeApplication(job, resumeId, bytes, mail);
   }
   async prepareDirectMail(resumeId: string, recipient: string) {
+    const resume = this.resume(resumeId);
+    const job = resume.jobId ? this.store.get<Job>("job", resume.jobId) : undefined;
+    const contact = this.mailContact(resume);
+    const role = this.mailRole(resume, job);
     const mail = applicationMail.parse({
       recipient,
-      subject: "求职简历",
-      body: "您好，附件是我的求职简历，感谢查阅。",
+      ...directMailDraft(contact, role),
     });
-    const resume = this.resume(resumeId);
     const path = resume.pdf ?? resume.original;
     const bytes = extname(path).toLowerCase() === ".pdf"
       ? await readFile(path)
       : await renderPdf(resume.text, { updateMetadata: false });
     if (resume.pdfHash && hash(bytes) !== resume.pdfHash)
       throw new Error("附件已改变，请重新生成版本。");
-    return this.freezeApplication(undefined, resumeId, bytes, mail);
+    return this.freezeApplication(undefined, resumeId, bytes, mail, {
+      attachmentName: applicationAttachmentName(role, contact, resume.name),
+    });
+  }
+  private mailContact(resume: Resume) {
+    const profiles = new ResumeProfiles(this);
+    const profile = profiles.current(resume.id);
+    return profile?.confirmedAt ? profile.data.contact : parseResumeProfile(resume.text).contact;
+  }
+  private mailRole(resume: Resume, job?: Job) {
+    const role = job?.role ?? (resume.jobId ? this.store.get<Job>("job", resume.jobId).role : undefined);
+    return role || resume.text.match(/^(?:求职意向|应聘岗位|求职方向)\s*[:：][ \t]*([^\r\n|｜]{1,100})/m)?.[1].trim() || "";
   }
   /** A new preview always uses the already-frozen PDF, never a mutable source file. */
   async reviseApplication(id: string, digest: string, input: ApplicationMail) {
@@ -361,7 +384,7 @@ export class Workspace {
       original.resumeId,
       bytes,
       mail,
-      original,
+      { original },
     );
   }
   private requireEditable(item: Application, digest: string) {
@@ -376,8 +399,13 @@ export class Workspace {
     resumeId: string,
     bytes: Uint8Array,
     mail: ApplicationMail,
-    original?: Application,
+    { original, attachmentName: selectedName }: { original?: Application; attachmentName?: string } = {},
   ) {
+    const fallbackName = () => {
+      const resume = this.resume(resumeId);
+      return applicationAttachmentName(this.mailRole(resume, job), this.mailContact(resume), resume.name);
+    };
+    const attachmentName = selectedName ?? (original ? original.attachmentName ?? "resume.pdf" : fallbackName());
     const attachmentHash = hash(bytes);
     const digest = hash(
       JSON.stringify({
@@ -385,12 +413,11 @@ export class Workspace {
         resumeId,
         ...mail,
         attachmentHash,
+        attachmentName,
         ...(original ? { revisedFrom: original.id } : {}),
       }),
     );
-    const existing = this.store
-      .list<Application>("application")
-      .find((item) => item.digest === digest);
+    const existing = this.store.applicationByDigest<Application>(digest);
     if (existing && !original) return existing;
     const id = randomUUID(),
       attachment = resolve(this.store.home, `${id}-attachment.pdf`);
@@ -401,6 +428,7 @@ export class Workspace {
       resumeId,
       ...mail,
       attachment,
+      attachmentName,
       attachmentHash,
       digest,
       messageId: `<${id}@resume-grill.local>`,
@@ -413,9 +441,7 @@ export class Workspace {
       return this.store.transaction(() => {
         if (original)
           this.requireEditable(this.preview(original.id), original.digest);
-        const concurrent = this.store
-          .list<Application>("application")
-          .find((item) => item.digest === digest);
+        const concurrent = this.store.applicationByDigest<Application>(digest);
         if (concurrent) return concurrent;
         this.store.put("application", application);
         this.store.event(id, "prepared", "投递内容及附件已冻结。");
@@ -524,6 +550,7 @@ export class Workspace {
         body: item.body,
         messageId: item.messageId,
         attachment: bytes,
+        attachmentName: item.attachmentName ?? "resume.pdf",
       });
       this.store.transaction(() => {
         this.store.put("application", {
@@ -542,13 +569,10 @@ export class Workspace {
     return this.preview(id);
   }
   history() {
+    const events = this.store.applicationEvents();
     return this.store.list<Application>("application").map((item) => ({
       ...item,
-      events: this.store.db
-        .prepare(
-          "SELECT created_at,type,detail FROM events WHERE application_id=? ORDER BY id",
-        )
-        .all(item.id),
+      events: events.get(item.id) ?? [],
     }));
   }
 }

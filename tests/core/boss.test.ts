@@ -86,6 +86,12 @@ export async function fixture(t: any) {
     if (req.url === "/inspect-job") {
       const { url } = JSON.parse(body);
       (state.inspected ??= []).push(url);
+      const errorStatus = state.inspectStatuses?.[url]?.shift();
+      if (errorStatus) {
+        res.writeHead(errorStatus);
+        res.end("{}");
+        return;
+      }
       result = state.details?.[url] ?? state.detail;
     }
     if (
@@ -1077,6 +1083,28 @@ test("BOSS 核对界面展示实际岗位与附件，恢复不创建确认", asy
     JSON.stringify(bossView(f.workspace)).includes("a".repeat(48)),
     false,
   );
+});
+test("详情临时失败重试一次，单条详情错误不阻止核对后续岗位", async (t) => {
+  const f = await fixture(t);
+  f.boss.connect(f.link);
+  const resume = await f.workspace.createResume("主简历", "求职意向：Go开发");
+  const second = "https://www.zhipin.com/job_detail/isolated.html";
+  f.state.rows = [
+    { url: f.url, title: "Go开发", company: "演示" },
+    { url: second, title: "Go开发", company: "第二公司" },
+  ];
+  f.state.inspectStatuses = { [f.url]: [503] };
+  f.state.details = {
+    [f.url]: { ...f.state.detail, matched: false },
+    [second]: { ...f.state.detail, url: second, company: "第二公司", description: "岗位类型：全职\nGo 开发" },
+  };
+  const goal = new Tasks(f.workspace).saveGoal({ resumeId: resume.id, directions: ["Go开发"] });
+  const scan = await f.boss.read();
+  const result = await new BossShortlists(f.workspace).collect(goal.id, scan.id, 2);
+  assert.equal(result.detailsRead, 2);
+  assert.deepEqual(f.state.inspected, [f.url, f.url, second]);
+  assert.deepEqual(result.items.map(({ status }) => status), ["needs_review", "candidate"]);
+  assert.equal(f.state.confirmations, undefined);
 });
 test("未知 BOSS 命令不会进入通用动作校验，旧宿主错误提示重开 DSH", async (t) => {
   const f = await fixture(t);

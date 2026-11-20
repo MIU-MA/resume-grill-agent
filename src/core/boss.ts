@@ -5,6 +5,7 @@ import type { Goal } from "./tasks.js";
 import { BossGateway } from "../infrastructure/boss-gateway.js";
 import type { BossExecutor } from "../infrastructure/boss-executor/index.js";
 import { resumeSearchDirection } from "../domain/resume-search-direction.js";
+import { BossDetailError } from "../domain/boss-inspection.js";
 import { bossSearchQuery, type BossRecruitmentFilter } from "../domain/boss-recruitment.js";
 import {
   bossBrowserChoice,
@@ -207,13 +208,23 @@ export class Boss {
     const scan = this.workspace.store.get<BossScan>("boss-scan", scanId),
       expected = scan.jobs.find((j) => j.url === url);
     if (scan.blocked || !expected)
-      throw new Error(scan.blocked ?? "岗位不在本次列表中。");
-    const detail = bossInspection.parse(
-      await this.gateway().request("/inspect-job", {
+      throw new BossDetailError(scan.blocked ?? "岗位不在本次列表中。", scan.blocked ? "session" : "job");
+    let response: unknown;
+    try {
+      response = await this.gateway().request("/inspect-job", {
         readId: scan.readId,
         url,
-      }),
-    );
+      });
+    } catch (error) {
+      if (error instanceof BossDetailError) throw error;
+      if (!this.connected) throw new BossDetailError("BOSS 浏览器已断开连接。", "session");
+      throw new BossDetailError("读取岗位详情时出错。", "transient");
+    }
+    const result = bossInspection.safeParse(response);
+    if (!result.success) throw new BossDetailError("岗位详情返回的格式不完整。", "job");
+    const detail = result.data;
+    if (detail.kind === "login" || detail.kind === "verification")
+      throw new BossDetailError("BOSS 需要登录或安全验证，请在浏览器处理后再读。", "session");
     if (
       detail.kind !== "detail" ||
       !detail.matched ||
@@ -224,7 +235,7 @@ export class Boss {
       detail.company !== expected.company ||
       !detail.description.trim()
     )
-      throw new Error("岗位身份或完整 JD 未核对通过，请在官网检查。");
+      throw new BossDetailError("岗位身份或完整 JD 未核对通过，请在官网检查。", "job");
     const job = this.workspace.addJob({
       sourceUrl: url,
       role: detail.title,

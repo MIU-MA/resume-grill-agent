@@ -4,8 +4,11 @@ import { capabilities } from "../../shared/capabilities.js";
 
 export const NativeConfig = Schema.object({
   address: Schema.string().default("").volatile(),
-  provider: Schema.union(["qq", "163", "126"]).default("qq").volatile(),
+  provider: Schema.union(["qq", "163", "126", "custom"]).default("qq").volatile(),
   enabled: Schema.boolean().default(false).volatile(),
+  host: Schema.string().default("").volatile(),
+  port: Schema.number().default(465).volatile(),
+  security: Schema.union(["tls", "starttls"]).default("tls").volatile(),
   // DSH exposes volatile fields to its settings client. The host reads this
   // selection once per mount so an edit cannot interrupt an active batch.
   disabledCapabilities: Schema.array(Schema.union(capabilities))

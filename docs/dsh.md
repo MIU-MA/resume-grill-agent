@@ -46,11 +46,13 @@ dsh plugin --profile desktop add 'link:C:/path/resume-grill-agent'
 
 “岗位”按公司官网实时拉取，复用原网页端的静态、动态页面读取与腾讯公开接口，记录读取时间和失败原因。点击具体职位读取当前 JD，再选择简历进行匹配；JD 更新产生独立上下文，旧建议不会套到新 JD。用户可接受 AI 建议或手动修改，并独立保存岗位版 PDF，不必提供招聘邮箱。AI 建议使用当前 DSH 会话模型，完成后同步刷新核对卡。
 
-在 DSH 设置中打开「Resume Grill 邮箱」，填写发件邮箱和 SMTP 授权码并保存；需要真实投递时开启对应选项。设置立即生效，授权码按账号隔离并存入 DSH 凭据服务；留空保留已存授权码，也可单独移除。“测试连接”只验证 SMTP 登录，不发送邮件。用户勾选核对、输入“发送”后才能提交；助手不能批准自己发信。未在页面配置邮箱时仍兼容 `RESUME_SMTP_ADDRESS`、`RESUME_SMTP_CODE`、`RESUME_SMTP_PROVIDER` 和 `RESUME_ALLOW_SEND=1` 环境配置。
+在 DSH 设置中打开「Resume Grill 邮箱」，填写发件邮箱和 SMTP 授权码并保存。QQ、163、126 有内置配置，企业邮箱可在「自定义 SMTP」填写服务商给出的主机、端口及 TLS 或 STARTTLS。自定义 SMTP 需要服务商允许授权码或应用密码登录。设置立即生效，授权码按账号及自定义服务器保存到 DSH 凭据服务。开启真实发送后仍需核对预览并输入「发送」确认。“测试连接”只验证 SMTP 登录。命令行仍可用 `RESUME_SMTP_ADDRESS`、`RESUME_SMTP_CODE`、`RESUME_SMTP_PROVIDER` 和 `RESUME_ALLOW_SEND=1`。自定义模式设 `RESUME_SMTP_PROVIDER=custom`，再设 `RESUME_SMTP_HOST`、`RESUME_SMTP_PORT` 和 `RESUME_SMTP_SECURITY`（`tls` 或 `starttls`）。
 
 「投递记录」汇总 BOSS、官网和邮件记录。点「记录跟进」可保存等回复、已约面、已结束及备注，用「到期跟进」筛出今天和逾期的事项。官网在提交后从岗位卡片点「记录官网已提交」。跟进进展由你填写，邮件回执继续显示 SMTP 发送状态。
 
-资料默认在 `DSH_HOME/storages/resume-grill`，通常为 `%USERPROFILE%/.dsh/storages/resume-grill`；`RESUME_AGENT_HOME` 可指定其他绝对目录。恢复卡片重新读取当前状态，不保存批准。新 PDF 不保留原布局和照片；`sent` 只表示 SMTP 接受，回复同步和已读追踪尚未实现。
+保留原文时直接复用原 PDF，包含原版式及照片。改写后生成分节、可选中文字的岗位版，采用新的单栏版式。扫描件可安装 [Tesseract](https://tesseract-ocr.github.io/tessdoc/Installation) 后在本机提取文字，默认语言为简体中文与英文。程序在 PATH 之外时可设置 `RESUME_OCR_EXECUTABLE`，也可用 `RESUME_OCR_LANG` 明确指定已安装语言，例如 `chi_sim+eng`。
+
+资料默认在 `DSH_HOME/storages/resume-grill`，通常为 `%USERPROFILE%/.dsh/storages/resume-grill`。可用 `RESUME_AGENT_HOME` 指定绝对目录。恢复卡片时重新读取状态，`sent` 表示 SMTP 接受。
 
 ## 模块配置
 

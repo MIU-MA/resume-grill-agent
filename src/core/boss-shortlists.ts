@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import type { Workspace } from "./workspace.js";
 import { Boss } from "./boss.js";
@@ -16,6 +17,7 @@ import {
   type Recruitment,
 } from "../domain/boss-recruitment.js";
 import type { BossScan } from "../domain/boss.js";
+import { BossDetailError } from "../domain/boss-inspection.js";
 import type { Goal } from "./tasks.js";
 
 const norm = (s: string) => s.normalize("NFKC").replace(/\s/g, "").toLowerCase();
@@ -89,6 +91,17 @@ export class BossShortlists {
     const boss = new Boss(this.workspace);
     const sent = new BossDeliveries(this.workspace).list().filter((d) => d.status !== "prepared");
     let stopped = false;
+    let retried = false;
+    const readDetail = async (url: string) => {
+      try {
+        return await boss.detail(scanId, url);
+      } catch (error) {
+        if (retried || !(error instanceof BossDetailError) || error.scope !== "transient") throw error;
+        retried = true;
+        await delay(250);
+        return boss.detail(scanId, url);
+      }
+    };
 
     for (const { row, item } of rows) {
       if (sent.some((d) =>
@@ -114,12 +127,12 @@ export class BossShortlists {
         continue;
       }
       if (stopped || run.detailsRead >= Math.min(budget, goal.limit)) {
-        item.reasons.push(stopped ? "前一岗位读取失败，已停止后续读取" : "已达到本次详情读取上限");
+        item.reasons.push(stopped ? "BOSS 会话需要重新核对，已暂停本次读取" : "已达到本次详情读取上限");
         continue;
       }
       try {
         run.detailsRead++;
-        const job = await boss.detail(scanId, row.url);
+        const job = await readDetail(row.url);
         item.jobId = job.id;
         item.recruitment = classifyBossRecruitment(job.role, row.description, job.jd, job.facts);
         const { kind, conflict } = item.recruitment;
@@ -151,10 +164,10 @@ export class BossShortlists {
           item.reasons.push(conflict ? "招聘类型的描述有冲突" : "完整 JD 和岗位名称未能确认招聘类型");
         if (mismatches.length) item.reasons.push([...new Set(mismatches.map(({ label }) => label))].join("、") + "与已知条件不符");
         if (unknown.length) item.reasons.push([...new Set(unknown.map(({ label }) => label))].join("、") + "缺少明确依据");
-      } catch {
+      } catch (error) {
         item.status = "needs_review";
-        item.reasons.push("完整 JD 读取失败，请在浏览器检查登录、验证或页面变化");
-        stopped = true;
+        item.reasons.push(error instanceof BossDetailError ? error.message : "岗位核对失败，请单独检查。");
+        stopped = error instanceof BossDetailError && error.scope === "session";
       } finally {
         this.workspace.store.put("boss-shortlist", run);
       }

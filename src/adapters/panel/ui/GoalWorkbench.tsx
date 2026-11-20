@@ -310,7 +310,7 @@ export function GoalWorkbench({
           <>
             <p className="muted">
               生成的岗位 PDF
-              采用文本排版，不保留原布局和照片。此操作只准备内容，不发送邮件。
+              保留原文时沿用原 PDF，改写后生成新的单栏版式。邮件仍需确认后发送。
             </p>
             <button
               className="primary"

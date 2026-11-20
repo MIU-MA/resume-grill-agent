@@ -33,7 +33,7 @@
 
 ### 按岗位改简历
 
-打开岗位 JD，勾选要采纳的修改，也可以手动改正文。原简历保留，新的岗位版 PDF 采用文本排版。[查看简历核对截图](docs/screenshots/dsh-job-review.png)
+打开岗位 JD，勾选要采纳的修改，也可以手动改正文。保留原文时沿用原 PDF，改写后另存分节版式的岗位 PDF。[查看简历核对截图](docs/screenshots/dsh-job-review.png)
 
 ### BOSS 投递
 

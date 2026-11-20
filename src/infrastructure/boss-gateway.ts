@@ -1,3 +1,5 @@
+import { BossDetailError } from "../domain/boss-inspection.js";
+
 /** Narrow client to the existing local executor. No arbitrary CDP or shell calls. */
 export class BossGateway {
   private constructor(
@@ -49,7 +51,13 @@ export class BossGateway {
         signal: AbortSignal.timeout(45000),
         redirect: "error",
       });
-    } catch {
+    } catch (error) {
+      if (path === "/inspect-job") {
+        const cause = (error as { cause?: { code?: string } })?.cause?.code;
+        if (cause === "ECONNREFUSED")
+          throw new BossDetailError("本机 BOSS 服务已断开，请重新连接。", "session");
+        throw new BossDetailError("读取岗位详情时连接中断。", "transient");
+      }
       throw new Error(
         "本机 BOSS 服务未响应。请检查服务是否运行，再读取状态；不要重复投递。",
       );
@@ -73,6 +81,14 @@ export class BossGateway {
         await reader.cancel();
         throw new Error("BOSS 服务返回内容过大或读取中断，请重新查询状态。");
       }
+    if (path === "/inspect-job" && !response.ok) {
+      const session = [401, 403, 409, 429].includes(response.status);
+      throw new BossDetailError(
+        session ? "BOSS 会话失效、受限或列表已变更，请重新检查浏览器。"
+          : "这个岗位的详情暂时无法读取。",
+        session ? "session" : [408, 500, 502, 503, 504].includes(response.status) ? "transient" : "job",
+      );
+    }
     if (!response.ok)
       throw new Error(
         response.status === 401
