@@ -1,6 +1,13 @@
 import { useWorkbenchPreference } from "./workbench-state.js";
 import type { NativeView } from "./views.js";
 import { bossBatchLimit, type BossBrowserChoice } from "../../domain/boss.js";
+import {
+  bossRecruitmentFilter,
+  classifyBossRecruitment,
+  recruitmentLabels,
+  type BossRecruitmentFilter,
+} from "../../domain/boss-recruitment.js";
+import type { BossShortlistItem } from "../../core/boss-shortlists.js";
 import { BossDeliveryPanel } from "./BossDeliveryPanel.js";
 import type { ReadResumeImage } from "./controls.js";
 import { JobList, JobListRow } from "./JobList.js";
@@ -14,6 +21,46 @@ const browserOptions = [
   ["chrome", "Chrome"],
 ] as const satisfies ReadonlyArray<readonly [BossBrowserChoice, string]>;
 
+const shortlistLabels = {
+  candidate: "符合筛选",
+  needs_review: "待核对",
+  excluded: "已排除",
+  not_read: "未读 JD",
+} as const;
+const requirementLabels = {
+  matched: "符合",
+  mismatch: "不符",
+  unknown: "待核对",
+} as const;
+const evidenceSources = { title: "岗位名称", list: "列表", jd: "JD" } as const;
+
+function BossMatchDetails({ item }: { item: BossShortlistItem }) {
+  return (
+    <details>
+      <summary>查看筛选依据</summary>
+      <ul>
+        {item.recruitment?.evidence.map(({ source, quote }) => (
+          <li key={source + quote}>{evidenceSources[source]}：「{quote}」</li>
+        ))}
+        {item.requirements?.map(({ label, quote, status, resumeQuote }, index) => (
+          <li key={`${label}-${index}`}>
+            {label} · {requirementLabels[status]}
+            {quote && <div>JD：「{quote}」</div>}
+            {resumeQuote && <div>简历：「{resumeQuote}」</div>}
+          </li>
+        ))}
+        {item.skillMatches?.slice(0, 5).map(({ skill, quote, resumeQuote }) => (
+          <li key={skill}>
+            {skill}
+            <div>JD：「{quote}」</div>
+            <div>简历：「{resumeQuote}」</div>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 export function BossWorkbench({
   view,
   busy,
@@ -26,6 +73,7 @@ export function BossWorkbench({
   readResumeImage?: ReadResumeImage;
 }) {
   const [query, setQuery] = useWorkbenchPreference<string>("boss-query", "");
+  const [recruitment, setRecruitment] = useWorkbenchPreference<BossRecruitmentFilter>("boss-recruitment", "all");
   const [browserChoice, setBrowserChoice] = useWorkbenchPreference<BossBrowserChoice>("boss-browser", "auto");
   const [selectedResume, setResume] = useWorkbenchPreference<string>("boss-resume", "");
   const [archivedOnly, setArchivedOnly] = useWorkbenchPreference<boolean>("boss-archived", false);
@@ -44,6 +92,15 @@ export function BossWorkbench({
     !needsDirection && (!latest?.resumeId || latest.resumeId === resumeId)
       ? latest
       : undefined;
+  const shortlist = view.shortlists.find((item) => item.scanId === scan?.id && item.resumeId === resumeId);
+  const assessed = new Map(shortlist?.items.map((item) => [item.url, item]));
+  const visibleJobs = (scan?.jobs ?? [])
+    .map((job) => {
+      const item = assessed.get(job.url);
+      const { kind } = item?.recruitment ?? classifyBossRecruitment(job.title, job.description);
+      return { job, item, kind };
+    })
+    .filter(({ kind }) => recruitment === "all" || kind === "unknown" || kind === recruitment);
   const browser = view.browserState?.backend;
   const browserName = browserOptions.find(([value]) => value === browser)?.[1];
   const switchingBrowser = view.connected && browserChoice !== "auto" && browserChoice !== browser;
@@ -65,6 +122,7 @@ export function BossWorkbench({
       action: "boss-auto-prepare",
       resumeId,
       backend: browserChoice,
+      recruitment,
       ...(override ? { query: override } : {}),
       ...(readCurrent ? { readCurrent: true } : {}),
     });
@@ -163,6 +221,14 @@ export function BossWorkbench({
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
+          <label>招聘类型
+            <select value={recruitment} disabled={busy}
+              onChange={(event) => setRecruitment(bossRecruitmentFilter.parse(event.target.value))}>
+              {bossRecruitmentFilter.options.map((type) => (
+                <option key={type} value={type}>{recruitmentLabels[type]}</option>
+              ))}
+            </select>
+          </label>
           <button className="rg-primary" disabled={busy || (needsDirection && !keyword)}>
             {busy ? "正在处理…" : resumeAction}
           </button>
@@ -175,7 +241,7 @@ export function BossWorkbench({
         })}>读取浏览器当前列表</button>
       )}
       {hasResume && !needsDirection && !scan && (
-        <p className="rg-note">从当前页最多准备 {bossBatchLimit} 个匹配岗位，确认后投递。</p>
+        <p className="rg-note">优先核对所选类型，从当前页最多读取 {bossBatchLimit} 份 JD。</p>
       )}
       </div>
       {view.note && <p role="status">{view.note}</p>}
@@ -185,10 +251,11 @@ export function BossWorkbench({
             <p role="status">{scan.blocked}</p>
           ) : (
             <>
-              <h4>岗位列表 <small>{scan.query ? `${scan.query} · ` : ""}{scan.jobs.length} 个</small></h4>
+              <h4>岗位列表 <small>{scan.query ? `${scan.query} · ` : ""}{visibleJobs.length} 个</small></h4>
               {view.canEditQueue && selected && !selected.hasPdf && <p className="rg-note">加入待投前，请选一份 PDF 简历。</p>}
+              {!visibleJobs.length && <p className="rg-note">当前列表没有{recruitmentLabels[recruitment]}岗位。可切换类型或重新搜索。</p>}
               <JobList>
-                {scan.jobs.map((job) => {
+                {visibleJobs.map(({ job, item, kind }) => {
                   const queueStatus = bossQueueStatus(view, job.url);
                   return (
                   <JobListRow
@@ -197,8 +264,14 @@ export function BossWorkbench({
                     title={job.title}
                     meta={<>
                       {queueStatus && <span className="rg-status" data-tone={queueStatus === "已投递" ? "success" : undefined}>{queueStatus}</span>}
-                      {[job.company, job.salary].filter(Boolean).join(" · ")}
+                      <span className="rg-status" data-tone={item?.status === "candidate" ? "success" : item?.status === "needs_review" ? "warning" : undefined}>
+                        {shortlistLabels[item?.status ?? "not_read"]}
+                      </span>
+                      {[job.company, job.salary, recruitmentLabels[kind]].filter(Boolean).join(" · ")}
+                      {!!item?.reasons.length && <div>{item.reasons.join("；")}</div>}
                     </>}
+                    details={item?.jobId && (item.recruitment?.evidence.length || item.requirements?.length || item.skillMatches?.length)
+                      ? <BossMatchDetails item={item} /> : undefined}
                     action={<>
                       <button
                         disabled={busy || !view.connected}

@@ -5,6 +5,7 @@ import { BossShortlists } from "./boss-shortlists.js";
 import type { Goal } from "./tasks.js";
 import type { Workspace } from "./workspace.js";
 import { bossBatchLimit, type BossBrowserChoice, type BossScan } from "../domain/boss.js";
+import type { BossRecruitmentFilter } from "../domain/boss-recruitment.js";
 import { extname } from "node:path";
 
 export class BossAutoPrepare {
@@ -15,6 +16,7 @@ export class BossAutoPrepare {
     query?: string;
     backend?: BossBrowserChoice;
     readCurrent?: boolean;
+    recruitment?: BossRecruitmentFilter;
   }) {
     const { resumeId, query, backend, readCurrent } = input;
     const resume = this.workspace.resume(resumeId);
@@ -34,11 +36,6 @@ export class BossAutoPrepare {
     const scan = found.scan;
     if (scan.blocked || !scan.jobs.length)
       return scan.blocked ? {} : { note: "当前页没有可准备的岗位。" };
-    if (!hasPdf)
-      return {
-        note: "已找到岗位。这份简历不是 PDF，无法生成投递图片；请上传 PDF，或打开岗位后保存岗位版 PDF。",
-      };
-
     const saved = this.workspace.store.list<Goal>("goal")
       .find((goal) => goal.resumeId === resumeId);
     const keyword = scan.query || query || previous?.query;
@@ -57,13 +54,12 @@ export class BossAutoPrepare {
       limit: saved?.limit ?? bossBatchLimit,
     };
     const shortlist = await new BossShortlists(this.workspace)
-      .collectForGoal(goal, scan.id, bossBatchLimit);
+      .collectForGoal(goal, scan.id, bossBatchLimit, input.recruitment);
+    if (!hasPdf) return { note: "岗位筛选结果已更新。添加待投附件需要 PDF，可上传 PDF 或保存岗位版 PDF。" };
+
     const candidates = shortlist.items
-      .filter((item) => item.status === "candidate" || item.status === "needs_review")
-      .sort((a, b) =>
-        Number(b.status === "candidate") - Number(a.status === "candidate") ||
-        b.evidence.length - a.evidence.length,
-      );
+      .filter((item) => item.status === "candidate")
+      .sort((a, b) => (b.skillMatches?.length ?? 0) - (a.skillMatches?.length ?? 0));
 
     const deliveries = new BossDeliveries(this.workspace);
     const seen = new Set(deliveries.list().map((delivery) => delivery.url));
@@ -77,13 +73,16 @@ export class BossAutoPrepare {
         skipped++;
       }
     }
-    const note = skipped
+    const resultNote = skipped
       ? `${skipped} 个岗位未能准备附件，可打开岗位单独检查。`
       : !ids.length
         ? candidates.some(({ url }) => seen.has(url))
           ? "这页匹配的岗位已有待投或处理记录，可在列表中查看。"
           : "这页没有符合条件、且能读到完整 JD 的岗位。"
         : undefined;
+    const pending = shortlist.items.filter((item) => item.status === "needs_review").length;
+    const note = [resultNote, pending ? `${pending} 个岗位待核对，可在岗位列表查看原因。` : undefined]
+      .filter(Boolean).join(" ") || undefined;
     if (!ids.length) return { note };
     const group = await new BossGroups(this.workspace).prepare(ids);
     return { groupFocus: group.id, note };

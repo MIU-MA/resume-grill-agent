@@ -6,6 +6,7 @@ import { BossDeliveries } from "../boss-deliveries.js";
 import { BossGroups } from "../boss-groups.js";
 import { BossShortlists } from "../boss-shortlists.js";
 import { bossBatchLimit } from "../../domain/boss.js";
+import { bossRecruitmentFilter } from "../../domain/boss-recruitment.js";
 
 export function bossOperations(workspace: Workspace): OperationModule {
   const boss = new Boss(workspace);
@@ -69,14 +70,15 @@ export function bossOperations(workspace: Workspace): OperationModule {
       );
       tool(
         "boss_shortlist",
-        "按用户保存的目标筛选当前 BOSS 列表，最多读取 budget 个完整 JD，保留排除原因与简历原文证据。不编造匹配分数。城市提及不等于实际工作地点，需人工核对。失败停止后续读取，不发信。",
+        "按保存目标和招聘类型筛选当前 BOSS 列表。优先读取目标类型的完整 JD，返回招聘类型、硬条件和简历原文依据。无法确认的岗位保留待核对。最多读取 budget 个，读取失败停止。",
         {
           goalId: z.string(),
           scanId: z.string(),
           budget: z.number().int().min(1).max(10).default(5),
+          recruitment: bossRecruitmentFilter.optional(),
         },
-        ({ goalId, scanId, budget }) =>
-          new BossShortlists(workspace).collect(goalId, scanId, budget),
+        ({ goalId, scanId, budget, recruitment }) =>
+          new BossShortlists(workspace).collect(goalId, scanId, budget, recruitment),
       );
       tool(
         "boss_prepare_group",

@@ -8,6 +8,7 @@ import { BossShortlists } from "../../core/boss-shortlists.js";
 import { BossAutoPrepare } from "../../core/boss-auto-prepare.js";
 import { BossArchives, bossTaskKinds } from "../../core/boss-archives.js";
 import { bossBatchLimit, bossBrowserChoice } from "../../domain/boss.js";
+import { bossRecruitmentFilter } from "../../domain/boss-recruitment.js";
 
 export const bossActionSchema = z.discriminatedUnion("action", [
   z.strictObject({
@@ -44,6 +45,7 @@ export const bossActionSchema = z.discriminatedUnion("action", [
       goalId: z.string(),
       scanId: z.string(),
       budget: z.number().int().min(1).max(10),
+      recruitment: bossRecruitmentFilter.optional(),
     })
     .strict(),
   z
@@ -106,6 +108,7 @@ export const bossActionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("boss-auto-prepare"),
     resumeId: z.string().min(1),
+    recruitment: bossRecruitmentFilter.optional(),
     query: z.string().trim().min(1).max(120).optional(),
     backend: bossBrowserChoice.optional(),
     readCurrent: z.boolean().optional(),
@@ -186,6 +189,7 @@ export async function bossAction(
       input.goalId,
       input.scanId,
       input.budget,
+      input.recruitment,
     );
     return bossView(workspace);
   }

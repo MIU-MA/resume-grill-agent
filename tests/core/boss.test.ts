@@ -83,8 +83,11 @@ export async function fixture(t: any) {
       };
       if (state.searchResult) result = state.searchResult;
     }
-    if (req.url === "/inspect-job")
-      result = state.details?.[JSON.parse(body).url] ?? state.detail;
+    if (req.url === "/inspect-job") {
+      const { url } = JSON.parse(body);
+      (state.inspected ??= []).push(url);
+      result = state.details?.[url] ?? state.detail;
+    }
     if (
       req.url === `/boss-batch/${id}` ||
       (state.preview && req.url === `/boss-batch/${state.preview.id}`)
@@ -624,6 +627,7 @@ async function twoDeliveries(t: any) {
 test("一次搜索自动核对匹配 JD 并冻结投递，移出岗位后旧批次不可确认", async (t) => {
   const f = await fixture(t);
   f.boss.connect(f.link);
+  f.state.detail.description += "\n岗位类型：全职";
   const resume = await f.workspace.createResume("主简历", "求职意向：Go开发\n负责 Go 服务开发。");
   const secondUrl = "https://www.zhipin.com/job_detail/second.html";
   f.state.searchRows = [
@@ -666,6 +670,7 @@ test("一次搜索自动核对匹配 JD 并冻结投递，移出岗位后旧批�
 test("自动准备从当前页生成 10 个匹配岗位的待确认批次", async (t) => {
   const f = await fixture(t);
   f.boss.connect(f.link);
+  f.state.detail.description += "\n岗位类型：全职";
   const resume = await f.workspace.createResume("主简历", "求职意向：Go开发");
   const jobs = Array.from({ length: 11 }, (_, index) => ({
     url: `https://www.zhipin.com/job_detail/limit-${index}.html`,
@@ -689,7 +694,7 @@ test("自动准备从当前页生成 10 个匹配岗位的待确认批次", asyn
   assert.equal(f.requests.includes("/boss-batch/confirm"), false);
 });
 
-test("上传文本简历仍能找岗位，但明确说明没有可用于 BOSS 的 PDF", async (t) => {
+test("文本简历可以核对 JD，添加待投前需要 PDF", async (t) => {
   const f = await fixture(t);
   f.boss.connect(f.link);
   const path = join(f.home, "主简历.txt");
@@ -701,13 +706,15 @@ test("上传文本简历仍能找岗位，但明确说明没有可用于 BOSS �
   });
   assert.equal(view.kind, "boss");
   assert.equal(view.scans[0]?.jobs.length, 1);
-  assert.match(view.note ?? "", /不是 PDF/);
+  assert.match(view.note ?? "", /添加待投附件需要 PDF/);
+  assert.equal(view.shortlists[0].detailsRead, 1);
   assert.equal(view.groupFocus, undefined);
-  assert.deepEqual(f.requests, ["/search"]);
+  assert.deepEqual(f.requests, ["/search", "/inspect-job"]);
 });
 test("搜索等待中的旧关键词不能替换本轮关键词或准备附件", async (t) => {
   const f = await fixture(t);
   f.boss.connect(f.link);
+  f.state.detail.description += "\n岗位类型：全职";
   const resume = await f.workspace.createResume("主简历", "求职意向：Go开发");
   const input = { action: "boss-auto-prepare", resumeId: resume.id };
   f.state.searchResult = {
@@ -733,6 +740,49 @@ test("搜索等待中的旧关键词不能替换本轮关键词或准备附件",
   assert.ok(current.kind === "boss" && current.groupFocus);
   assert.deepEqual(f.requests.slice(2), ["/jobs", "/inspect-job", "/boss-batch/preview"]);
   assert.equal(f.state.confirmations, undefined);
+});
+
+test("BOSS 优先核对指定类型，只准备完整 JD 硬条件有依据的岗位", async (t) => {
+  const f = await fixture(t);
+  f.boss.connect(f.link);
+  const resume = await f.workspace.createResume(
+    "主简历",
+    "2027 届本科生\n负责 Go 服务开发。\n可每周到岗 4 天。\n可实习 3 个月。",
+  );
+  const cases = [
+    ["campus", "Go开发校招", "开发 Go 服务\n面向 2027 届毕业生"],
+    ["unknown", "Go开发", "开发 Go 服务\n接受应届生"],
+    ["conflict", "Go开发实习生", "开发 Go 服务\n岗位类型：全职"],
+    ["pending", "Go开发实习生", "开发 Go 服务\n每周至少 4 天\n实习至少 4 个月"],
+    ["matched", "Go开发实习生", "开发 Go 服务\n面向 2027 届毕业生\n每周至少 4 天\n实习至少 3 个月"],
+    ["missing", "Go开发实习生", "开发 Go 服务\n每周 3–5 天"],
+  ];
+  const jobs = cases.map(([id, title]) => ({
+    url: `https://www.zhipin.com/job_detail/${id}.html`, title, company: id,
+  }));
+  f.state.searchRows = jobs;
+  f.state.details = Object.fromEntries(jobs.map((job, index) => [
+    job.url, { ...f.state.detail, ...job, description: cases[index][2] },
+  ]));
+  const view = await humanAction(f.workspace, {
+    action: "boss-auto-prepare", resumeId: resume.id, query: "Go开发实习", recruitment: "internship",
+  });
+  assert.equal(view.kind, "boss");
+  assert.equal(f.state.inspected[0], jobs[2].url);
+  assert.deepEqual(view.shortlists[0].items.map(({ status }) => status), [
+    "excluded", "needs_review", "needs_review", "excluded", "candidate", "needs_review",
+  ]);
+  assert.equal(view.shortlists[0].items[4].skillMatches?.[0].resumeQuote, "负责 Go 服务开发。");
+  assert.deepEqual(view.deliveries.map(({ url }) => url), [jobs[4].url]);
+  assert.match(view.note ?? "", /3 个岗位待核对/);
+  assert.equal(f.state.confirmations, undefined);
+
+  const html = renderToStaticMarkup(createElement(BossWorkbench, {
+    view: bossView(f.workspace), busy: false, run: async () => {},
+  }));
+  for (const label of ["招聘类型", "校招", "全职", "查看筛选依据", "招聘类型的描述有冲突", "实习时长"]) {
+    assert.ok(html.includes(label), label);
+  }
 });
 
 test("核对附件期间移出岗位，正在等待的旧确认不能开始投递", async (t) => {
