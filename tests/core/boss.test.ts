@@ -291,6 +291,7 @@ test("DSH 没有 ego 时可从内置执行器改用 Chrome，继续读取和准�
   f.boss.useExecutor(executor);
   assert.equal((await f.boss.status()).ready, false);
   assert.deepEqual(launches, [], "被动查看状态不能启动浏览器");
+  f.store.put("boss-browser", { id: "boss-browser:preferred", backend: "ego" });
   const searchResume = await f.workspace.createResume("简历", "求职意向：Go");
   const connected = await humanAction(f.workspace, {
     action: "boss-find",

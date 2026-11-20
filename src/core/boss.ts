@@ -90,10 +90,15 @@ export class Boss {
     return result;
   }
   async browserConnect(backend?: BossBrowserChoice) {
-    const choice = backend ?? this.browserPreference;
-    await this.gateway().request("/connect", { backend: choice });
+    const executor = connections.has(this.workspace)
+      ? undefined
+      : executors.get(this.workspace);
+    const choice = backend ?? "auto";
+    if (executor) await executor.connectBrowser(choice, this.browserPreference);
+    else await this.gateway().request("/connect", { backend: choice });
+
     const state = await this.status();
-    if (state.ready && !connections.has(this.workspace))
+    if (state.ready && executor)
       this.workspace.store.put("boss-browser", {
         id: "boss-browser:preferred",
         backend: bossBrowserChoice.safeParse(state.backend).data ?? choice,

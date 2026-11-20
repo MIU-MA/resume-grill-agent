@@ -142,6 +142,13 @@ export function BossWorkbench({
           {busy ? "正在处理…" : resumeAction}
         </button>
       ) : null}
+      {view.connected ? (
+        <p className="rg-note">BOSS 浏览器已连接</p>
+      ) : (
+        <button disabled={busy} onClick={() => void run({ action: "boss-connect" })}>
+          打开 BOSS 浏览器
+        </button>
+      )}
       {hasResume && !needsDirection && !scan && (
         <p className="rg-note">自动搜索并准备最多 3 个岗位，确认后投递。</p>
       )}

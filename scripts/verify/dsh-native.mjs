@@ -507,6 +507,7 @@ try {
   await full.getByRole("button", { name: "BOSS 投递", exact: true }).click();
   const boss = full.getByRole("region", { name: "BOSS 投递", exact: true });
   await boss.getByRole("button", { name: "找岗位并准备投递", exact: true }).waitFor();
+  await boss.getByRole("button", { name: "打开 BOSS 浏览器", exact: true }).waitFor();
   assert.equal(await boss.locator("details").count(), 0);
   await page.screenshot({
     path: join(output, "dsh-boss-workbench.png"),

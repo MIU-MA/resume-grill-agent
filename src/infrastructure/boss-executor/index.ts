@@ -92,7 +92,7 @@ export class BossExecutor {
     }
   }
 
-  private async open(choice: BossBrowserChoice) {
+  async connectBrowser(choice: BossBrowserChoice, preferred?: BossBrowserChoice) {
     return this.exclusive(async () => {
       if (this.ready) return { ok: true };
       if (
@@ -100,7 +100,12 @@ export class BossExecutor {
         (choice !== "auto" && this.backend !== choice)
       ) {
         await this.release().catch(() => {});
-        for (const backend of choice === "auto" ? autoBackends : [choice]) {
+        const candidates = choice !== "auto"
+          ? [choice]
+          : preferred && preferred !== "auto"
+            ? [preferred, ...autoBackends.filter((backend) => backend !== preferred)]
+            : autoBackends;
+        for (const backend of candidates) {
           try {
             this.browser = await this.openBrowser(backend);
             this.backend = backend;
@@ -108,7 +113,7 @@ export class BossExecutor {
           } catch (error) {
             if (choice !== "auto" && backend === "ego")
               throw new Error(
-                "无法启动 ego。请检查安装和首次设置，或切换到 Edge / Chrome。",
+                "无法启动 ego。请完成 ego 的首次设置，或使用自动连接。",
                 { cause: error },
               );
           }
@@ -118,7 +123,7 @@ export class BossExecutor {
       if (!browser)
         throw new Error(
           choice === "auto"
-            ? "未能启动浏览器。请确认已安装 ego、Edge 或 Chrome，再手动选一个试试。"
+            ? "ego、Edge 和 Chrome 均无法连接。请确认至少安装了其中一个浏览器，再重试。"
             : `无法启动 ${browserNames[choice]}。请检查是否已安装，或切换浏览器。`,
         );
       const page = await browser.openBossPage();
@@ -291,7 +296,7 @@ export class BossExecutor {
           .object({ backend: bossBrowserChoice.default("auto") })
           .strict()
           .parse(input ?? {});
-        return this.open(backend);
+        return this.connectBrowser(backend);
       }
       case "/search":
         return this.exclusive(async () => {
