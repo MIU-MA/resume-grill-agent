@@ -702,13 +702,6 @@
   .rg-job-row { grid-template-columns: auto minmax(0, 1fr); }
   .rg-job-row-action { grid-column: 2; }
 }
-.rg-search {
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-}
-.rg-search label {
-  margin-bottom: 4px;
-}
 .rg-native details {
   margin: 12px 0;
 }

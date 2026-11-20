@@ -10,7 +10,7 @@ import {
   createHash,
 } from "node:crypto";
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { basename, join } from "node:path";
 import { packageRoot } from "../../shared/package-paths.js";
 import { z } from "zod";
 import { Workspace, type Resume } from "../../core/workspace.js";

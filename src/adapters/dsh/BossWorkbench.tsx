@@ -18,13 +18,11 @@ export function BossWorkbench({
   view,
   busy,
   run,
-  open,
   readResumeImage,
 }: {
   view: Extract<NativeView, { kind: "boss" }>;
   busy: boolean;
   run: (input: any) => Promise<unknown>;
-  open?: (input: any) => void;
   readResumeImage?: ReadResumeImage;
 }) {
   const [query, setQuery] = useWorkbenchPreference<string>("boss-query", "");
@@ -205,11 +203,12 @@ export function BossWorkbench({
                     action={<>
                       <button
                         disabled={busy || !view.connected}
-                        onClick={() => {
-                          const action = { action: "boss-detail", scanId: scan.id, url: job.url,
-                            ...(hasResume ? { resumeId } : {}) };
-                          open ? open(action) : void run(action);
-                        }}
+                        onClick={() => void run({
+                          action: "boss-detail",
+                          scanId: scan.id,
+                          url: job.url,
+                          ...(hasResume ? { resumeId } : {}),
+                        })}
                       >
                         查看岗位
                       </button>

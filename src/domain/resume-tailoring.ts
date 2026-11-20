@@ -10,11 +10,11 @@ export function tailoringSections(rawText: string) {
     id: `section-${index}`,
     title: section.title,
     kind: section.kind,
-    lines: section.lines.map((line) => line.text),
+    lines: section.lines,
   }));
 }
-export type TailoringSection = ReturnType<typeof tailoringSections>[number];
-export const tailoringPlanSchema = z
+type TailoringSection = ReturnType<typeof tailoringSections>[number];
+const tailoringPlanSchema = z
   .object({
     company: z.string().trim().max(120),
     role: z.string().trim().max(120),
@@ -121,66 +121,11 @@ export function groundedTailoringSchema(rawText: string, jd: string) {
         fail("公司和岗位须来自 JD 原文");
   });
 }
-/** Keep usable suggestions from one response; never ask the model again just to repair one bad line. */
-export function usableTailoringSchema(rawText: string, jd: string) {
-  const sections = tailoringSections(rawText);
-  const strict = groundedTailoringSchema(rawText, jd);
-  return tailoringPlanSchema.transform((plan) => {
-    const notices = [...(plan.notices ?? [])];
-    const originalOrder = sections.map((section) => section.id);
-    const normalized: TailoringPlan = {
-      ...plan,
-      changes: [],
-      highlights: [],
-      sectionOrder: originalOrder,
-    };
-    if (
-      plan.sectionOrder.length !== originalOrder.length ||
-      new Set(plan.sectionOrder).size !== originalOrder.length ||
-      plan.sectionOrder.some((id) => !originalOrder.includes(id))
-    )
-      notices.push("章节顺序未能核对，已保留原顺序。");
-    for (const field of ["company", "role"] as const)
-      if (plan[field] && !compact(jd).includes(compact(plan[field]))) {
-        normalized[field] = "";
-        notices.push(
-          `未能从 JD 核对${field === "company" ? "公司" : "岗位"}，已留空。`,
-        );
-      }
-    const used = new Set<string>();
-    for (const change of plan.changes) {
-      const key = tailoringChangeKey(change);
-      const result = strict.safeParse({ ...normalized, changes: [change] });
-      if (!used.has(key) && result.success) {
-        normalized.changes.push(change);
-        used.add(key);
-      } else {
-        const section = sections.find(
-          (section) => section.id === change.sectionId,
-        );
-        notices.push(
-          `已忽略${section?.title ?? "未知位置"}第 ${change.lineIndex + 1} 条建议：${result.success ? "位置重复" : result.error.issues[0].message}`.slice(
-            0,
-            200,
-          ),
-        );
-      }
-    }
-    normalized.highlights = plan.highlights.filter(
-      (item) =>
-        !!sections.find((section) => section.id === item.sectionId)?.lines[
-          item.lineIndex
-        ],
-    );
-    if (notices.length) normalized.notices = [...new Set(notices)].slice(0, 8);
-    return normalized;
-  });
-}
 export const tailoringChangeKey = (change: {
   sectionId: string;
   lineIndex: number;
 }) => `${change.sectionId}:${change.lineIndex}`;
-export function tailoringSourceRanges(
+function tailoringSourceRanges(
   rawText: string,
   sections: TailoringSection[],
 ) {
@@ -207,13 +152,12 @@ export function tailoringSourceRanges(
     }
   return ranges;
 }
-/** Manual edits always take precedence; untouched source formatting stays byte-for-byte identical. */
+/** Keep the original formatting outside the accepted replacements. */
 export function tailoredOriginalResumeText(
   rawText: string,
   sections: TailoringSection[],
   plan: TailoringPlan,
   accepted: ReadonlySet<string>,
-  edits: Record<string, string> = {},
 ) {
   const ranges = tailoringSourceRanges(rawText, sections);
   const replacements: Array<{ start: number; end: number; text: string }> = [];
@@ -223,16 +167,11 @@ export function tailoredOriginalResumeText(
       const change = plan.changes.find(
         (change) => tailoringChangeKey(change) === key,
       );
-      const replacement = Object.hasOwn(edits, key)
-        ? edits[key]
-        : change && accepted.has(key)
-          ? change.after
-          : undefined;
-      if (replacement === undefined) continue;
+      if (!change || !accepted.has(key)) continue;
       const range = ranges.get(key);
       if (!range)
         throw new Error("这条内容无法对应到上传原文，请核对后再修改。");
-      replacements.push({ ...range, text: replacement });
+      replacements.push({ ...range, text: change.after });
     }
   let text = rawText;
   for (const replacement of replacements.reverse())
@@ -241,71 +180,4 @@ export function tailoredOriginalResumeText(
       replacement.text +
       text.slice(replacement.end);
   return text;
-}
-export function tailoredResumeText(
-  sections: TailoringSection[],
-  plan: TailoringPlan,
-  accepted: ReadonlySet<string>,
-  edits: Record<string, string> = {},
-  originalOrder = false,
-) {
-  const order = originalOrder
-    ? sections.map((section) => section.id)
-    : plan.sectionOrder;
-  return order
-    .map((id) => {
-      const section = sections.find((item) => item.id === id)!;
-      const lines = section.lines.map((line, index) => {
-        const key = `${id}:${index}`;
-        const change = plan.changes.find(
-          (item) => tailoringChangeKey(item) === key,
-        );
-        return Object.hasOwn(edits, key)
-          ? edits[key]
-          : change && accepted.has(key)
-            ? change.after
-            : line;
-      });
-      return [
-        ...(section.kind === "general" ? [] : [section.title]),
-        ...lines,
-      ].join("\n");
-    })
-    .join("\n\n")
-    .trim();
-}
-export function tailoringMail(
-  sections: TailoringSection[],
-  plan: TailoringPlan,
-  accepted: ReadonlySet<string>,
-  edits: Record<string, string>,
-  person: string,
-  company = plan.company,
-  role = plan.role,
-) {
-  const excerpts = plan.highlights
-    .map((item) => {
-      const original =
-        sections.find((section) => section.id === item.sectionId)?.lines[
-          item.lineIndex
-        ] ?? "";
-      const key = tailoringChangeKey(item);
-      const change = plan.changes.find(
-        (entry) => tailoringChangeKey(entry) === key,
-      );
-      return (
-        Object.hasOwn(edits, key)
-          ? edits[key]
-          : change && accepted.has(key)
-            ? change.after
-            : original
-      )
-        .replace(/^[-•·\s]+/, "")
-        .slice(0, 240);
-    })
-    .filter(Boolean);
-  return {
-    subject: `${role ? `应聘${role}` : "求职申请"}${person ? `-${person}` : ""}`,
-    body: `您好：\n\n${role ? `我想应聘${company || "贵公司"}的${role}岗位。` : "想向您投递一份简历。"}${excerpts.length ? `\n\n简历中与这个岗位相关的经历：\n${excerpts.map((text) => `- ${text}`).join("\n")}` : ""}\n\n附件是我的简历，感谢您查看。${person ? `\n\n${person}` : ""}`,
-  };
 }

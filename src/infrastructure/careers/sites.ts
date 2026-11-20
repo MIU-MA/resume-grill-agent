@@ -1,7 +1,3 @@
-// Frontend roles manually checked in the official pages below; not a guarantee of availability.
-// Keep the review date separate from the crawler's fetch date.
-export const frontendReviewedAt = "2026-09-30";
-
 // Public recruiting sources. Company entry pages are not individual job postings.
 export const crawlCareerSites = [
   {
@@ -36,7 +32,7 @@ export const crawlCareerSites = [
   },
 ] as const;
 
-export type CareerSite = {
+type CareerSite = {
   company: string;
   url: string;
   aliases?: readonly string[];
@@ -46,7 +42,7 @@ export type CareerSite = {
 
 // Public recruiting entries reviewed 2026-10-23. Role hints describe the page or
 // its official search index, not confirmation that the position is still open.
-export const additionalCareerSites: readonly CareerSite[] = [
+const additionalCareerSites: readonly CareerSite[] = [
   {
     company: "快手",
     url: "https://zhaopin.kuaishou.cn/",
@@ -140,7 +136,7 @@ export const additionalCareerSites: readonly CareerSite[] = [
 
 // Official recruiting entries checked 2026-10-29. Evidence and fetch results
 // are recorded in data/career-sites/review-2026-10-29.json.
-export const expandedCareerSites: readonly CareerSite[] = [
+const expandedCareerSites: readonly CareerSite[] = [
   { company: "网易", url: "https://hr.163.com/", aliases: ["NetEase"] },
   {
     company: "蚂蚁集团",
@@ -315,8 +311,6 @@ export const expandedCareerSites: readonly CareerSite[] = [
   { company: "七牛云", url: "https://jobs.qiniu.com/", aliases: ["Qiniu"] },
 ].map((site) => ({ ...site, reviewedAt: "2026-10-29" }));
 
-// Original portals retain their 2026-09-20 review; legacy frontend pages retain
-// frontendReviewedAt. New entries carry their own date instead of rewriting it.
 export const careerSites: readonly CareerSite[] = [
   { company: "腾讯", url: "https://careers.tencent.com/" },
   { company: "字节跳动", url: "https://jobs.bytedance.com/" },
@@ -332,21 +326,6 @@ export const careerSites: readonly CareerSite[] = [
   ...additionalCareerSites,
   ...expandedCareerSites,
 ] as const;
-
-export function filterCareerSites(query = ""): CareerSite[] {
-  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  return careerSites.filter((site) => {
-    const text = [
-      site.company,
-      site.url,
-      ...(site.aliases ?? []),
-      ...(site.frontendRoles ?? []),
-    ]
-      .join(" ")
-      .toLowerCase();
-    return terms.every((term) => text.includes(term));
-  });
-}
 
 export function companyFromCareerUrl(value: string): string {
   try {
