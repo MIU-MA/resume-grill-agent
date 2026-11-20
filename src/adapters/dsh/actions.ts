@@ -41,6 +41,7 @@ const actionSchema = z.discriminatedUnion("action", [
       action: z.literal("profile"),
       resumeId: z.string(),
       jobId: z.string().optional(),
+      goalId: z.string().optional(),
     })
     .strict(),
   z
@@ -49,6 +50,7 @@ const actionSchema = z.discriminatedUnion("action", [
       id: z.string(),
       data: z.unknown(),
       jobId: z.string().optional(),
+      goalId: z.string().optional(),
     })
     .strict(),
   z
@@ -105,6 +107,7 @@ const actionSchema = z.discriminatedUnion("action", [
       id: z.string(),
       resumeId: z.string(),
       jd: z.string().min(1).max(20000),
+      goalId: z.string().optional(),
     })
     .strict(),
   z.object({ action: z.literal("import"), path: z.string().min(1) }).strict(),
@@ -138,7 +141,9 @@ const actionSchema = z.discriminatedUnion("action", [
       action: z.literal("prepare"),
       resumeId: z.string(),
       jobId: z.string(),
-      proposalId: z.string(),
+      proposalId: z.string().optional(),
+      keepOriginal: z.boolean().optional(),
+      recipient: z.string().trim().pipe(applicationMail.shape.recipient).optional(),
       accepted: z.array(z.string()),
       goalId: z.string().optional(),
     })
@@ -223,10 +228,10 @@ export async function humanAction(
   }
   if (input.action === "resume") return resumeView(workspace, input.id);
   if (input.action === "profile")
-    return profileView(workspace, input.resumeId, input.jobId);
+    return profileView(workspace, input.resumeId, input.jobId, input.goalId);
   if (input.action === "confirm-profile") {
     const profile = new ResumeProfiles(workspace).confirm(input.id, input.data);
-    return profileView(workspace, profile.resumeId, input.jobId);
+    return profileView(workspace, profile.resumeId, input.jobId, input.goalId);
   }
   if (input.action === "create-resume")
     return resumeView(
@@ -267,10 +272,10 @@ export async function humanAction(
       : workspaceView(workspace);
   }
   if (input.action === "update-jd") {
-    const old = workspace.store.get<any>("job", input.id);
-    const { id, ...data } = old;
+    const before = reviewView(workspace, input.resumeId, input.id, undefined, input.goalId);
+    const { id, ...data } = before.job;
     const job = workspace.addJob({ ...data, jd: input.jd });
-    return reviewView(workspace, input.resumeId, job.id);
+    return reviewView(workspace, input.resumeId, job.id, undefined, input.goalId);
   }
   if (input.action === "save-version") {
     const view = reviewView(
@@ -336,10 +341,10 @@ export async function humanAction(
     const latest = workspace.store
       .list<{ id: string; resumeId: string; jobId: string }>("proposal")
       .find((p) => p.resumeId === input.resumeId && p.jobId === input.jobId);
-    if (latest?.id !== input.proposalId)
+    if (!input.keepOriginal && (!input.proposalId || latest?.id !== input.proposalId))
       throw new Error("建议已更新，请重新核对再选择。");
-    if (!view.job.recipient)
-      throw new Error("尚无明确招聘邮箱，请先让助手核对投递渠道。");
+    if (!input.recipient && !view.job.recipient)
+      throw new Error("请填写已核对的收件邮箱。");
     const goal = input.goalId
       ? workspace.store.get<Goal>("goal", input.goalId)
       : (workspace.store
@@ -363,6 +368,8 @@ export async function humanAction(
         jobId: input.jobId,
         proposalId: input.proposalId,
         accepted: input.accepted,
+        keepOriginal: input.keepOriginal,
+        recipient: input.recipient,
       },
     ]);
     const item = batch.items[0];

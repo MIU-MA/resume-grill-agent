@@ -11,6 +11,7 @@ export function viewReference(view: NativeView) {
         action: "profile",
         resumeId: view.resume.id,
         ...(view.jobId ? { jobId: view.jobId } : {}),
+        ...(view.goalId ? { goalId: view.goalId } : {}),
       }
     : view.kind === "resume"
       ? { action: "resume", id: view.resume.id }

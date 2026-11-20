@@ -48,13 +48,16 @@ export function BossWorkbench({
   const browserName = browserOptions.find(([value]) => value === browser)?.[1];
   const switchingBrowser = view.connected && browserChoice !== "auto" && browserChoice !== browser;
   const state = view.connected && !switchingBrowser ? scan?.state : undefined;
-  const readCurrent = state === "verification" || (state === "loading" && !scan?.searchDeferred);
+  const keyword = query.trim();
+  const previousKeyword = scan?.requestedQuery ?? scan?.query;
+  const readCurrent = (!keyword || keyword === previousKeyword) &&
+    (state === "verification" || (state === "loading" && !scan?.searchDeferred));
   const resumeAction =
     state === "login"
       ? "登录后继续"
       : state === "verification"
         ? "验证后继续"
-        : state === "loading"
+        : state === "loading" && (!keyword || keyword === previousKeyword)
           ? scan?.searchDeferred ? "继续搜索" : "查看搜索结果"
           : "找岗位并准备投递";
   const resumeSearch = (override?: string, readCurrent = false) =>
@@ -145,36 +148,32 @@ export function BossWorkbench({
         </label>
       )}
       {resumes.length === 0 && <p>先在简历库上传一份主简历。</p>}
-      {needsDirection ? (
+      {hasResume && (
         <form onSubmit={(event) => {
           event.preventDefault();
-          if (!busy && query.trim()) resumeSearch(query);
+          if (busy || (needsDirection && !keyword)) return;
+          resumeSearch(keyword || (scan?.blocked ? previousKeyword : undefined), readCurrent);
         }}>
-          <label>简历里的方向不明确，你想找什么岗位？
+          <label>岗位关键词
             <input
               value={query}
               maxLength={120}
-              placeholder="例如：数据分析实习"
+              placeholder={needsDirection ? "例如：数据分析实习" : "留空时根据简历搜索"}
               disabled={busy}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(event) => setQuery(event.target.value)}
             />
           </label>
-          <button className="rg-primary" disabled={busy || !query.trim()}>找岗位并准备投递</button>
+          <button className="rg-primary" disabled={busy || (needsDirection && !keyword)}>
+            {busy ? "正在处理…" : resumeAction}
+          </button>
         </form>
-      ) : hasResume ? (
-        <button
-          className="rg-primary"
-          disabled={busy}
-          onClick={() => {
-            resumeSearch(
-              scan?.blocked || switchingBrowser ? scan?.requestedQuery ?? scan?.query ?? query : query,
-              readCurrent,
-            );
-          }}
-        >
-          {busy ? "正在处理…" : resumeAction}
-        </button>
-      ) : null}
+      )}
+      {view.connected && !switchingBrowser && (
+        <button disabled={busy} onClick={() => void run({
+          action: "boss-read",
+          ...(hasResume ? { resumeId } : {}),
+        })}>读取浏览器当前列表</button>
+      )}
       {hasResume && !needsDirection && !scan && (
         <p className="rg-note">从当前页最多准备 {bossBatchLimit} 个匹配岗位，确认后投递。</p>
       )}

@@ -37,6 +37,7 @@ export function JobRevision({
               id: view.jobId,
               resumeId: view.resumeId,
               jd,
+              ...(view.goalId ? { goalId: view.goalId } : {}),
             }).then((saved) => {
               if (saved) clearJd();
             })

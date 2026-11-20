@@ -234,6 +234,7 @@ export function ResumeProfileEditor({
             id: view.profile.id,
             data,
             jobId: view.jobId,
+            ...(view.goalId ? { goalId: view.goalId } : {}),
           }).then((saved) => {
             if (saved) clear();
           })
@@ -249,6 +250,7 @@ export function ResumeProfileEditor({
               action: "review",
               resumeId: view.resume.id,
               jobId: view.jobId,
+              ...(view.goalId ? { goalId: view.goalId } : {}),
             })
           }
         >

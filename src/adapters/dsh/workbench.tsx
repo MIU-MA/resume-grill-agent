@@ -11,9 +11,10 @@ import { PixelIcon, type PixelIconName } from "./PixelIcon.js";
 import { brandName, DsPortrait, mailSettingsName, moduleSettingsName, quickEntryName } from "./branding.js";
 import { ApplicationHistory } from "./ApplicationHistory.js";
 import { MailCompose } from "./MailCompose.js";
+import { SearchGoals } from "./SearchGoals.js";
 import { viewReference } from "./card-model.js";
 import { onWorkspaceChanged, notifyWorkspaceChanged } from "./updates.js";
-import { hasCapability } from "../../shared/capabilities.js";
+import { capabilities, capabilityLabels, hasCapability } from "../../shared/capabilities.js";
 import { rememberPage, rememberedPage, useWorkbenchPreference, WorkbenchSession } from "./workbench-state.js";
 declare const __NATIVE_CSS__: string;
 type Snapshot = Extract<NativeView, { kind: "workspace" }>;
@@ -156,6 +157,9 @@ function WorkbenchContent({
   };
   const applications = data?.applications ?? [];
   const tabs = workbenchTabs(data);
+  const disabledModules = data?.capabilities
+    ? capabilities.filter((id) => !data.capabilities.includes(id))
+    : [];
   return (
     <section className="rg-native rg-workbench" aria-label={brandName}>
       <style>{__NATIVE_CSS__}</style>
@@ -179,6 +183,9 @@ function WorkbenchContent({
           </button>
         ))}
       </nav>
+      {tab === "overview" && disabledModules.length > 0 && (
+        <p className="rg-note">已停用 {disabledModules.map((id) => capabilityLabels[id]).join("、")}。可在 DSH 设置的「{moduleSettingsName}」重新启用。</p>
+      )}
       {detail ? (
         <>
           <button
@@ -286,6 +293,7 @@ function WorkbenchContent({
                   })
                 }
               />
+              <SearchGoals data={data} resumeId={resumeId} busy={busy} open={openAction} />
               <section className="rg-boss-results" aria-label="已保存的岗位">
                 <h4>已保存的岗位 <small>{data.jobs.length} 个</small></h4>
                 {data.jobs.length ? <JobList>{data.jobs.map((job) => (
@@ -342,6 +350,18 @@ function WorkbenchContent({
                 openResumes={() => navigate("resumes")}
                 prepare={(resumeId, recipient) => openAction({ action: "prepare-direct-mail", resumeId, recipient })}
               />
+              {!!data.mailBatches?.length && (
+                <section aria-label="邮件批次">
+                  <h4>邮件批次</h4>
+                  <JobList>{data.mailBatches.map((batch) => (
+                    <JobListRow key={batch.id}
+                      title={data.goals.find((goal) => goal.id === batch.goalId)?.directions.join(" / ") ?? "投递准备"}
+                      meta={`${batch.count} 个岗位 · ${new Date(batch.createdAt).toLocaleString()}`}
+                      action={<button disabled={busy} onClick={() => void openAction({ action: "batch-view", id: batch.id })}>查看批次</button>}
+                    />
+                  ))}</JobList>
+                </section>
+              )}
             </>
           )}
           {data && ["pending", "history"].includes(tab) && (

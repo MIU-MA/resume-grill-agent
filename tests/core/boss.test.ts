@@ -406,7 +406,13 @@ test("手动切换浏览器后在新会话搜索，启动失败时保留当前�
   await writeFile(path, "教育经历\n统计学本科");
   const resume = await f.workspace.importResume(path);
   const edge = await humanAction(f.workspace, { action: "boss-connect", backend: "edge" });
-  assert.equal(edge.kind === "boss" && edge.browserState?.backend, "edge");
+  assert.equal(edge.kind, "boss");
+  assert.equal(edge.browserState?.backend, "edge");
+  const connected = renderToStaticMarkup(createElement(BossWorkbench, {
+    view: edge, busy: false, run: async () => {},
+  }));
+  assert.match(connected, /岗位关键词/);
+  assert.match(connected, /读取浏览器当前列表/);
   const search = { action: "boss-auto-prepare", resumeId: resume.id };
   const verifying = await humanAction(f.workspace, { ...search, backend: "edge", query: "Go开发" });
   assert.equal(verifying.kind === "boss" && verifying.scans[0]?.state, "verification");

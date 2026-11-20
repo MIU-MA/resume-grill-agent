@@ -17,6 +17,8 @@ import { Tasks } from "../../src/core/tasks.js";
 import { batchView, reviewView, workspaceView } from "../../src/adapters/dsh/views.js";
 import { WorkspaceOverview } from "../../src/adapters/dsh/WorkspaceOverview.js";
 import { ApplicationHistory } from "../../src/adapters/dsh/ApplicationHistory.js";
+import { JobMailCompose } from "../../src/adapters/dsh/JobMailCompose.js";
+import { SearchGoals } from "../../src/adapters/dsh/SearchGoals.js";
 import { operations } from "../../src/core/operations.js";
 import { ResumeProfiles } from "../../src/core/resume-profiles.js";
 import {
@@ -375,7 +377,18 @@ test("从岗位清单进入核对后仍保留城市与排除条件，不另建�
     jobId: f.job.id,
     goalId: goal.id,
   });
-  assert.equal((view as any).goalId, goal.id);
+  assert.equal(view.kind === "review" && view.goalId, goal.id);
+  const profile = await humanAction(f.workspace, {
+    action: "profile", resumeId: f.resume.id, jobId: f.job.id, goalId: goal.id,
+  });
+  assert.equal(profile.kind === "profile" && profile.goalId, goal.id);
+  assert.deepEqual(viewReference(profile), {
+    action: "profile", resumeId: f.resume.id, jobId: f.job.id, goalId: goal.id,
+  });
+  const updated = await humanAction(f.workspace, {
+    action: "update-jd", id: f.job.id, resumeId: f.resume.id, jd: "招聘 Go 开发。", goalId: goal.id,
+  });
+  assert.equal(updated.kind === "review" && updated.goalId, goal.id);
   await assert.rejects(
     humanAction(f.workspace, {
       action: "prepare",
@@ -407,6 +420,35 @@ test("从岗位清单进入核对后仍保留城市与排除条件，不另建�
   );
 });
 
+test("岗位可手填收件邮箱准备预览，邮件批次可从工作台重新打开", async (t) => {
+  const f = await setup(t);
+  const job = f.workspace.addJob({
+    company: "另一家公司",
+    role: "Go 开发",
+    jd: "负责 Go 后端开发。",
+    sourceUrl: "https://example.com/jobs/go",
+  });
+  const html = renderToStaticMarkup(createElement(JobMailCompose, {
+    view: reviewView(f.workspace, f.resume.id, job.id),
+    accepted: [], busy: false, run: async () => true,
+  }));
+  assert.match(html, /收件邮箱/);
+  assert.match(html, /用当前简历正文准备邮件/);
+  const view = await humanAction(f.workspace, {
+    action: "prepare", resumeId: f.resume.id, jobId: job.id,
+    recipient: "recruiting@example.com", keepOriginal: true, accepted: [],
+  });
+  assert.equal(view.kind, "application");
+  assert.equal(view.application.recipient, "recruiting@example.com");
+  assert.equal(view.application.jobId, job.id);
+  assert.equal(f.store.get<typeof job>("job", job.id).recipient, undefined);
+
+  const [batch] = workspaceView(f.workspace).mailBatches;
+  const reopened = await restoreView(f.workspace, { action: "batch-view", id: batch.id });
+  assert.equal(reopened?.kind === "batch" && reopened.batch.items[0].applicationId, view.application.id);
+  assert.equal(f.sends(), 0);
+});
+
 test("侧栏查找直接产生岗位清单，空结果保留读取失败原因", async (t) => {
   const f = await setup(t);
   const tasks = new Tasks(f.workspace, async (url) => ({
@@ -435,6 +477,12 @@ test("侧栏查找直接产生岗位清单，空结果保留读取失败原因",
   assert.equal(view.candidates.length, 1);
   assert.equal(view.candidates[0].job.role, "数据分析师");
   assert.equal(view.search?.status, "complete");
+  const html = renderToStaticMarkup(createElement(SearchGoals, {
+    data: workspaceView(f.workspace), resumeId: f.resume.id, busy: false, open: async () => true,
+  }));
+  assert.match(html, /查找匹配岗位/);
+  assert.match(html, /打开目标/);
+  assert.match(html, /数据分析/);
   const failed = await humanAction(
     f.workspace,
     {

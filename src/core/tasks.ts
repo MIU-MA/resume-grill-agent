@@ -72,6 +72,7 @@ export const batchChoice = z
     keepOriginal: z.boolean().default(false),
   })
   .strict();
+const batchChoiceWithRecipient = batchChoice.extend({ recipient: z.email().optional() });
 const normalized = (s: string) =>
   s.normalize("NFKC").replace(/\s/g, "").toLowerCase();
 
@@ -288,7 +289,7 @@ export class Tasks {
   }
   async prepareBatch(goalId: string, choices: unknown) {
     const selected = z
-      .array(batchChoice)
+      .array(batchChoiceWithRecipient)
       .min(1)
       .max(20)
       .refine(
@@ -337,7 +338,7 @@ export class Tasks {
   }
   private async buildBatch(
     goalId: string,
-    selected: z.infer<typeof batchChoice>[],
+    selected: z.infer<typeof batchChoiceWithRecipient>[],
     requestHash: string,
   ) {
     const store = this.workspace.store,
@@ -382,8 +383,9 @@ export class Tasks {
         if (!candidate) throw new Error("岗位不符合当前目标或命中排除条件。");
         if (!candidate.locationVerified)
           throw new Error("JD 尚无目标城市证据，请核对地点后再准备。");
-        if (!job.recipient)
-          throw new Error("尚无明确招聘邮箱；需核对投递渠道，不猜测邮箱。");
+        const recipient = choice.recipient ?? job.recipient;
+        if (!recipient)
+          throw new Error("尚无明确招聘邮箱，请核对投递渠道。");
         let plan: unknown;
         if (choice.keepOriginal) {
           if (choice.accepted.length)
@@ -438,7 +440,7 @@ export class Tasks {
         const application = await this.workspace.prepare(
           job.id,
           version.id,
-          job.recipient,
+          recipient,
           `应聘${job.role}`,
           `您好：\n\n我想应聘${job.company || "贵公司"}的${job.role}岗位。附件是针对该岗位整理的简历。\n\n感谢查看。`,
         );

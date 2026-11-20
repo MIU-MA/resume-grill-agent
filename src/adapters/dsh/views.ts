@@ -1,6 +1,6 @@
 import { Workspace, type Job, type Resume } from "../../core/workspace.js";
 import type { TailoringPlan } from "../../domain/resume-tailoring.js";
-import { Tasks, type Goal, type SearchRun } from "../../core/tasks.js";
+import { Tasks, type Batch, type Goal, type SearchRun } from "../../core/tasks.js";
 import { mailSendingEnabled } from "../../infrastructure/smtp.js";
 import { careerSites } from "../../infrastructure/careers/sites.js";
 import type { CareerScan } from "../../core/careers.js";
@@ -74,6 +74,7 @@ export function profileView(
   workspace: Workspace,
   resumeId: string,
   jobId?: string,
+  goalId?: string,
 ) {
   return {
     v: 1 as const,
@@ -81,6 +82,7 @@ export function profileView(
     resume: workspace.resume(resumeId),
     profile: new ResumeProfiles(workspace).draft(resumeId),
     jobId,
+    ...(goalId ? { goalId } : {}),
   };
 }
 export function resumeView(workspace: Workspace, id: string) {
@@ -154,6 +156,7 @@ export function goalView(workspace: Workspace, goalId: string) {
   return {
     v: 1 as const,
     kind: "goal" as const,
+    capabilities: workspace.capabilities,
     goal: workspace.store.get<Goal>("goal", goalId),
     candidates: new Tasks(workspace).candidates(goalId),
     search: workspace.store
@@ -242,6 +245,11 @@ export function workspaceView(workspace: Workspace) {
             }
           : undefined,
       })),
+    mailBatches: hasCapability(workspace.capabilities, "mail")
+      ? workspace.store.list<Batch>("batch").map(({ id, goalId, createdAt, items }) => ({
+          id, goalId, createdAt, count: items.length,
+        }))
+      : [],
     applications: hasCapability(workspace.capabilities, "mail")
       ? workspace.history().filter((item) => item.status !== "superseded")
       : [],

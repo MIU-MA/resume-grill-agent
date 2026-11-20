@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { NativeView } from "./views.js";
 import { ApplicationReview } from "./ApplicationReview.js";
+import { JobMailCompose } from "./JobMailCompose.js";
 import { nativeCommandError, nativeControls, type ReadResumeImage } from "./controls.js";
 import { notifyWorkspaceChanged, onWorkspaceChanged } from "./updates.js";
 import { ResumeDocument } from "./ResumeDocument.js";
@@ -302,6 +303,7 @@ export function NativeCard({
                     action: "profile",
                     resumeId: view.resumeId,
                     jobId: view.jobId,
+                    ...(view.goalId ? { goalId: view.goalId } : {}),
                   })
                 }
               >
@@ -397,23 +399,6 @@ export function NativeCard({
                     保存所选修改并核对 BOSS 图片
                   </button>
                 )}
-              {!bossSource && hasCapability(view.capabilities, "mail") && view.job.recipient && (
-                <button
-                  disabled={busy || !view.job.recipient}
-                  onClick={() =>
-                    void run({
-                      action: "prepare",
-                      resumeId: view.resumeId,
-                      jobId: view.jobId,
-                      proposalId: view.proposal!.id,
-                      accepted,
-                      ...(view.goalId ? { goalId: view.goalId } : {}),
-                    })
-                  }
-                >
-                  用所选修改准备邮件
-                </button>
-              )}
             </>
           ) : (
             <>
@@ -430,6 +415,9 @@ export function NativeCard({
             <button disabled={busy} onClick={() => void question(reviewRequest(view))}>
               重新生成建议
             </button>
+          )}
+          {!bossSource && hasCapability(view.capabilities, "mail") && (
+            <JobMailCompose key={view.jobId} view={view} accepted={accepted} busy={busy} run={run} />
           )}
           {!bossReview && (
             <button
@@ -544,6 +532,18 @@ export function NativeCard({
           >
             分析所选 {selected.length} 个岗位
           </button>
+          {hasCapability(view.capabilities, "mail") && (
+            <button
+              disabled={busy || !selected.length}
+              onClick={() => void run({
+                action: "batch",
+                goalId: view.goal.id,
+                choices: selected.map((jobId) => ({ jobId, keepOriginal: true })),
+              })}
+            >
+              用简历原文准备所选邮件
+            </button>
+          )}
           <button
             disabled={busy}
             onClick={() => void run({ action: "goal", goalId: view.goal.id })}
