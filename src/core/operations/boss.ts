@@ -5,6 +5,7 @@ import { Boss } from "../boss.js";
 import { BossDeliveries } from "../boss-deliveries.js";
 import { BossGroups } from "../boss-groups.js";
 import { BossShortlists } from "../boss-shortlists.js";
+import { bossBatchLimit } from "../../domain/boss.js";
 
 export function bossOperations(workspace: Workspace): OperationModule {
   const boss = new Boss(workspace);
@@ -79,8 +80,8 @@ export function bossOperations(workspace: Workspace): OperationModule {
       );
       tool(
         "boss_prepare_group",
-        "将用户选定且已冻结的岗位附件整理为整批核对卡，最多 10 个岗位。只准备，不确认或执行。",
-        { deliveryIds: z.array(z.string().uuid()).min(1).max(10) },
+        `将用户选定且已冻结的岗位附件整理为整批核对卡，最多 ${bossBatchLimit} 个岗位。只准备，不确认或执行。`,
+        { deliveryIds: z.array(z.string().uuid()).min(1).max(bossBatchLimit) },
         ({ deliveryIds }) => new BossGroups(workspace).prepare(deliveryIds),
       );
       tool(

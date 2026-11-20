@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { NativeView } from "./views.js";
-import type { BossBrowserChoice } from "../../domain/boss.js";
+import { bossBatchLimit, type BossBrowserChoice } from "../../domain/boss.js";
 import { BossDeliveryPanel } from "./BossDeliveryPanel.js";
 import type { ReadResumeImage } from "./controls.js";
 import { JobList, JobListRow } from "./JobList.js";
@@ -178,7 +178,7 @@ export function BossWorkbench({
         </button>
       ) : null}
       {hasResume && !needsDirection && !scan && (
-        <p className="rg-note">自动搜索并准备最多 3 个岗位，确认后投递。</p>
+        <p className="rg-note">从当前页最多准备 {bossBatchLimit} 个匹配岗位，确认后投递。</p>
       )}
       </div>
       {view.note && <p role="status">{view.note}</p>}
@@ -217,7 +217,7 @@ export function BossWorkbench({
                         <button className="rg-quiet-action" disabled={busy || !view.connected || !selected?.hasPdf}
                           onClick={() => void run({
                             action: "boss-queue-add", scanId: scan.id, url: job.url, resumeId,
-                            ...(pendingGroup && pendingGroup.items.length < 10 ? { groupId: pendingGroup.id } : {}),
+                            ...(pendingGroup && pendingGroup.items.length < bossBatchLimit ? { groupId: pendingGroup.id } : {}),
                           })}>
                           加入待投
                         </button>

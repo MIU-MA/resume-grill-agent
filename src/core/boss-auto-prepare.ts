@@ -4,11 +4,8 @@ import { BossGroups } from "./boss-groups.js";
 import { BossShortlists } from "./boss-shortlists.js";
 import type { Goal } from "./tasks.js";
 import type { Workspace } from "./workspace.js";
-import type { BossBrowserChoice, BossScan } from "../domain/boss.js";
+import { bossBatchLimit, type BossBrowserChoice, type BossScan } from "../domain/boss.js";
 import { extname } from "node:path";
-
-const detailBudget = 5;
-const batchSize = 3;
 
 export class BossAutoPrepare {
   constructor(readonly workspace: Workspace) {}
@@ -57,10 +54,10 @@ export class BossAutoPrepare {
       exclude: saved?.exclude ?? [],
       sources: [],
       skipAppliedCompanies: saved?.skipAppliedCompanies ?? true,
-      limit: saved?.limit ?? detailBudget,
+      limit: saved?.limit ?? bossBatchLimit,
     };
     const shortlist = await new BossShortlists(this.workspace)
-      .collectForGoal(goal, scan.id, detailBudget);
+      .collectForGoal(goal, scan.id, bossBatchLimit);
     const candidates = shortlist.items
       .filter((item) => item.status === "candidate" || item.status === "needs_review")
       .sort((a, b) =>
@@ -73,7 +70,6 @@ export class BossAutoPrepare {
     const ids: string[] = [];
     let skipped = 0;
     for (const { jobId, url } of candidates) {
-      if (ids.length >= batchSize) break;
       if (!jobId || seen.has(url)) continue;
       try {
         ids.push((await deliveries.prepare(resumeId, jobId)).id);

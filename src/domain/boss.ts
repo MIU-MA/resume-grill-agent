@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const bossBatchLimit = 10;
+
 export const bossBrowserChoice = z.enum(["auto", "ego", "edge", "chrome"]);
 export type BossBrowserChoice = z.infer<typeof bossBrowserChoice>;
 export type BossBrowserBackend = Exclude<BossBrowserChoice, "auto">;

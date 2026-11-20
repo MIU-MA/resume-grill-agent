@@ -71,7 +71,7 @@ npm run package:plugin
 
 ### BOSS 投递
 
-在 **Resume Grill → BOSS 投递** 选主简历，点「找岗位并准备投递」。插件搜索、读 JD，并准备最多 3 个岗位。核对前可增减岗位、换简历或调整顺序。[BOSS 使用说明](docs/boss.md)
+在 **Resume Grill → BOSS 投递** 选主简历，点「找岗位并准备投递」。插件搜索并读取 JD，从当前页最多准备 10 个匹配岗位。核对前可增减岗位、换简历或调整顺序。[BOSS 使用说明](docs/boss.md)
 
 ![DSH 中的 BOSS 岗位列表和待投任务，使用演示数据](docs/screenshots/dsh-boss.png)
 

@@ -7,7 +7,7 @@ import { BossGroups } from "../../core/boss-groups.js";
 import { BossShortlists } from "../../core/boss-shortlists.js";
 import { BossAutoPrepare } from "../../core/boss-auto-prepare.js";
 import { BossArchives, bossTaskKinds } from "../../core/boss-archives.js";
-import { bossBrowserChoice } from "../../domain/boss.js";
+import { bossBatchLimit, bossBrowserChoice } from "../../domain/boss.js";
 
 export const bossActionSchema = z.discriminatedUnion("action", [
   z.strictObject({
@@ -49,7 +49,7 @@ export const bossActionSchema = z.discriminatedUnion("action", [
   z
     .object({
       action: z.literal("boss-group-prepare"),
-      ids: z.array(z.uuid()).min(1).max(10),
+      ids: z.array(z.uuid()).min(1).max(bossBatchLimit),
     })
     .strict(),
   z

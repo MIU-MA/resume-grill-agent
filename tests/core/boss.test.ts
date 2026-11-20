@@ -657,6 +657,32 @@ test("一次搜索自动核对匹配 JD 并冻结投递，移出岗位后旧批�
   }), /过期/);
   assert.equal(f.state.confirmations, undefined);
 });
+test("自动准备从当前页生成 10 个匹配岗位的待确认批次", async (t) => {
+  const f = await fixture(t);
+  f.boss.connect(f.link);
+  const resume = await f.workspace.createResume("主简历", "求职意向：Go开发");
+  const jobs = Array.from({ length: 11 }, (_, index) => ({
+    url: `https://www.zhipin.com/job_detail/limit-${index}.html`,
+    title: "Go开发",
+    company: `演示公司 ${index + 1}`,
+  }));
+  f.state.searchRows = jobs;
+  f.state.details = Object.fromEntries(jobs.map((job) => [
+    job.url, { ...f.state.detail, ...job },
+  ]));
+
+  const view = await humanAction(f.workspace, { action: "boss-auto-prepare", resumeId: resume.id });
+  assert.equal(view.kind, "boss");
+  const group = view.groups.find((item) => item.id === view.groupFocus);
+  assert.equal(group?.status, "prepared");
+  assert.equal(group?.items.length, 10);
+  assert.equal(view.deliveries.length, 10);
+  assert.equal(view.shortlists[0].detailsRead, 10);
+  assert.equal(view.shortlists[0].items[10].status, "not_read");
+  assert.equal(f.requests.filter((path) => path === "/boss-batch/preview").length, 10);
+  assert.equal(f.requests.includes("/boss-batch/confirm"), false);
+});
+
 test("上传文本简历仍能找岗位，但明确说明没有可用于 BOSS 的 PDF", async (t) => {
   const f = await fixture(t);
   f.boss.connect(f.link);

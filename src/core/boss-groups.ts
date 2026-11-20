@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Workspace } from "./workspace.js";
 import { BossDeliveries, type BossDelivery } from "./boss-deliveries.js";
 import { BossArchives } from "./boss-archives.js";
+import { bossBatchLimit } from "../domain/boss.js";
 
 export type BossGroup = {
   id: string;
@@ -102,7 +103,7 @@ export class BossGroups {
   private async prepareGroup(ids: string[], edit: Edit = {}) {
     z.array(z.uuid())
       .min(1)
-      .max(10)
+      .max(bossBatchLimit)
       .refine((a) => new Set(a).size === a.length)
       .parse(ids);
     const deliveries = new BossDeliveries(this.workspace);
@@ -168,7 +169,8 @@ export class BossGroups {
   }
   async add(resumeId: string, jobId: string, groupId?: string) {
     const group = groupId ? this.requireEditable(groupId) : undefined;
-    if ((group?.items.length ?? 0) >= 10) throw new Error("每批最多 10 个岗位，请先处理当前批次。");
+    if (group && group.items.length >= bossBatchLimit)
+      throw new Error(`每批最多 ${bossBatchLimit} 个岗位，请先处理当前批次。`);
     const ids = group?.items.map((item) => item.deliveryId) ?? [];
     return new BossDeliveries(this.workspace).withDraft(resumeId, jobId, (draft) =>
       this.prepareGroup([...ids, draft.id], { groupId, draft, adding: true }));
