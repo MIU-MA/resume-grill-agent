@@ -97,7 +97,7 @@ export function BossDeliveryPanel({
           <p>
             简历：{d.resumeName} · {d.images.length} 张图片
           </p>
-          <p>首次沟通使用 BOSS 账号默认招呼，不追加自定义文字。</p>
+          <p>实验功能。首次沟通使用账号默认招呼，简历以聊天图片发送。</p>
           <BossResumePreview images={d.images} readImage={readResumeImage} />
           {d.error && <p role="alert">{d.error}</p>}
           {archived.has(d.id) && (

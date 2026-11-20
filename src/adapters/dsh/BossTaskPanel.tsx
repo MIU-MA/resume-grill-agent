@@ -75,7 +75,7 @@ export function BossTaskPanel({
               </article>
             );
           })}
-          {!archived && g.status === "prepared" && <p>确认后按顺序发出 BOSS 账号默认招呼和简历图片。</p>}
+          {!archived && g.status === "prepared" && <p>实验功能。确认后按顺序发出账号默认招呼，简历以聊天图片发送。</p>}
           {g.error && <p role="alert">{g.error}</p>}
           {g.status === "prepared" && !archived && (
             <>

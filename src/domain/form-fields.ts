@@ -8,6 +8,7 @@ export const formFieldSchema = z
     required: z.boolean().default(false),
     value: z.string().max(10000).default(""),
     options: z.array(z.string().max(300)).max(300).default([]),
+    manual: z.boolean().optional(),
     group: z.enum(["education", "work", "project"]).optional(),
     index: z.number().int().min(0).max(29).optional(),
   })

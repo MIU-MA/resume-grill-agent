@@ -13,6 +13,7 @@ import { applicationPage } from "../../dist/infrastructure/website-browser.js";
 // Intercept all traffic. Exercise the native command and the real browser DOM,
 // with a private temporary workspace and without a DSH model or browser MCP.
 const origin = "https://careers.example.test";
+const ats = "https://hiring.example.test";
 const home = await mkdtemp(join(tmpdir(), "resume-website-form-"));
 const store = new Store(home);
 const workspace = new Workspace(store);
@@ -40,6 +41,21 @@ try {
   await page.route("**/*", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    if (url.origin === ats && url.pathname === "/apply/1")
+      return route.fulfill({ contentType: "text/html; charset=utf-8", body: `<!doctype html>
+        <main>
+          <div role="form" aria-label="职位申请">
+            <span id="name-label">姓名</span><input aria-labelledby="name-label" id="ats-name">
+            <input aria-label="手机" type="tel" required>
+            <div role="group" aria-label="教育经历">
+              <input aria-label="学校">
+              <button role="combobox" aria-label="学历" aria-required="true" onclick="document.body.dataset.clicked = 'yes'">请选择</button>
+            </div>
+            <div contenteditable="true" role="textbox" aria-label="项目经历"></div>
+            <label>简历附件<input type="file" accept=".pdf" hidden></label>
+            <button onclick="document.body.dataset.submitted = 'yes'">提交申请</button>
+          </div>
+        </main>` });
     if (url.origin !== origin) return route.abort();
     if (url.pathname === "/submit") {
       submissions++;
@@ -79,10 +95,10 @@ try {
     systemPrompt: { section: () => () => {} },
   }, workspace, undefined, undefined, undefined, new WebsiteFill(workspace, async (_, url) => {
     if (opened++ === 0) await page.goto(url);
-    return applicationPage(page);
+    return applicationPage(page, async (host) => assert.equal(host, "hiring.example.test"));
   }));
-  const fill = (jobId) => handler({ rawInput: JSON.stringify({
-    action: "website-fill", resumeId: resume.id, jobId,
+  const fill = (jobId, approvalId) => handler({ rawInput: JSON.stringify({
+    action: "website-fill", resumeId: resume.id, jobId, approvalId,
   }), signal: new AbortController().signal });
 
   const result = await fill(job.id);
@@ -111,9 +127,23 @@ try {
   assert.equal(rejected.kind, "error");
   assert.match(rejected.text, /BOSS/);
   assert.equal(opened, 3, "BOSS 链接不能唤起官网浏览器");
+  await page.goto(`${ats}/apply/1`);
+  const pending = JSON.parse((await fill(job.id)).text);
+  assert.match(pending.websiteNotice, /hiring\.example\.test/);
+  assert.ok(pending.websiteApprovalId);
+  assert.equal(await page.locator("#ats-name").inputValue(), "");
+  const confirmed = JSON.parse((await fill(job.id, pending.websiteApprovalId)).text);
+  assert.equal(await page.locator("#ats-name").inputValue(), "演示用户");
+  assert.equal(await page.getByLabel("学校").inputValue(), "示例大学");
+  assert.match(await page.getByRole("textbox", { name: "项目经历" }).innerText(), /Go API/);
+  assert.equal(await page.locator("input[type=file]").evaluate((node) => node.files[0].name), "示例简历.pdf");
+  assert.equal(confirmed.formRun.status, "needs_input");
+  assert.ok(confirmed.formRun.issues.some((issue) => issue.label === "学历" && /手动/.test(issue.reason)));
+  assert.equal(await page.locator("body").getAttribute("data-clicked"), null);
+  assert.equal(await page.locator("body").getAttribute("data-submitted"), null);
   assert.equal(submissions, 0);
   assert.equal(workspace.history().length, 0);
-  console.log(JSON.stringify({ passed: true, checks: 7, uploads, submissions, mailRecords: 0 }));
+  console.log(JSON.stringify({ passed: true, nativeChecks: 7, crossOriginSpa: true, uploads, submissions, mailRecords: 0 }));
 } finally {
   await browser?.close();
   store.close();

@@ -50,6 +50,7 @@ const websiteFillAction = z.strictObject({
   resumeId: z.string().min(1),
   jobId: z.string().min(1),
   goalId: z.string().min(1).optional(),
+  approvalId: z.uuid().optional(),
 });
 // DSH's schema subset omits min/max/format. Zod still enforces the full schema in execute.
 export function nativeSchema(schema: any): any {
@@ -132,13 +133,13 @@ export function mount(
             requireCapability(workspace, "website");
             const request = websiteFillAction.safeParse(input);
             if (!request.success) throw new Error("官网代填缺少简历或岗位，请重新打开岗位卡片再试。");
-            const { resumeId, jobId, goalId } = request.data;
+            const { resumeId, jobId, goalId, approvalId } = request.data;
             if (!websiteFill) throw new Error("当前宿主未启用内置官网代填。");
             reviewView(workspace, resumeId, jobId, undefined, goalId);
-            const websiteNotice = await websiteFill.fill(resumeId, jobId, signal);
+            const result = await websiteFill.fill(resumeId, jobId, signal, approvalId);
             return {
               kind: "success",
-              text: JSON.stringify(reviewView(workspace, resumeId, jobId, undefined, goalId, websiteNotice)),
+              text: JSON.stringify(reviewView(workspace, resumeId, jobId, undefined, goalId, result.notice, result.approvalId)),
             };
           }
           if (input.action === "browser-check") {

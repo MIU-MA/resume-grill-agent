@@ -323,11 +323,12 @@ export function NativeCard({
                     action: "website-fill",
                     resumeId: view.resumeId,
                     jobId: view.jobId,
+                    ...(view.websiteApprovalId ? { approvalId: view.websiteApprovalId } : {}),
                     ...(view.goalId ? { goalId: view.goalId } : {}),
                   })
                 }
               >
-                官网代填
+                {view.websiteApprovalId ? "确认并填写这个申请页" : "官网代填"}
               </button>
               {view.canRecordWebsiteSubmission && (view.websiteSubmissionAt ? (
                 <p role="status">已记入投递记录。</p>

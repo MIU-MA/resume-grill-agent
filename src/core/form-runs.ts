@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Workspace } from "./workspace.js";
 import { applicationFormContext } from "./application-forms.js";
@@ -15,6 +15,7 @@ export type FormRun = {
   profileId: string;
   attachmentHash: string;
   origin: string;
+  targetDigest?: string;
   createdAt: number;
   updatedAt: number;
   revision: number;
@@ -55,6 +56,7 @@ export const observedFields = z
     (rows) => new Set(rows.map((f) => f.uid)).size === rows.length,
     "字段 UID 不能重复",
   );
+const targetDigest = (url: string) => createHash("sha256").update(url).digest("hex");
 export class FormRuns {
   constructor(readonly workspace: Workspace) {}
   private put(run: FormRun) {
@@ -62,13 +64,14 @@ export class FormRuns {
     this.workspace.store.put("form-run", run);
     return run;
   }
-  async start(resumeId: string, jobId: string) {
+  async start(resumeId: string, jobId: string, approvedTarget?: string) {
     const context = await applicationFormContext(
       this.workspace,
       resumeId,
       jobId,
     );
     const origin = new URL(context.url).origin;
+    const digest = approvedTarget ? targetDigest(approvedTarget) : undefined;
     return this.workspace.store.transaction(() => {
       const existing = this.workspace.store
         .list<FormRun>("form-run")
@@ -77,6 +80,7 @@ export class FormRuns {
             r.resumeId === resumeId &&
             r.jobId === jobId &&
             r.origin === origin &&
+            r.targetDigest === digest &&
             r.profileId === context.profileId &&
             r.attachmentHash === context.attachment.sha256 &&
             r.status !== "stale",
@@ -90,6 +94,7 @@ export class FormRuns {
         profileId: context.profileId,
         attachmentHash: context.attachment.sha256,
         origin,
+        ...(digest ? { targetDigest: digest } : {}),
         createdAt: now,
         updatedAt: now,
         revision: 0,
@@ -124,11 +129,18 @@ export class FormRuns {
       });
     }
   }
-  async plan(id: string, url: string, input: unknown) {
+  private matchesTarget(run: FormRun, url: string, authorizedTarget?: string) {
+    if (run.targetDigest)
+      return url === authorizedTarget && targetDigest(url) === run.targetDigest;
+    return new URL(url).origin === run.origin;
+  }
+  async plan(id: string, url: string, input: unknown, authorizedTarget?: string) {
     requireCompanyWebsite(url);
     const { run, context } = await this.active(id),
       fields = observedFields.parse(input);
-    if (new URL(url).origin !== run.origin) {
+    if (run.targetDigest && !this.matchesTarget(run, url, authorizedTarget))
+      throw new Error("请在官网代填卡片核对第三方申请页。");
+    if (!this.matchesTarget(run, url, authorizedTarget)) {
       return this.put({
         ...run,
         status: "needs_review",
@@ -157,6 +169,10 @@ export class FormRuns {
           reason,
           required: field.required,
         });
+      if (field.manual) {
+        issue("请在招聘页面手动完成这个控件");
+        continue;
+      }
       if (match.path === "attachment") {
         const selected =
           field.value.replaceAll("\\", "/").split("/").at(-1) ?? "";
@@ -270,10 +286,11 @@ export class FormRuns {
     url: string,
     values: Array<{ uid: string; value: string }>,
     uploadedName?: string,
+    authorizedTarget?: string,
   ) {
     requireCompanyWebsite(url);
     const { run } = await this.active(id);
-    if (new URL(url).origin !== run.origin)
+    if (!this.matchesTarget(run, url, authorizedTarget))
       throw new Error("回读域名与填写任务不一致");
     const seen = new Map(values.map((f) => [f.uid, f.value]));
     if (seen.size !== values.length) throw new Error("回读 UID 重复");

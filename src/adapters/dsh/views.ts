@@ -100,6 +100,7 @@ export function reviewView(
   proposalId?: string,
   goalId?: string,
   websiteNotice?: string,
+  websiteApprovalId?: string,
 ) {
   const resume = workspace.resume(resumeId),
     job = workspace.store.get<Job>("job", jobId);
@@ -137,6 +138,7 @@ export function reviewView(
     canRecordWebsiteSubmission: website,
     ...(websiteSubmission ? { websiteSubmissionAt: websiteSubmission.submittedAt } : {}),
     ...(websiteNotice ? { websiteNotice } : {}),
+    ...(websiteApprovalId ? { websiteApprovalId } : {}),
     ...(goalId ? { goalId } : {}),
     ...(proposal ? { proposal } : {}),
   };
