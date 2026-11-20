@@ -1,12 +1,18 @@
 import { useState } from "react";
 import type { NativeView } from "./views.js";
+import type { BossBrowserChoice } from "../../domain/boss.js";
 import { BossDeliveryPanel } from "./BossDeliveryPanel.js";
 import type { ReadResumeImage } from "./controls.js";
 import { JobList, JobListRow } from "./JobList.js";
 import { WorkbenchHeading } from "./WorkbenchHeading.js";
 import { bossQueueStatus } from "./boss-task-view.js";
 
-const browserNames: Record<string, string> = { ego: "ego", edge: "Edge", chrome: "Chrome" };
+const browserOptions = [
+  ["auto", "自动"],
+  ["ego", "ego"],
+  ["edge", "Edge"],
+  ["chrome", "Chrome"],
+] as const satisfies ReadonlyArray<readonly [BossBrowserChoice, string]>;
 
 export function BossWorkbench({
   view,
@@ -22,6 +28,7 @@ export function BossWorkbench({
   readResumeImage?: ReadResumeImage;
 }) {
   const [query, setQuery] = useState("");
+  const [browserChoice, setBrowserChoice] = useState<BossBrowserChoice>("auto");
   const [selectedResume, setResume] = useState<string>();
   const [archivedOnly, setArchivedOnly] = useState(false);
   const resumes = view.resumes.filter((resume) => !resume.jobId);
@@ -39,8 +46,10 @@ export function BossWorkbench({
     !needsDirection && (!latest?.resumeId || latest.resumeId === resumeId)
       ? latest
       : undefined;
-  const state = view.connected ? scan?.state : undefined;
   const browser = view.browserState?.backend;
+  const browserName = browserOptions.find(([value]) => value === browser)?.[1];
+  const switchingBrowser = view.connected && browserChoice !== "auto" && browserChoice !== browser;
+  const state = view.connected && !switchingBrowser ? scan?.state : undefined;
   const readCurrent = state === "verification" || (state === "loading" && !scan?.searchDeferred);
   const resumeAction =
     state === "login"
@@ -54,6 +63,7 @@ export function BossWorkbench({
     void run({
       action: "boss-auto-prepare",
       resumeId,
+      backend: browserChoice,
       ...(override ? { query: override } : {}),
       ...(readCurrent ? { readCurrent: true } : {}),
     });
@@ -65,26 +75,46 @@ export function BossWorkbench({
   const pendingGroup = view.groups.find((g) => g.status === "prepared" && g.expiresAt !== 0 &&
     !view.archivedTaskIds?.includes(g.id) && g.items.every((item) => view.deliveries.some((d) =>
       d.id === item.deliveryId && d.status === "prepared" && !d.withdrawnAt && !view.archivedTaskIds?.includes(d.id))));
+  const browserControls = (focus?: { groupFocus?: string; deliveryFocus?: string }) => (
+    <div className="rg-boss-browser">
+      <label>
+        浏览器
+        <select
+          value={browserChoice}
+          disabled={busy}
+          onChange={(event) => setBrowserChoice(event.target.value as BossBrowserChoice)}
+        >
+          {browserOptions.map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      </label>
+      {(!view.connected || switchingBrowser) && (
+        <button disabled={busy} onClick={() => void run({
+          action: "boss-connect",
+          backend: browserChoice,
+          ...focus,
+        })}>
+          {switchingBrowser ? "切换浏览器" : "打开 BOSS 浏览器"}
+        </button>
+      )}
+      {view.connected && <p className="rg-note">已连接 {browserName ?? "BOSS 浏览器"}</p>}
+    </div>
+  );
   if (focusedDelivery || focusedGroup) {
     return (
       <section aria-label="BOSS 投递核对">
         <button disabled={busy} onClick={() => void run({ action: "boss" })}>
           返回岗位
         </button>
-        {!view.connected && !focusedIsArchived && ((focusedDelivery?.status === "prepared" && !focusedDelivery.withdrawnAt) ||
-          (focusedGroup?.status === "prepared" && focusedGroup.expiresAt > 0)) && (
-          <button disabled={busy} onClick={() => void run({
-            action: "boss-connect",
-            ...(focusedGroup ? { groupFocus: focusedGroup.id } : { deliveryFocus: focusedDelivery?.id }),
-          })}>
-            连接浏览器
-          </button>
-        )}
+        {!focusedIsArchived && ((focusedDelivery?.status === "prepared" && !focusedDelivery.withdrawnAt) ||
+          (focusedGroup?.status === "prepared" && focusedGroup.expiresAt > 0)) &&
+          browserControls(focusedGroup ? { groupFocus: focusedGroup.id } : { deliveryFocus: focusedDelivery?.id })}
         {view.note && <p role="status">{view.note}</p>}
         <BossDeliveryPanel
-          key={focusedDelivery?.id ?? focusedGroup?.id}
+          key={`${focusedDelivery?.id ?? focusedGroup?.id}:${browser ?? ""}`}
           view={view}
-          busy={busy}
+          busy={busy || switchingBrowser}
           run={run}
           readResumeImage={readResumeImage}
         />
@@ -95,6 +125,7 @@ export function BossWorkbench({
     <section aria-label="BOSS 投递">
       <WorkbenchHeading icon="boss" title="BOSS 投递" />
       <div className="rg-boss-start">
+      {browserControls()}
       {resumes.length === 1 && <p>简历：{resumes[0].name}</p>}
       {resumes.length > 1 && (
         <label>
@@ -138,7 +169,7 @@ export function BossWorkbench({
           disabled={busy}
           onClick={() => {
             resumeSearch(
-              scan?.blocked ? scan.requestedQuery ?? scan.query : undefined,
+              scan?.blocked || switchingBrowser ? scan?.requestedQuery ?? scan?.query ?? query : query,
               readCurrent,
             );
           }}
@@ -146,19 +177,12 @@ export function BossWorkbench({
           {busy ? "正在处理…" : resumeAction}
         </button>
       ) : null}
-      {view.connected ? (
-        <p className="rg-note">已连接 {browser ? browserNames[browser] ?? "BOSS 浏览器" : "BOSS 浏览器"}</p>
-      ) : (
-        <button disabled={busy} onClick={() => void run({ action: "boss-connect" })}>
-          打开 BOSS 浏览器
-        </button>
-      )}
       {hasResume && !needsDirection && !scan && (
         <p className="rg-note">自动搜索并准备最多 3 个岗位，确认后投递。</p>
       )}
       </div>
       {view.note && <p role="status">{view.note}</p>}
-      {scan && (
+      {scan && !switchingBrowser && (
         <section className="rg-boss-results" aria-label="搜索结果">
           {scan.blocked ? (
             <p role="status">{scan.blocked}</p>

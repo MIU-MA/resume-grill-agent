@@ -567,6 +567,23 @@
 .rg-boss-start label { margin-top: 0; }
 .rg-boss-start > :first-child { margin-top: 0; }
 .rg-boss-start > :last-child { margin-bottom: 0; }
+.rg-boss-browser {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 0 10px;
+}
+.rg-boss-browser label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rg-boss-browser label,
+.rg-boss-browser select,
+.rg-boss-browser button,
+.rg-boss-browser p { margin: 0; }
+.rg-boss-browser select { width: auto; }
 .rg-boss-preview-pages {
   display: grid;
   gap: 12px;

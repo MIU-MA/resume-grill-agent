@@ -53,6 +53,7 @@ export type BossScan = {
   readId: string;
   createdAt: number;
   resumeId?: string;
+  browserSessionId?: string;
   jobs: z.infer<typeof bossJob>[];
   query?: string;
   requestedQuery?: string;

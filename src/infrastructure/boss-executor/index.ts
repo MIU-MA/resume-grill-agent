@@ -34,6 +34,7 @@ const browserNames = {
 export class BossExecutor {
   private browser?: BossBrowserReader;
   private page?: Page;
+  private pageSessionId?: string;
   private busy = false;
   private running = false;
   private closing = false;
@@ -78,6 +79,10 @@ export class BossExecutor {
     );
   }
 
+  get browserSessionId() {
+    return this.ready ? this.pageSessionId : undefined;
+  }
+
   private async exclusive<T>(run: () => Promise<T>) {
     if (this.closing || this.busy || this.running)
       throw new Error("当前有 BOSS 操作正在进行，请等待完成或先暂停批次。");
@@ -94,49 +99,61 @@ export class BossExecutor {
 
   async connectBrowser(choice: BossBrowserChoice, preferred?: BossBrowserChoice) {
     return this.exclusive(async () => {
-      if (this.ready) return { ok: true };
-      if (
-        !this.browser?.isConnected() ||
-        (choice !== "auto" && this.backend !== choice)
-      ) {
-        await this.release().catch(() => {});
-        const candidates = choice !== "auto"
-          ? [choice]
-          : preferred && preferred !== "auto"
-            ? [preferred, ...autoBackends.filter((backend) => backend !== preferred)]
-            : autoBackends;
-        for (const backend of candidates) {
-          try {
-            this.browser = await this.openBrowser(backend);
-            this.backend = backend;
-            break;
-          } catch (error) {
-            if (choice !== "auto" && backend === "ego")
-              throw new Error(
-                "无法启动 ego。请完成 ego 的首次设置，或使用自动连接。",
-                { cause: error },
-              );
-          }
-        }
+      const current = this.browser?.isConnected() &&
+        (choice === "auto" || this.backend === choice)
+        ? this.browser
+        : undefined;
+      if (current && this.ready) return { ok: true };
+
+      const next = current ? undefined : await this.launchBrowser(choice, preferred);
+      // Keep an active session until the new browser has opened BOSS.
+      if (next && !this.ready) await this.replaceBrowser(next.browser, next.backend);
+      const browser = next?.browser ?? current!;
+      try {
+        const page = await browser.openBossPage();
+        if (!page)
+          throw new Error("浏览器里有多个 BOSS 页面，请保留一个岗位列表页后重试。");
+        if (next && browser !== this.browser)
+          await this.replaceBrowser(browser, next.backend);
+
+        this.page = page;
+        this.pageSessionId = randomUUID();
+        page.once("close", () => {
+          if (this.page === page) this.lastRead = undefined;
+        });
+        return { ok: true };
+      } catch (error) {
+        if (browser !== this.browser) await browser.close().catch(() => {});
+        throw error;
       }
-      const browser = this.browser;
-      if (!browser)
-        throw new Error(
-          choice === "auto"
-            ? "ego、Edge 和 Chrome 均无法连接。请确认至少安装了其中一个浏览器，再重试。"
-            : `无法启动 ${browserNames[choice]}。请检查是否已安装，或切换浏览器。`,
-        );
-      const page = await browser.openBossPage();
-      if (!page)
-        throw new Error(
-          "浏览器里有多个 BOSS 页面，请保留一个岗位列表页后重试。",
-        );
-      this.page = page;
-      page.once("close", () => {
-        if (this.page === page) this.lastRead = undefined;
-      });
-      return { ok: true };
     });
+  }
+
+  private async launchBrowser(choice: BossBrowserChoice, preferred?: BossBrowserChoice) {
+    const candidates = choice !== "auto"
+      ? [choice]
+      : preferred && preferred !== "auto"
+        ? [preferred, ...autoBackends.filter((backend) => backend !== preferred)]
+        : autoBackends;
+    for (const backend of candidates) {
+      try {
+        return { browser: await this.openBrowser(backend), backend };
+      } catch (error) {
+        if (choice !== "auto" && backend === "ego")
+          throw new Error("无法启动 ego。请完成 ego 的首次设置，或使用自动连接。", { cause: error });
+      }
+    }
+    throw new Error(
+      choice === "auto"
+        ? "ego、Edge 和 Chrome 均无法连接。请确认至少安装了其中一个浏览器，再重试。"
+        : `无法启动 ${browserNames[choice]}。请检查是否已安装，或切换浏览器。`,
+    );
+  }
+
+  private async replaceBrowser(browser: BossBrowserReader, backend: BossBrowserBackend) {
+    await this.release().catch(() => {});
+    this.browser = browser;
+    this.backend = backend;
   }
 
   private async release() {
@@ -144,6 +161,7 @@ export class BossExecutor {
     this.browser = undefined;
     this.backend = undefined;
     this.page = undefined;
+    this.pageSessionId = undefined;
     this.lastRead = undefined;
     await browser?.close();
   }

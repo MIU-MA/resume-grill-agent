@@ -30,9 +30,9 @@ export class BossAutoPrepare {
       ? this.workspace.store.list<BossScan>("boss-scan")
         .find((scan) => scan.resumeId === resumeId)
       : undefined;
-    const found = readCurrent && boss.connected
+    const found = readCurrent && !boss.needsBrowserConnection(backend)
       ? { scan: await boss.read(resumeId, query ?? previous?.requestedQuery ?? previous?.query) }
-      : await boss.findForResume(resumeId, query, backend);
+      : await boss.findForResume(resumeId, query ?? previous?.requestedQuery, backend);
     if (!found.scan) return { directionNeededFor: resumeId };
     const scan = found.scan;
     if (scan.blocked || !scan.jobs.length)

@@ -40,6 +40,7 @@ export function bossView(
 ) {
   const boss = new Boss(workspace);
   const browserState = boss.browserState;
+  const browserSessionId = boss.browserSessionId;
   return {
     v: 1 as const,
     kind: "boss" as const,
@@ -60,7 +61,9 @@ export function bossView(
       hasPdf: (r.pdf ?? r.original).toLowerCase().endsWith(".pdf"),
       ...(r.jobId ? { jobId: r.jobId } : {}),
     })),
-    scans: workspace.store.list<BossScan>("boss-scan").slice(0, 5),
+    scans: workspace.store.list<BossScan>("boss-scan")
+      .filter((scan) => !browserSessionId || scan.browserSessionId === browserSessionId)
+      .slice(0, 5),
     runs: workspace.store.list<BossRun>("boss-run"),
     deliveries: new BossDeliveries(workspace)
       .list()

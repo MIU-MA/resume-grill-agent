@@ -359,6 +359,79 @@ test("DSH 没有 ego 时可从内置执行器改用 Chrome，继续读取和准�
   await executor.close();
 });
 
+test("手动切换浏览器后在新会话搜索，启动失败时保留当前连接", async (t) => {
+  const f = await fixture(t);
+  const launches: string[] = [];
+  const searches: string[] = [];
+  const closed: string[] = [];
+  const executor = new BossExecutor(join(f.home, "boss-executor"), async (backend) => {
+    launches.push(backend);
+    if (backend === "ego") throw new Error("浏览器不可用");
+    let keyword = "";
+    let connected = true;
+    const address = "https://www.zhipin.com/web/geek/jobs";
+    const page = Object.assign(new EventEmitter(), {
+      url: () => address,
+      isClosed: () => !connected,
+      searchJobs: async (query: string) => {
+        searches.push(`${backend}:${query}`);
+        keyword = query;
+      },
+      evaluate: async () => ({
+        address,
+        query: keyword,
+        state: backend === "edge" ? "verification" : keyword ? "ready" : "unsupported",
+        jobs: keyword ? [{ url: f.url, title: keyword, company: "演示" }] : [],
+      }),
+    });
+    return {
+      isConnected: () => connected,
+      openBossPage: async () => page,
+      close: async () => {
+        connected = false;
+        closed.push(backend);
+      },
+    } as unknown as BossBrowserReader;
+  });
+  t.after(() => executor.close());
+  f.boss.useExecutor(executor);
+
+  const html = renderToStaticMarkup(createElement(BossWorkbench, {
+    view: bossView(f.workspace), busy: false, run: async () => {},
+  }));
+  for (const choice of ["auto", "ego", "edge", "chrome"])
+    assert.match(html, new RegExp(`<option value="${choice}"`));
+
+  const path = join(f.home, "简历.txt");
+  await writeFile(path, "教育经历\n统计学本科");
+  const resume = await f.workspace.importResume(path);
+  const edge = await humanAction(f.workspace, { action: "boss-connect", backend: "edge" });
+  assert.equal(edge.kind === "boss" && edge.browserState?.backend, "edge");
+  const search = { action: "boss-auto-prepare", resumeId: resume.id };
+  const verifying = await humanAction(f.workspace, { ...search, backend: "edge", query: "Go开发" });
+  assert.equal(verifying.kind === "boss" && verifying.scans[0]?.state, "verification");
+  assert.deepEqual(searches, []);
+
+  const chrome = await humanAction(f.workspace, { ...search, backend: "chrome", readCurrent: true });
+  assert.equal(chrome.kind === "boss" && chrome.browserState?.backend, "chrome");
+  assert.equal(chrome.kind === "boss" && chrome.scans.length, 1);
+  assert.equal(chrome.kind === "boss" && chrome.scans[0]?.jobs[0]?.title, "Go开发");
+  assert.deepEqual(searches, ["chrome:Go开发"]);
+  assert.deepEqual(closed, ["edge"]);
+
+  await assert.rejects(
+    humanAction(f.workspace, { action: "boss-connect", backend: "ego" }),
+    /无法启动 ego/,
+  );
+  assert.equal((await f.boss.status()).backend, "chrome");
+  assert.equal(f.boss.browserPreference, "chrome");
+  assert.deepEqual(closed, ["edge"]);
+
+  const switchedBack = await humanAction(f.workspace, { action: "boss-connect", backend: "edge" });
+  assert.equal(switchedBack.kind === "boss" && switchedBack.scans.length, 0);
+  assert.deepEqual(launches, ["edge", "chrome", "ego", "edge"]);
+});
+
 test("逐岗位绑定 PDF 版本和实际图片，拒绝跨 JD、图片篡改及模型批准", async (t) => {
   const f = await fixture(t);
   f.boss.connect(f.link);

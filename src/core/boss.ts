@@ -62,6 +62,15 @@ export class Boss {
     if (!this.connected) return undefined;
     return statuses.get(this.workspace);
   }
+  get browserSessionId() {
+    return connections.has(this.workspace)
+      ? undefined
+      : executors.get(this.workspace)?.browserSessionId;
+  }
+  needsBrowserConnection(backend?: BossBrowserChoice) {
+    return !this.connected ||
+      (backend !== undefined && backend !== "auto" && this.browserState?.backend !== backend);
+  }
   get browserPreference(): BossBrowserChoice {
     const saved = this.workspace.store.list<{ backend: unknown }>(
       "boss-browser",
@@ -99,6 +108,8 @@ export class Boss {
     else await this.gateway().request("/connect", { backend: choice });
 
     const state = await this.status();
+    if (choice !== "auto" && (!state.ready || state.backend !== choice))
+      throw new Error("未能连接所选浏览器。");
     if (state.ready && executor)
       this.workspace.store.put("boss-browser", {
         id: "boss-browser:preferred",
@@ -124,7 +135,7 @@ export class Boss {
         ...(job ? [job.role] : []),
       ]);
     if (!keyword) return { needsDirection: true as const };
-    if (!this.connected) await this.browserConnect(backend);
+    if (this.needsBrowserConnection(backend)) await this.browserConnect(backend);
     return { scan: await this.search(keyword, resumeId) };
   }
   async search(query: string, resumeId?: string) {
@@ -170,8 +181,10 @@ export class Boss {
           : data.message;
     if (!blocked && data.jobs.length && !data.readId)
       throw new Error("岗位列表缺少快照，请重新读取。");
+    const browserSessionId = this.browserSessionId;
     const scan: BossScan = {
       id: randomUUID(),
+      ...(browserSessionId ? { browserSessionId } : {}),
       readId: data.readId ?? "",
       createdAt: Date.now(),
       jobs: mismatched ? [] : data.jobs,
