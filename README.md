@@ -1,16 +1,26 @@
-# Resume Grill
+<p align="center">
+  <img src="plugin/branding/ds-chan.webp" width="112" height="112" alt="Resume Grill 的像素 DS 娘头像">
+</p>
+
+<h1 align="center">Resume Grill</h1>
+
+<p align="center">
+  一个 DSH 求职插件。在工作台里找岗位、按 JD 修改简历、准备投递，简历和记录保存在本机。也提供 <a href="docs/mcp.md">MCP 接口</a>。
+</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/React-19-149eca?logo=react&amp;logoColor=white" alt="React 19">
   <img src="https://img.shields.io/badge/TypeScript-6-3178c6?logo=typescript&amp;logoColor=white" alt="TypeScript 6">
-  <img src="https://img.shields.io/badge/Node.js-24%2B-339933?logo=nodedotjs&amp;logoColor=white" alt="Node.js 24+">
-  <img src="https://img.shields.io/badge/SQLite-%E6%9C%AC%E5%9C%B0%E5%AD%98%E5%82%A8-003b57?logo=sqlite&amp;logoColor=white" alt="SQLite 本地存储">
+  <img src="https://img.shields.io/badge/Node.js-24%2B-339933" alt="Node.js 24+">
+  <br>
+  <img src="https://img.shields.io/badge/SQLite-003b57?logo=sqlite&amp;logoColor=white" alt="SQLite 本地存储">
   <img src="https://img.shields.io/badge/MCP-SDK_1.32-24292f" alt="MCP SDK 1.32">
   <img src="https://img.shields.io/badge/Playwright-1.65-2e9d50" alt="Playwright 1.65">
-  <a href="https://linux.do/"><img src="https://img.shields.io/badge/LINUX%20DO-%E7%A4%BE%E5%8C%BA-f5c76b?labelColor=555" alt="LINUX DO 社区"></a>
 </p>
 
-一个 DSH 求职插件。在工作台里找岗位、按 JD 修改简历、准备投递，简历和记录保存在本机。也提供 [MCP 接口](docs/mcp.md)。
+<p align="center">
+  <a href="https://linux.do/"><img src="https://img.shields.io/badge/LINUX%20DO-%E7%A4%BE%E5%8C%BA-f5c76b?labelColor=555" alt="LINUX DO 社区"></a>
+</p>
 
 ## 安装
 
