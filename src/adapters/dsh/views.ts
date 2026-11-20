@@ -200,6 +200,7 @@ export function workspaceView(workspace: Workspace) {
     v: 1 as const,
     kind: "workspace" as const,
     capabilities: workspace.capabilities,
+    sendingEnabled: hasCapability(workspace.capabilities, "mail") && mailSendingEnabled(workspace),
     resumes: resumes.filter((item) => !item.deletedAt).map(summarizeResume),
     deletedResumes: resumes
       .filter((item) => item.deletedAt)

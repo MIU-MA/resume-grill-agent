@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { NativeView } from "./views.js";
 import { nativeControls, selectedSessionId } from "./controls.js";
 import { MailSettings } from "./MailSettings.js";
@@ -46,6 +46,7 @@ function WorkbenchContent({
   readResumeImage,
   Review,
   uploadResume,
+  mailSettings,
   sessionId,
 }: any) {
   const [data, setData] = useState<Snapshot>(),
@@ -54,6 +55,8 @@ function WorkbenchContent({
     [error, setError] = useState("");
   const [tab, setTab] = useWorkbenchPreference<string>("tab", "overview");
   const [mailRecipient, setMailRecipient] = useState("");
+  const [showMailSettings, setShowMailSettings] = useState(false);
+  const mailSettingsId = useId();
   const [selectedResume, setResume] = useWorkbenchPreference<string>("career-resume", "");
   const lock = useRef(true);
   const [detailKey, setDetailKey] = useState(0);
@@ -312,14 +315,34 @@ function WorkbenchContent({
             </>
           )}
           {data && tab === "pending" && (
-            <MailCompose
-              resumes={data.resumes}
-              recipient={mailRecipient}
-              setRecipient={setMailRecipient}
-              busy={busy}
-              openResumes={() => navigate("resumes")}
-              prepare={(resumeId, recipient) => openAction({ action: "prepare-direct-mail", resumeId, recipient })}
-            />
+            <>
+              <div className="rg-mail-sender">
+                <p role="status">{data.sendingEnabled ? "已允许发信" : "发送前请授权发件邮箱"}</p>
+                <button
+                  type="button"
+                  disabled={busy}
+                  aria-expanded={showMailSettings}
+                  aria-controls={mailSettingsId}
+                  onClick={() => setShowMailSettings(!showMailSettings)}
+                >
+                  {showMailSettings ? "收起邮箱设置" : "设置发件邮箱"}
+                </button>
+              </div>
+              <div id={mailSettingsId} hidden={!showMailSettings}>
+                {showMailSettings && (
+                  <MailSettings {...mailSettings} sessionId={sessionId}
+                    onChanged={() => void reload().catch((error: Error) => setError(error.message))} />
+                )}
+              </div>
+              <MailCompose
+                resumes={data.resumes}
+                recipient={mailRecipient}
+                setRecipient={setMailRecipient}
+                busy={busy}
+                openResumes={() => navigate("resumes")}
+                prepare={(resumeId, recipient) => openAction({ action: "prepare-direct-mail", resumeId, recipient })}
+              />
+            </>
           )}
           {data && ["pending", "history"].includes(tab) && (
             <ApplicationHistory key={tab} data={data} pending={tab === "pending"} busy={busy}
@@ -374,6 +397,11 @@ function Entry({ useSessions, usePanelInfo, selectConversation, open }: any) {
     </button>
   );
 }
+function SessionMailSettings({ useSessions, ...props }: any) {
+  const sessionId = useSessions(selectedSessionId);
+  return <MailSettings {...props} sessionId={sessionId} />;
+}
+
 function WorkbenchPage({ useSessions, bind, lastSession, retain, enter }: any) {
   const selected = useSessions(selectedSessionId);
   const id = selected ?? lastSession();
@@ -428,10 +456,20 @@ export function registerWorkbench(ctx: any, Review: any) {
         selectedSessionId(ctx.sessions.list.getSnapshot()) ?? lastSessionId;
     }),
   );
+  const scope = ctx.configForms.get("resume-grill");
+  const mailSettings = {
+    scope,
+    credentials: ctx.remote.credentials,
+    capabilityStatus: (sessionId: string) =>
+      nativeControls(ctx, sessionId, "workbench").act({ action: "capability-status" }),
+    testMail: (sessionId: string) =>
+      nativeControls(ctx, sessionId, "workbench").act({ action: "test-mail" }),
+  };
   const bind = (sessionId: string) => ({
     ...nativeControls(ctx, sessionId, "workbench"),
     sessionId,
     Review,
+    mailSettings,
     uploadResume: async (file: File) => {
       if (
         !/\.(pdf|docx|txt|md)$/i.test(file.name) ||
@@ -481,7 +519,6 @@ export function registerWorkbench(ctx: any, Review: any) {
       WorkbenchPage,
     ),
   );
-  const scope = ctx.configForms.get("resume-grill");
   ctx.slots.inject("settings.section", () =>
     ctx.slots.register(
       {
@@ -501,20 +538,9 @@ export function registerWorkbench(ctx: any, Review: any) {
         id: "resume-grill-mail",
         order: 45,
         label: () => mailSettingsName,
-        inject: () => ({
-          scope,
-          credentials: ctx.remote.credentials,
-          capabilityStatus: (sessionId: string) =>
-            nativeControls(ctx, sessionId, "workbench").act({
-              action: "capability-status",
-            }),
-          testMail: (sessionId: string) =>
-            nativeControls(ctx, sessionId, "workbench").act({
-              action: "test-mail",
-            }),
-        }),
+        inject: () => mailSettings,
       },
-      MailSettings,
+      SessionMailSettings,
     ),
   );
   ctx.effect(() =>

@@ -54,10 +54,15 @@ export async function nativeMail(ctx: any, entryConfig?: any) {
     const turn = ++generation,
       settings: MailSettings = scope.get();
     const ref = mailCredentialRef(settings.address, settings.provider);
-    const info = await ctx.credentials.describe(ref);
-    if (turn === generation) {
-      readyRef = ref;
-      configured = info.configured;
+    try {
+      const info = await ctx.credentials.describe(ref);
+      if (turn === generation) {
+        readyRef = ref;
+        configured = info.configured;
+      }
+    } catch (error) {
+      if (turn === generation) configured = false;
+      throw error;
     }
   };
   await refresh();

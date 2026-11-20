@@ -10,7 +10,6 @@ import {
   mailCredentialRef,
   type MailSettings as Settings,
 } from "../../shared/mail-settings.js";
-import { selectedSessionId } from "./controls.js";
 import { mailSettingsName } from "./branding.js";
 import { hasCapability, type Capability } from "../../shared/capabilities.js";
 
@@ -31,11 +30,11 @@ function MailSettingsForm({
   scope,
   snapshot,
   credentials,
-  useSessions,
+  sessionId,
   capabilityStatus,
   testMail,
+  onChanged,
 }: any) {
-  const sessionId = useSessions(selectedSessionId);
   const [runtime, setRuntime] = useState<{
     sessionId: string;
     mail?: boolean;
@@ -162,6 +161,7 @@ function MailSettingsForm({
             setCode("");
             setDirty(false);
             setMessage("已保存邮箱设置。");
+            onChanged?.();
           });
         }}
       >
@@ -244,6 +244,7 @@ function MailSettingsForm({
               if (!result.ok) throw new Error(result.error.message);
               setConfigured(false);
               setMessage("授权码已移除，发送已停用。");
+              onChanged?.();
             })
           }
         >

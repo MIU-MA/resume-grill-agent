@@ -194,6 +194,7 @@ export function mount(
               text: JSON.stringify(await verifyMail()),
             };
           }
+          if (input.action === "workspace") await refreshMail?.().catch(() => {});
           if (input.action === "send") await refreshMail?.();
           const view = cardId
             ? await cardAction(workspace, agent.id, cardId, input)

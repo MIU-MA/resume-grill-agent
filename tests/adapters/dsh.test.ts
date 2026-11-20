@@ -116,6 +116,8 @@ test("工作台按会话和页面恢复记录引用，返回时读取最新数�
 test("邮箱投递只需收件人与简历，冻结附件后沿用邮件确认流程", async (t) => {
   const { workspace: fixture, store, resume, job, sends } = await setup(t);
   const workspace = new Workspace(store, fixture.send, () => true);
+  assert.equal(workspaceView(workspace).sendingEnabled, true);
+  assert.equal(workspaceView(new Workspace(store)).sendingEnabled, false);
   const request = { action: "prepare-direct-mail", resumeId: resume.id, recipient: "hr@example.com" };
   const preview = await humanAction(workspace, request);
   assert.equal(preview.kind, "application");
