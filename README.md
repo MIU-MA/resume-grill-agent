@@ -9,52 +9,18 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Node.js-24%2B-339933" alt="Node.js 24+">
   <img src="https://img.shields.io/badge/React-19-149eca?logo=react&amp;logoColor=white" alt="React 19">
   <img src="https://img.shields.io/badge/TypeScript-6-3178c6?logo=typescript&amp;logoColor=white" alt="TypeScript 6">
-  <img src="https://img.shields.io/badge/Node.js-24%2B-339933" alt="Node.js 24+">
-  <br>
   <img src="https://img.shields.io/badge/SQLite-003b57?logo=sqlite&amp;logoColor=white" alt="SQLite 本地存储">
   <img src="https://img.shields.io/badge/MCP-SDK_1.32-24292f" alt="MCP SDK 1.32">
   <img src="https://img.shields.io/badge/Playwright-1.65-2e9d50" alt="Playwright 1.65">
-</p>
-
-<p align="center">
   <a href="https://linux.do/"><img src="https://img.shields.io/badge/LINUX%20DO-%E7%A4%BE%E5%8C%BA-f5c76b?labelColor=555" alt="LINUX DO 社区"></a>
 </p>
 
-## 安装
-
-在 DSH 打开 **插件 → 添加插件 → 安装第三方插件**，填写预构建 `.tgz` 的绝对路径，启用「Resume Grill」。
-
-当前可从本仓库生成安装包，需要 Node.js 24+：
-
-```sh
-npm ci
-npm run package:plugin
-```
-
-终端会给出 `artifacts/` 下的插件包路径。安装后从 DSH 左侧打开 **Resume Grill**。详见 [DSH 安装说明](docs/dsh.md)。
-
-### 让 AI 安装
-
-把下面的提示词复制给能在你本机运行终端命令的 AI 助手。
-
-```text
-请把 Resume Grill 安装到我本机的 DSH 桌面版。
-源码仓库 https://github.com/MIU-MA/resume-grill-agent
-
-1. 优先用我提供的 .tgz。没有安装包时，用本地已有源码或克隆仓库。
-   确认 Node.js 24+，在仓库目录运行 npm ci 和 npm run package:plugin。
-2. 使用实际 .tgz 路径运行 dsh plugin --profile desktop add "<.tgz 绝对路径>"。
-   dsh 不在 PATH 时查找桌面版自带的 CLI。若无法调用 CLI，把包的绝对路径给我，
-   我会粘贴到 DSH 的「安装第三方插件」。
-3. 告诉我安装结果。若 DSH 已在运行，请提醒我完全退出并重新打开，
-   然后从左侧打开 Resume Grill。做到安装这一步就可以了。
-```
+![Resume Grill 在 DSH 中的求职总览](docs/screenshots/dsh-overview.png)
 
 ## 功能
-
-![Resume Grill 在 DSH 中的求职总览](docs/screenshots/dsh-overview.png)
 
 | 入口 | 可以做什么 |
 | --- | --- |
@@ -74,6 +40,39 @@ npm run package:plugin
 在 **Resume Grill → BOSS 投递** 选主简历，点「找岗位并准备投递」。插件搜索并读取 JD，从当前页最多准备 10 个匹配岗位。核对前可增减岗位、换简历或调整顺序。[BOSS 使用说明](docs/boss.md)
 
 ![DSH 中的 BOSS 岗位列表和待投任务，使用演示数据](docs/screenshots/dsh-boss.png)
+
+## 安装
+
+在 DSH 打开 **插件 → 添加插件 → 安装第三方插件**，填写预构建 `.tgz` 的绝对路径，启用「Resume Grill」。
+
+当前可从本仓库生成安装包，需要 Node.js 24+：
+
+```sh
+npm ci
+npm run package:plugin
+```
+
+终端会给出 `artifacts/` 下的插件包路径。安装后从 DSH 左侧打开 **Resume Grill**。详见 [DSH 安装说明](docs/dsh.md)。
+
+<details>
+<summary>让 AI 安装</summary>
+
+把下面的提示词复制给能在你本机运行终端命令的 AI 助手。
+
+```text
+请把 Resume Grill 安装到我本机的 DSH 桌面版。
+源码仓库 https://github.com/MIU-MA/resume-grill-agent
+
+1. 优先用我提供的 .tgz。没有安装包时，用本地已有源码或克隆仓库。
+   确认 Node.js 24+，在仓库目录运行 npm ci 和 npm run package:plugin。
+2. 使用实际 .tgz 路径运行 dsh plugin --profile desktop add "<.tgz 绝对路径>"。
+   dsh 不在 PATH 时查找桌面版自带的 CLI。若无法调用 CLI，把包的绝对路径给我，
+   我会粘贴到 DSH 的「安装第三方插件」。
+3. 告诉我安装结果。若 DSH 已在运行，请提醒我完全退出并重新打开，
+   然后从左侧打开 Resume Grill。做到安装这一步就可以了。
+```
+
+</details>
 
 ## 开发
 
