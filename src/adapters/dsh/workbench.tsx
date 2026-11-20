@@ -10,6 +10,7 @@ import { JobList, JobListRow } from "./JobList.js";
 import { PixelIcon, type PixelIconName } from "./PixelIcon.js";
 import { brandName, DsPortrait, mailSettingsName, moduleSettingsName, quickEntryName } from "./branding.js";
 import { ApplicationHistory } from "./ApplicationHistory.js";
+import { MailCompose } from "./MailCompose.js";
 import { viewReference } from "./card-model.js";
 import { onWorkspaceChanged, notifyWorkspaceChanged } from "./updates.js";
 import { hasCapability } from "../../shared/capabilities.js";
@@ -25,7 +26,7 @@ function workbenchTabs(data?: Snapshot): Array<[PixelIconName, string]> {
   ];
   const mail = hasCapability(data?.capabilities, "mail");
   if (data?.bossDeliveries) tabs.push(["boss", "BOSS 投递"]);
-  if (mail) tabs.push(["pending", "待确认"]);
+  if (mail) tabs.push(["pending", "邮箱投递"]);
   if (mail || data?.bossDeliveries || data?.websiteSubmissions) tabs.push(["history", "投递记录"]);
   return tabs;
 }
@@ -52,6 +53,7 @@ function WorkbenchContent({
     [busy, setBusy] = useState(true),
     [error, setError] = useState("");
   const [tab, setTab] = useWorkbenchPreference<string>("tab", "overview");
+  const [mailRecipient, setMailRecipient] = useState("");
   const [selectedResume, setResume] = useWorkbenchPreference<string>("career-resume", "");
   const lock = useRef(true);
   const [detailKey, setDetailKey] = useState(0);
@@ -309,6 +311,16 @@ function WorkbenchContent({
               </section>
             </>
           )}
+          {data && tab === "pending" && (
+            <MailCompose
+              resumes={data.resumes}
+              recipient={mailRecipient}
+              setRecipient={setMailRecipient}
+              busy={busy}
+              openResumes={() => navigate("resumes")}
+              prepare={(resumeId, recipient) => openAction({ action: "prepare-direct-mail", resumeId, recipient })}
+            />
+          )}
           {data && ["pending", "history"].includes(tab) && (
             <ApplicationHistory key={tab} data={data} pending={tab === "pending"} busy={busy}
               open={(input) => void openAction(input)}
@@ -514,7 +526,7 @@ export function registerWorkbench(ctx: any, Review: any) {
         {
           order: 30,
           title: () => brandName,
-          description: () => "简历、岗位、待确认邮件与投递记录",
+          description: () => "简历、岗位、邮箱投递与投递记录",
         },
       ],
     }),

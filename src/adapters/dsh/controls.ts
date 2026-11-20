@@ -22,6 +22,8 @@ export function nativeCommandError(input: unknown, message: string) {
     /invalid discriminator value.*expected.*['"]workspace['"]/i.test(message)
   ))
     return `DSH 当前加载的 ${brandName} 后端还不支持官网代填。请完全退出 DSH 后重新打开；如果安装的是旧版插件包，请先更新插件。`;
+  if (action === "prepare-direct-mail")
+    return `请完全退出 DSH 后重开，以加载 ${brandName} 的邮箱投递入口。如使用旧版插件包，请先更新。`;
   if (action === "boss" || action.startsWith("boss-"))
     return "BOSS 界面与后端版本可能不同。请完全退出 DSH 后重新打开，再核对投递记录。";
   return message;

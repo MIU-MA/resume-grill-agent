@@ -41,7 +41,7 @@ export type Job = {
 };
 export type Application = {
   id: string;
-  jobId: string;
+  jobId?: string;
   resumeId: string;
   recipient: string;
   subject: string;
@@ -320,6 +320,21 @@ export class Workspace {
       throw new Error("附件已改变，请重新生成版本。");
     return this.freezeApplication(job, resumeId, bytes, mail);
   }
+  async prepareDirectMail(resumeId: string, recipient: string) {
+    const mail = applicationMail.parse({
+      recipient,
+      subject: "求职简历",
+      body: "您好，附件是我的求职简历，感谢查阅。",
+    });
+    const resume = this.resume(resumeId);
+    const path = resume.pdf ?? resume.original;
+    const bytes = extname(path).toLowerCase() === ".pdf"
+      ? await readFile(path)
+      : await renderPdf(resume.text, { updateMetadata: false });
+    if (resume.pdfHash && hash(bytes) !== resume.pdfHash)
+      throw new Error("附件已改变，请重新生成版本。");
+    return this.freezeApplication(undefined, resumeId, bytes, mail);
+  }
   /** A new preview always uses the already-frozen PDF, never a mutable source file. */
   async reviseApplication(id: string, digest: string, input: ApplicationMail) {
     const mail = applicationMail.parse(input),
@@ -339,7 +354,7 @@ export class Workspace {
         return current;
       });
     return this.freezeApplication(
-      this.store.get<Job>("job", original.jobId),
+      original.jobId ? this.store.get<Job>("job", original.jobId) : undefined,
       original.resumeId,
       bytes,
       mail,
@@ -354,7 +369,7 @@ export class Workspace {
       throw new Error("邮件内容或状态已改变，请重新打开最新预览。");
   }
   private async freezeApplication(
-    job: Job,
+    job: Job | undefined,
     resumeId: string,
     bytes: Uint8Array,
     mail: ApplicationMail,
@@ -379,7 +394,7 @@ export class Workspace {
     await writeFile(attachment, bytes, { flag: "wx", mode: 0o600 });
     const application: Application = {
       id,
-      jobId: job.id,
+      ...(job ? { jobId: job.id } : {}),
       resumeId,
       ...mail,
       attachment,

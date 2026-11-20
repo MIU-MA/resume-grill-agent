@@ -101,7 +101,7 @@ export class Tasks {
   private applied(job: Job, goal: Goal) {
     const store = this.workspace.store;
     return this.workspace.history().some((item) => {
-      if (!["sent", "sending", "uncertain"].includes(item.status)) return false;
+      if (!item.jobId || !["sent", "sending", "uncertain"].includes(item.status)) return false;
       const previous = store.get<Job>("job", item.jobId);
       return (
         (previous.sourceUrl === job.sourceUrl &&

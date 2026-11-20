@@ -74,7 +74,7 @@ export function App() {
   };
   const showApplication = (item: Application) => {
     setResume(item.resumeId);
-    setJob(item.jobId);
+    setJob(item.jobId ?? "");
     setApplication(item.id);
     setTab("prepare");
   };
@@ -156,8 +156,7 @@ export function App() {
                 {data.applications.map((item) => (
                   <tr key={item.id}>
                     <td>
-                      {data.jobs.find((j) => j.id === item.jobId)?.role ??
-                        "岗位"}
+                      {data.jobs.find((j) => j.id === item.jobId)?.role ?? item.subject}
                       <small>
                         {data.jobs.find((j) => j.id === item.jobId)?.company}
                       </small>
@@ -170,9 +169,9 @@ export function App() {
                     </td>
                     <td>{new Date(item.createdAt).toLocaleString()}</td>
                     <td>
-                      <button onClick={() => showApplication(item)}>
-                        查看详情
-                      </button>
+                      {item.jobId ? (
+                        <button onClick={() => showApplication(item)}>查看详情</button>
+                      ) : <span className="muted">在 DSH 核对</span>}
                     </td>
                   </tr>
                 ))}

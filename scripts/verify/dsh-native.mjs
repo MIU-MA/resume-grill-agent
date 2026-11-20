@@ -414,7 +414,7 @@ try {
     .getByRole("button", { name: "刷新求职资料", exact: true })
     .click();
   await workbench.getByText("数据分析师", { exact: true }).waitFor();
-  await workbench.getByRole("button", { name: /^待确认/ }).click();
+  await workbench.getByRole("button", { name: /^邮箱投递/ }).click();
   await workbench.getByText("edited@example.com", { exact: true }).waitFor();
   await workbench
     .getByRole("button", { name: "查看邮件与附件", exact: true })

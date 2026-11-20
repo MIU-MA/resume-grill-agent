@@ -28,8 +28,7 @@ type Row = {
 
 function applicationRows(data: Snapshot, pending: boolean) {
   const rows: Row[] = [];
-  for (const d of data.bossDeliveries ?? []) {
-    if (pending && !["submitting", "running", "uncertain", "paused"].includes(d.status)) continue;
+  if (!pending) for (const d of data.bossDeliveries ?? []) {
     rows.push({ channel: "boss", id: d.id, title: `${d.company} · ${d.role}`, status: bossStatus[d.status],
       at: d.createdAt, meta: <>BOSS · {d.resumeName}</>, successful: d.status === "finished",
       warning: d.status === "uncertain", canFollowUp: ["finished", "uncertain", "paused"].includes(d.status) });

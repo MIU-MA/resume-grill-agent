@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { join, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { createElement } from "react";
@@ -111,6 +111,37 @@ test("工作台按会话和页面恢复记录引用，返回时读取最新数�
   const review = await restoreView(workspace, rememberedPage("session-a", "jobs"));
   assert.equal(review?.kind === "review" && review.jobId, job.id);
   assert.equal(sends(), 0);
+});
+
+test("邮箱投递只需收件人与简历，冻结附件后沿用邮件确认流程", async (t) => {
+  const { workspace: fixture, store, resume, job, sends } = await setup(t);
+  const workspace = new Workspace(store, fixture.send, () => true);
+  const request = { action: "prepare-direct-mail", resumeId: resume.id, recipient: "hr@example.com" };
+  const preview = await humanAction(workspace, request);
+  assert.equal(preview.kind, "application");
+  assert.equal(preview.application.jobId, undefined);
+  assert.equal(preview.application.status, "prepared");
+  assert.equal(preview.application.recipient, request.recipient);
+  assert.match((await readFile(preview.application.attachment)).toString("ascii", 0, 8), /^%PDF-/);
+  assert.deepEqual(workspaceView(workspace).jobs.map((item) => item.id), [job.id]);
+  await assert.rejects(restoreView(workspace, request), /只能查询记录/);
+  assert.equal(sends(), 0);
+
+  const revised = await humanAction(workspace, {
+    action: "revise", id: preview.application.id, digest: preview.application.digest,
+    recipient: request.recipient, subject: "应聘开发实习生", body: "您好，附件是简历。",
+  });
+  assert.equal(revised.kind, "application");
+  assert.equal(revised.application.attachmentHash, preview.application.attachmentHash);
+  const repeated = await humanAction(workspace, request);
+  assert.equal(repeated.kind === "application" && repeated.application.id, revised.application.id);
+
+  const sent = await humanAction(workspace, {
+    action: "send", id: revised.application.id, digest: revised.application.digest,
+    acknowledged: true, confirmation: "发送",
+  });
+  assert.equal(sent.kind === "application" && sent.application.status, "sent");
+  assert.equal(sends(), 1);
 });
 
 test("旧宿主的工作台快照缺少 BOSS 字段时，总览仍能渲染", async (t) => {

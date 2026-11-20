@@ -23,7 +23,7 @@ export function ApplicationReview({
   const editable = ["prepared", "simulated"].includes(item.status);
   return (
     <>
-      <h3>核对投递 · {job.role}</h3>
+      <h3>{job ? `核对投递 · ${job.role}` : "核对投递邮件"}</h3>
       <p>{applicationStatusLabel[item.status]}</p>
       {draft ? (
         <form

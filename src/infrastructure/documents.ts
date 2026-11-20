@@ -49,8 +49,11 @@ export async function readResume(path: string) {
   return { text, bytes };
 }
 
-export async function renderPdf(text: string): Promise<Uint8Array> {
-  const pdf = await PDFDocument.create();
+export async function renderPdf(
+  text: string,
+  { updateMetadata = true } = {},
+): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create({ updateMetadata });
   pdf.registerFontkit(fontkit);
   const bytes = await readFile(
     join(packageRoot, "assets/NotoSansSC-Regular.ttf"),

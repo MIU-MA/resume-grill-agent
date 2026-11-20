@@ -140,8 +140,8 @@ export function reviewView(
   };
 }
 export function applicationView(workspace: Workspace, id: string) {
-  const application = workspace.preview(id),
-    job = workspace.store.get<Job>("job", application.jobId);
+  const application = workspace.preview(id);
+  const job = application.jobId ? workspace.store.get<Job>("job", application.jobId) : undefined;
   return {
     v: 1 as const,
     kind: "application" as const,

@@ -176,16 +176,25 @@
 .rg-revision-grid section {
   min-width: 0;
 }
-.rg-career-filters {
+.rg-career-filters,
+.rg-mail-compose {
   display: flex;
   gap: 12px;
   align-items: end;
   flex-wrap: wrap;
 }
-.rg-career-filters label {
+.rg-career-filters label,
+.rg-mail-compose label {
   flex: 1;
   min-width: 180px;
 }
+.rg-mail-compose {
+  border: 1px solid var(--dsw-alias-border-l2);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.rg-mail-compose label,
+.rg-mail-compose button { margin: 0; }
 .rg-job-url {
   display: flex;
   align-items: end;

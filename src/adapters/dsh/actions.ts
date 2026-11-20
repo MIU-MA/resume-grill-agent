@@ -119,6 +119,11 @@ const actionSchema = z.discriminatedUnion("action", [
     })
     .strict(),
   z.object({ action: z.literal("application"), id: z.string() }).strict(),
+  z.strictObject({
+    action: z.literal("prepare-direct-mail"),
+    resumeId: z.uuid(),
+    recipient: z.string().trim().pipe(applicationMail.shape.recipient),
+  }),
   z
     .object({
       action: z.literal("revise"),
@@ -158,6 +163,7 @@ const actionSchema = z.discriminatedUnion("action", [
 ]);
 const mailActions = new Set([
   "application",
+  "prepare-direct-mail",
   "revise",
   "batch-view",
   "prepare",
@@ -199,6 +205,10 @@ export async function humanAction(
   if (input.action === "profile" || input.action === "confirm-profile")
     requireCapability(workspace, "website");
   if (input.action === "workspace") return workspaceView(workspace);
+  if (input.action === "prepare-direct-mail") {
+    const application = await workspace.prepareDirectMail(input.resumeId, input.recipient);
+    return applicationView(workspace, workspace.latestApplication(application.id).id);
+  }
   if (input.action === "record-website-submission") {
     requireCapability(workspace, "website");
     const { resumeId, jobId, goalId } = input;
