@@ -20,6 +20,12 @@ export function RevisionChanges({
   const sections = tailoringSections(text);
   return (
     <>
+      {!!plan.notices?.length && (
+        <aside>
+          <h3>修改建议待核对</h3>
+          {plan.notices.map((notice) => <p key={notice}>{notice}</p>)}
+        </aside>
+      )}
       {plan.changes.map((change) => {
         const key = tailoringChangeKey(change);
         return (
@@ -57,14 +63,15 @@ export function RevisionChanges({
             </div>
             <p className="muted">{change.reason}</p>
             <details>
-              <summary>对应岗位要求</summary>
-              {change.requirement}
+              <summary>{change.requirementQuote ? "对应岗位要求" : "岗位要求摘要 · 待核对"}</summary>
+              <p>{change.requirement}</p>
+              {change.requirementQuote && <blockquote>{change.requirementQuote}</blockquote>}
             </details>
           </article>
         );
       })}
       {!plan.changes.length && (
-        <p>没有需要改写的条目，可以保留原文生成岗位版。</p>
+        <p>没有可直接采用的修改，可以保留原文生成岗位版。</p>
       )}
       {plan.gaps.length > 0 && (
         <aside>

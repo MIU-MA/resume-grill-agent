@@ -102,3 +102,38 @@ test("按招聘类型搜索并识别 JD 开头明示的岗位方向冲突", () =
   assert.equal(bossDirectionConflict(jd, ["前端"]), "招聘文员，负责统计和汇总报表");
   assert.equal(bossDirectionConflict(jd, ["文员"]), undefined);
 });
+
+test("用工作日期合并重叠区间，不累计实习、兼职和项目", () => {
+  const resume = [
+    "工作经历",
+    "甲公司 | 前端工程师 | 2021.07 - 2024.08",
+    "乙公司 | 工程师 | 2023/02 — 2023/11",
+    "丙公司 | 兼职开发 | 2024年9月 – 2025年9月",
+    "实习经历",
+    "实习生 | 2020.06 - 2021.06",
+    "项目经历",
+    "开源项目 2018.01 - 2020.01",
+  ].join("\n");
+  const requirements = checkBossRequirements("要求 3 年工作经验。要求 4 年工作经验。", resume, [], "fulltime");
+  assert.deepEqual(requirements.map(({ status }) => status), ["matched", "unknown"]);
+  assert.match(requirements[0].resumeBasis ?? "", /37 个月/);
+  assert.doesNotMatch(requirements[0].resumeQuote ?? "", /兼职|实习|开源/);
+  assert.equal(checkBossRequirements(
+    "要求 1 年工作经验", "工作与实习经历\n实习生 2021.07 - 2024.08", [], "fulltime",
+  )[0].status, "unknown");
+  assert.equal(checkBossRequirements(
+    "要求 1 年工作经验", "工作与实习经历\n全职开发 2021.07 - 2024.08", [], "fulltime",
+  )[0].status, "matched");
+});
+
+test("教育日期可支持届别，明确填报优先，推定不符时待核对", () => {
+  const resume = "教育背景\n示例大学｜本科\n2020.09 - 2024.06";
+  const accepted = checkBossRequirements("面向 2024 届毕业生", resume, [], "campus")[0];
+  assert.equal(accepted.status, "matched");
+  assert.match(accepted.resumeBasis ?? "", /教育经历结束时间推定为 2024 届/);
+  assert.equal(checkBossRequirements("面向 2025 届毕业生", resume, [], "campus")[0].status, "unknown");
+  assert.equal(checkBossRequirements("面向 2025 届毕业生", "2024 届本科生\n" + resume, [], "campus")[0].status, "mismatch");
+  assert.equal(checkBossRequirements(
+    "面向 2024 届毕业生", resume + "\n另一所大学｜硕士\n2024.09 - 至今", [], "campus",
+  )[0].status, "unknown");
+});

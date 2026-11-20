@@ -16,7 +16,7 @@ type ParsedResumeSection = {
   lines: string[];
 };
 
-const HEADING_MATCHERS: Array<[Exclude<ResumeSectionKind, "custom">, RegExp]> =
+const HEADING_MATCHERS: Array<[ResumeSectionKind, RegExp]> =
   [
     ["general", /^(个人信息|基本信息|联系方式|personal information|contact)$/i],
     [
@@ -27,9 +27,10 @@ const HEADING_MATCHERS: Array<[Exclude<ResumeSectionKind, "custom">, RegExp]> =
     ["education", /^(教育背景|教育经历|教育|education)$/i],
     [
       "work",
-      /^(工作经历|工作经验|全职经历|职业经历|professional experience|work experience|experience)$/i,
+      /^(工作经历|工作经验|全职经历|职业经历|任职经历|professional experience|work experience|employment history|experience)$/i,
     ],
     ["internship", /^(实习经历|实习经验|internship|internships)$/i],
+    ["custom", /^(?:工作(?:与|及|和|[ /／]+)实习经历|work and internship experience)$/i],
     ["project", /^(项目经历|项目经验|项目|projects?)$/i],
     [
       "skills",

@@ -43,11 +43,12 @@ function BossMatchDetails({ item }: { item: BossShortlistItem }) {
         {item.recruitment?.evidence.map(({ source, quote }) => (
           <li key={source + quote}>{evidenceSources[source]}：「{quote}」</li>
         ))}
-        {item.requirements?.map(({ label, quote, source, status, resumeQuote }, index) => (
+        {item.requirements?.map(({ label, quote, source, status, resumeQuote, resumeBasis }, index) => (
           <li key={`${label}-${index}`}>
             {label} · {requirementLabels[status]}
             {quote && <div>{evidenceSources[source ?? "jd"]}：「{quote}」</div>}
             {resumeQuote && <div>简历：「{resumeQuote}」</div>}
+            {resumeBasis && <div>{resumeBasis}</div>}
           </li>
         ))}
         {item.skillMatches?.slice(0, 5).map(({ skill, quote, resumeQuote }) => (

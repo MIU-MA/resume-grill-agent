@@ -369,6 +369,51 @@ test("新增技能、未知接受项与跨岗位附件会被拒绝", async (t) =
   );
 });
 
+test("JD 可概括，岗位名称取记录，并保留同段已有技术的有效改写", async (t) => {
+  const { workspace } = await fixture(t);
+  const resume = await workspace.createResume("简历", [
+    "项目经历",
+    "服务平台 | 2021.07 - 2024.08",
+    "- 使用 Git 和 CI/CD 管理部署，维护 REST 接口。",
+    "- 负责接口开发，延迟 200ms。",
+    "- 参与自动部署。",
+    "第二项目 | 2024.09 - 2025.02",
+    "- 负责维护内部流程。",
+  ].join("\n"));
+  const job = workspace.addJob({
+    company: "原岗位公司", role: "后端工程师", jd: "维护接口以及自动化交付。", sourceUrl: "https://example.com/role",
+  });
+  const context = workspace.reviewContext(resume.id, job.id);
+  const [section] = context.sections;
+  const evidence = context.requirements[0];
+  const base = { sectionId: section.id, requirement: "要维护接口并参与部署", requirementId: evidence.id, reason: "匹配岗位需求" };
+  const good = { ...base, lineIndex: 2, after: "- Maintained RESTful API endpoints with Git，延迟 200 ms。" };
+  const proposed = {
+    company: "模型输出的公司",
+    role: "模型概括的职位",
+    sectionOrder: [section.id],
+    changes: [
+      { ...good, requirementQuote: "伪造的引用不会保留" },
+      { ...base, lineIndex: 3, after: "- 参与 CI/CD 自动部署，效率提升 30%。", reason: "待补数据" },
+      { ...base, lineIndex: 3, after: "- Supported CI/CD deployment workflows.", requirementId: undefined },
+      { ...base, lineIndex: 5, after: "- 使用 Git 维护第二项目。" },
+    ],
+    highlights: [],
+    gaps: [],
+  };
+  const proposal = workspace.propose(resume.id, job.id, proposed);
+  assert.equal(proposal.plan.company, job.company);
+  assert.equal(proposal.plan.role, job.role);
+  assert.equal(proposal.plan.changes.length, 2);
+  assert.equal(proposal.plan.changes[0].requirementQuote, evidence.quote);
+  assert.equal(proposal.plan.changes[1].requirementQuote, undefined);
+  assert.match(proposal.plan.notices?.join("\n") ?? "", /数字[\s\S]*工具/);
+  const version = await workspace.saveVersion(resume.id, job.id, proposed, [`${section.id}:2`, `${section.id}:3`]);
+  assert.match(version.text, /RESTful API/);
+  assert.match(version.text, /CI\/CD deployment workflows/);
+  assert.doesNotMatch(version.text, /30%/);
+});
+
 test("确认绑定摘要、单次消耗；其他进程打开存储不会重置执行状态", async (t) => {
   let sent = 0,
     finish!: () => void;

@@ -73,14 +73,14 @@ export class BossAutoPrepare {
         skipped++;
       }
     }
+    const pending = shortlist.items.filter((item) => item.status === "needs_review").length;
     const resultNote = skipped
       ? `${skipped} 个岗位未能准备附件，可打开岗位单独检查。`
       : !ids.length
         ? candidates.some(({ url }) => seen.has(url))
           ? "这页匹配的岗位已有待投或处理记录，可在列表中查看。"
-          : "这页没有符合条件、且能读到完整 JD 的岗位。"
+          : pending ? undefined : "这页没有符合条件、且能读到完整 JD 的岗位。"
         : undefined;
-    const pending = shortlist.items.filter((item) => item.status === "needs_review").length;
     const note = [resultNote, pending ? `${pending} 个岗位待核对，可在岗位列表查看原因。` : undefined]
       .filter(Boolean).join(" ") || undefined;
     if (!ids.length) return { note };

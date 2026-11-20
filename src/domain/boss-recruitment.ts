@@ -2,6 +2,7 @@ import { z } from "zod";
 import { parseResumeStructure } from "./resume-structure.js";
 import type { BossJobFacts } from "./boss-inspection.js";
 import { matchesJobTitle } from "./job-search.js";
+import { educationTimelineEvidence, workTimelineEvidence } from "./resume-timeline.js";
 
 export const bossRecruitmentFilter = z.enum(["all", "internship", "campus", "fulltime"]);
 export type BossRecruitmentFilter = z.infer<typeof bossRecruitmentFilter>;
@@ -130,6 +131,7 @@ export type BossRequirement = {
   status: "matched" | "mismatch" | "unknown";
   source?: "title" | "page";
   resumeQuote?: string;
+  resumeBasis?: string;
 };
 
 const degree = /大专|专科|本科|学士|硕士|研究生|博士/;
@@ -170,34 +172,41 @@ export function checkBossRequirements(
       ?? text.match(/(?:预计|计划)\s*(20\d\d)\s*年(?:\s*\d{1,2}\s*月)?\s*毕业/);
     return match ? [{ value: asYear(match[1]), quote }] : [];
   });
-  const graduation = new Set(cohortLines.map(({ value }) => value)).size === 1 ? cohortLines[0] : undefined;
-  const educationLines = parseResumeStructure(resume).filter((section) => section.kind === "education")
+  const sections = parseResumeStructure(resume);
+  const inferredGraduation = !cohortLines.length ? educationTimelineEvidence(sections, degreeRank) : undefined;
+  const graduation = new Set(cohortLines.map(({ value }) => value)).size === 1
+    ? cohortLines[0] : inferredGraduation;
+  const educationLines = sections.filter((section) => section.kind === "education")
     .flatMap((section) => section.lines);
   const highest = resumeLines.find((line) => /^最高学历\s*[:：]/.test(line) && degree.test(line));
   const education = [...educationLines, ...resumeLines.filter((line) => /^(?:最高)?学历\s*[:：]|20\d\d\s*届(?:本科|硕士|博士)/.test(line))]
     .map((quote) => ({ value: degreeRank(quote), quote }))
     .filter(({ value }) => value > 0)
     .sort((a, b) => b.value - a.value)[0];
-  const experience = findResumeValue(
+  const explicitExperience = findResumeValue(
     resumeLines,
     /^(?:全职|正式|相关)?工作(?:年限|经验)\s*[:：]\s*(\d+(?:\.\d+)?)\s*年|^(\d+(?:\.\d+)?)\s*年(?:及?以上|\+)?(?:全职|正式)?工作经验/,
     (match) => Number(match[1] ?? match[2]),
   );
+  const timeline = !explicitExperience ? workTimelineEvidence(sections) : undefined;
+  const experience = explicitExperience ?? timeline;
   const daysAvailable = findResumeValue(resumeLines, /(?:可|保证|能够|计划)(?:每周|到岗[：:\s]*每周)\s*(?:到岗|出勤|实习|\s)*([1-7一二两三四五六七])\s*天/, (match) => number(match[1]));
   const monthsAvailable = findResumeValue(resumeLines, /(?:可|能够|计划|保证)实习\s*(?:(\d+|[一二两三四五六七八九十])\s*个?月|半年)/, (match) => match[1] ? number(match[1]) : 6);
   const results: BossRequirement[] = [];
   const minimum = (label: string, quote: string, required: number, known?: { value: number; quote: string }, canExclude = true, source?: BossRequirement["source"]) => {
     const status = !known ? "unknown" : known.value >= required ? "matched" : canExclude ? "mismatch" : "unknown";
-    results.push({ label, quote, status, source, ...(known ? { resumeQuote: known.quote } : {}) });
+    results.push({ label, quote, status, source, ...(known ? { resumeQuote: known.quote } : {}),
+      ...(timeline && known === timeline ? { resumeBasis: `按不重叠的工作时间合计 ${timeline.months} 个月` } : {}) });
   };
   const checkCohort = (quote: string, values: number[], range: boolean, source?: BossRequirement["source"]) => {
     const matched = graduation && (range
       ? graduation.value >= values[0] && graduation.value <= values[1]
       : values.includes(graduation.value));
-    results.push({ label: "毕业届别", quote, source, status: graduation ? matched ? "matched" : "mismatch" : "unknown",
-      ...(graduation ? { resumeQuote: graduation.quote } : {}) });
+    results.push({ label: "毕业届别", quote, source, status: matched ? "matched" : graduation && !inferredGraduation ? "mismatch" : "unknown",
+      ...(graduation ? { resumeQuote: graduation.quote } : {}),
+      ...(inferredGraduation ? { resumeBasis: `按教育经历结束时间推定为 ${inferredGraduation.value} 届` } : {}) });
   };
-  const exactExperience = !/年\s*(?:及?以上|\+|起)/.test(experience?.quote ?? "");
+  const exactExperience = !!explicitExperience && !/年\s*(?:及?以上|\+|起)/.test(explicitExperience.quote);
 
   for (const quote of clauses(jd)) {
     const parts = quote.split(/[，,](?!\s*(?:20)?\d{2}\s*届)/).map((part) => part.trim());
@@ -261,6 +270,7 @@ export function checkBossRequirements(
         label: "工作年限", quote: facts.experience, source: "page",
         status: !experience ? "unknown" : experience.value > Number(maxYears[1]) ? "mismatch" : exactExperience ? "matched" : "unknown",
         ...(experience ? { resumeQuote: experience.quote } : {}),
+        ...(timeline ? { resumeBasis: `按不重叠的工作时间合计 ${timeline.months} 个月` } : {}),
       });
     const internship = kind === "internship" && facts.experience.match(pageInternship);
     if (internship) {

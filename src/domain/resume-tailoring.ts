@@ -1,9 +1,6 @@
 import { z } from "zod";
 import { parseResumeStructure } from "./resume-structure.js";
-import {
-  modelCanRewriteLine,
-  preservedIntroductionFacts,
-} from "./resume-tailoring-policy.js";
+import { rewriteFactProblem } from "./resume-tailoring-policy.js";
 
 export function tailoringSections(rawText: string) {
   return parseResumeStructure(rawText).map((section, index) => ({
@@ -27,6 +24,8 @@ const tailoringPlanSchema = z
             lineIndex: z.number().int().nonnegative(),
             after: z.string().trim().min(1).max(3000),
             requirement: z.string().trim().min(1).max(600),
+            requirementId: z.string().max(40).optional(),
+            requirementQuote: z.string().max(1200).optional(),
             reason: z.string().trim().min(1).max(400),
           })
           .strict(),
@@ -47,78 +46,68 @@ const tailoringPlanSchema = z
   })
   .strict();
 export type TailoringPlan = z.infer<typeof tailoringPlanSchema>;
-const compact = (value: string) => value.replace(/\s/g, "").toLowerCase();
-export function groundedTailoringSchema(rawText: string, jd: string) {
+const compact = (value: string) => value.normalize("NFKC").replace(/\s/g, "").toLowerCase();
+export function tailoringRequirements(jd: string) {
+  return jd.split(/[\r\n。；;]/).map((line) => line.trim()).filter(Boolean)
+    .slice(0, 120).map((quote, index) => ({ id: `jd-${index + 1}`, quote: quote.slice(0, 1200) }));
+}
+
+export function groundedTailoringSchema(
+  rawText: string,
+  jd: string,
+  options: { job?: { company: string; role: string }; partial?: boolean } = {},
+) {
   const sections = tailoringSections(rawText);
-  return tailoringPlanSchema.superRefine((plan, ctx) => {
-    const fail = (message: string) => ctx.addIssue({ code: "custom", message });
+  const requirements = tailoringRequirements(jd);
+  return tailoringPlanSchema.transform((plan, ctx) => {
+    const notices = new Set<string>();
+    const fail = (message: string) => {
+      if (options.partial) notices.add(message);
+      else ctx.addIssue({ code: "custom", message });
+    };
     const ids = sections.map((section) => section.id);
-    if (
+    const orderInvalid =
       plan.sectionOrder.length !== ids.length ||
       new Set(plan.sectionOrder).size !== ids.length ||
-      plan.sectionOrder.some((id) => !ids.includes(id))
-    )
-      fail("简历章节缺失或重复");
-    if (
-      sections[0]?.kind === "general" &&
-      plan.sectionOrder[0] !== sections[0].id
-    )
-      fail("个人信息须保留在开头");
+      plan.sectionOrder.some((id) => !ids.includes(id)) ||
+      (sections[0]?.kind === "general" && plan.sectionOrder[0] !== sections[0].id);
+    if (orderInvalid) fail("章节排序无法核对，已采用原顺序");
     const changed = new Set<string>();
-    for (const change of plan.changes) {
+    const changes: TailoringPlan["changes"] = [];
+    for (const { requirementQuote: _providedQuote, ...change } of plan.changes) {
       const section = sections.find((item) => item.id === change.sectionId);
-      const before = section?.lines[change.lineIndex];
-      const key = `${change.sectionId}:${change.lineIndex}`;
-      if (!before || changed.has(key)) {
+      const key = tailoringChangeKey(change);
+      if (!section?.lines[change.lineIndex] || changed.has(key)) {
         fail("修改位置不存在或重复");
         continue;
       }
+      const problem = rewriteFactProblem(section, change.lineIndex, change.after, rawText);
+      if (problem) {
+        fail(`${section.title}第 ${change.lineIndex + 1} 条：${problem}`.slice(0, 200));
+        continue;
+      }
       changed.add(key);
-      if (section && !modelCanRewriteLine(section, change.lineIndex))
-        fail(
-          "姓名、联系方式、教育和证书等事实不改写；个人概况中的自我介绍可以调整",
-        );
-      if (
-        section?.kind === "general" &&
-        !preservedIntroductionFacts(before, change.after)
-      )
-        fail("自我介绍中的毕业届别和学历须保留");
-      if (!compact(jd).includes(compact(change.requirement)))
-        fail("岗位依据必须引用 JD 原文");
-      for (const claim of [
-        "主导",
-        "独立负责",
-        "独立完成",
-        "带领团队",
-        "从零搭建",
-        "精通",
-      ]) {
-        if (change.after.includes(claim) && !before.includes(claim))
-          fail("修改不能夸大原文的贡献或能力");
-      }
-      // Do not let a rewrite silently introduce tools, dates or numerical claims.
-      const sourceTokens = new Set(
-        before
-          .match(/[A-Za-z][A-Za-z\d.+#/-]*|\d+(?:[.,]\d+)*(?:%|％)?/g)
-          ?.map((token) => token.toLowerCase()) ?? [],
-      );
-      for (const token of change.after.match(
-        /[A-Za-z][A-Za-z\d.+#/-]*|\d+(?:[.,]\d+)*(?:%|％)?/g,
-      ) ?? []) {
-        if (!sourceTokens.has(token.toLowerCase()))
-          fail("修改中出现原段落没有的技术名称、日期或数字");
-      }
+      const cited = requirements.find(({ id }) => id === change.requirementId) ??
+        requirements.find(({ quote }) => compact(quote).includes(compact(change.requirement)));
+      changes.push(cited
+        ? { ...change, requirementId: cited.id, requirementQuote: cited.quote }
+        : change);
     }
-    for (const item of plan.highlights)
-      if (
-        !sections.find((section) => section.id === item.sectionId)?.lines[
-          item.lineIndex
-        ]
-      )
-        fail("邮件引用的经历不存在");
-    for (const value of [plan.company, plan.role])
-      if (value && !compact(jd).includes(compact(value)))
-        fail("公司和岗位须来自 JD 原文");
+    const highlights = plan.highlights.filter((item) =>
+      !!sections.find((section) => section.id === item.sectionId)?.lines[item.lineIndex],
+    );
+    if (highlights.length !== plan.highlights.length) fail("部分邮件引用的经历位置不存在");
+    for (const notice of plan.notices ?? []) notices.add(notice);
+    const legacyName = (value: string) => compact(jd).includes(compact(value)) ? value : "";
+    return {
+      ...plan,
+      company: options.job?.company ?? legacyName(plan.company),
+      role: options.job?.role ?? legacyName(plan.role),
+      sectionOrder: orderInvalid ? ids : plan.sectionOrder,
+      changes,
+      highlights,
+      ...(notices.size ? { notices: [...notices].slice(0, 8) } : {}),
+    };
   });
 }
 export const tailoringChangeKey = (change: {

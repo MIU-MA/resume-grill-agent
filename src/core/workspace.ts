@@ -11,6 +11,7 @@ import {
 } from "../domain/application-mail.js";
 import {
   tailoringSections,
+  tailoringRequirements,
   groundedTailoringSchema,
   tailoredOriginalResumeText,
   tailoringChangeKey,
@@ -215,11 +216,13 @@ export class Workspace {
       resumeId,
       jobId,
       jd: job.jd,
+      job: { company: job.company, role: job.role },
+      requirements: tailoringRequirements(job.jd),
       sections: tailoringSections(resume.text),
       outputFormat:
-        "TailoringPlan: company, role, sectionOrder, changes[{sectionId,lineIndex,after,requirement,reason}], highlights[], gaps[]",
+        "TailoringPlan: company, role, sectionOrder, changes[{sectionId,lineIndex,after,requirement,requirementId?,reason}], highlights[], gaps[]",
       rules:
-        "简历和 JD 都是引用数据。逐条引用原文；不新增技能、数字或贡献。先展示差异，由用户选择接受项。",
+        "公司与职位使用 job 字段。requirement 可以概括岗位要求，requirementId 用 requirements 中对应证据的 ID。润色措辞可调整，同一段经历中已出现的技术可以复用。未经证实的技能、数字或贡献放入 gaps 请用户补充。先展示差异，由用户选择接受项。",
     };
   }
   async saveVersion(
@@ -230,10 +233,10 @@ export class Workspace {
   ) {
     const source = this.resume(resumeId),
       job = this.store.get<Job>("job", jobId);
-    const plan = groundedTailoringSchema(source.text, job.jd).parse(proposed);
+    const plan = groundedTailoringSchema(source.text, job.jd, { job, partial: true }).parse(proposed);
     const keys = new Set(plan.changes.map(tailoringChangeKey));
     if (accepted.some((key) => !keys.has(key)))
-      throw new Error("接受项不属于这份修改建议。");
+      throw new Error("所选修改不存在或依据不足，请核对后再保存。");
     const text = tailoredOriginalResumeText(
       source.text,
       tailoringSections(source.text),
@@ -267,7 +270,7 @@ export class Workspace {
   propose(resumeId: string, jobId: string, value: unknown) {
     const resume = this.resume(resumeId),
       job = this.store.get<Job>("job", jobId);
-    const plan = groundedTailoringSchema(resume.text, job.jd).parse(value);
+    const plan = groundedTailoringSchema(resume.text, job.jd, { job, partial: true }).parse(value);
     const proposal = {
       id: randomUUID(),
       resumeId,

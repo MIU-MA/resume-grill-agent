@@ -410,7 +410,7 @@ export class Tasks {
             throw new Error("建议与当前简历或岗位不一致。");
           plan = proposal.plan;
         }
-        const validated = groundedTailoringSchema(source.text, job.jd).parse(
+        const validated = groundedTailoringSchema(source.text, job.jd, { job }).parse(
           plan,
         );
         const keys = new Set(validated.changes.map(tailoringChangeKey));

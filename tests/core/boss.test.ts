@@ -711,6 +711,21 @@ test("文本简历可以核对 JD，添加待投前需要 PDF", async (t) => {
   assert.equal(view.groupFocus, undefined);
   assert.deepEqual(f.requests, ["/search", "/inspect-job"]);
 });
+test("按任职时间线确认工龄并生成 BOSS 待投任务", async (t) => {
+  const f = await fixture(t);
+  f.boss.connect(f.link);
+  f.state.detail.description = "岗位类型：全职\n开发 Go 服务，要求 3 年工作经验。";
+  const resume = await f.workspace.createResume("主简历", [
+    "求职意向：Go开发", "工作经历", "甲公司 | 后端开发 | 2021.07 - 2024.08", "负责 Go 服务开发。",
+  ].join("\n"));
+  const view = await humanAction(f.workspace, { action: "boss-auto-prepare", resumeId: resume.id, recruitment: "fulltime" });
+  assert.equal(view.kind, "boss");
+  assert.ok(view.groupFocus);
+  const [item] = view.shortlists[0].items;
+  assert.equal(item.status, "candidate");
+  assert.match(item.requirements?.[0].resumeBasis ?? "", /37 个月/);
+  assert.equal(f.state.confirmations, undefined);
+});
 test("搜索等待中的旧关键词不能替换本轮关键词或准备附件", async (t) => {
   const f = await fixture(t);
   f.boss.connect(f.link);
