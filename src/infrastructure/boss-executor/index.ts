@@ -203,12 +203,24 @@ export class BossExecutor {
 
   private async searchJobs(query: string) {
     const page = this.requirePage();
-    const current = await this.readJobs();
-    // A read never interrupts the user's login or verification.
+    let current = await this.readJobs();
+    const readyBy = Date.now() + 4000;
+    // Let the initial page settle before issuing a new search.
+    while (current.state === "loading" && current.query !== query && Date.now() < readyBy) {
+      await wait(300);
+      current = await this.readJobs();
+    }
+    if (current.state === "loading")
+      return current.query === query
+        ? current
+        : {
+          ...current,
+          searchDeferred: true as const,
+          message: "BOSS 页面仍在加载。加载完成后点「继续搜索」。",
+        };
     if (
       current.state === "login" ||
       current.state === "verification" ||
-      current.state === "loading" ||
       (current.query === query && current.state !== "unsupported")
     )
       return current;

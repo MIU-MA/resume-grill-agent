@@ -6,6 +6,8 @@ import { JobList, JobListRow } from "./JobList.js";
 import { WorkbenchHeading } from "./WorkbenchHeading.js";
 import { bossQueueStatus } from "./boss-task-view.js";
 
+const browserNames: Record<string, string> = { ego: "ego", edge: "Edge", chrome: "Chrome" };
+
 export function BossWorkbench({
   view,
   busy,
@@ -38,13 +40,15 @@ export function BossWorkbench({
       ? latest
       : undefined;
   const state = view.connected ? scan?.state : undefined;
+  const browser = view.browserState?.backend;
+  const readCurrent = state === "verification" || (state === "loading" && !scan?.searchDeferred);
   const resumeAction =
     state === "login"
       ? "登录后继续"
       : state === "verification"
         ? "验证后继续"
         : state === "loading"
-          ? "查看搜索结果"
+          ? scan?.searchDeferred ? "继续搜索" : "查看搜索结果"
           : "找岗位并准备投递";
   const resumeSearch = (override?: string, readCurrent = false) =>
     void run({
@@ -135,7 +139,7 @@ export function BossWorkbench({
           onClick={() => {
             resumeSearch(
               scan?.blocked ? scan.requestedQuery ?? scan.query : undefined,
-              state === "verification" || state === "loading",
+              readCurrent,
             );
           }}
         >
@@ -143,7 +147,7 @@ export function BossWorkbench({
         </button>
       ) : null}
       {view.connected ? (
-        <p className="rg-note">BOSS 浏览器已连接</p>
+        <p className="rg-note">已连接 {browser ? browserNames[browser] ?? "BOSS 浏览器" : "BOSS 浏览器"}</p>
       ) : (
         <button disabled={busy} onClick={() => void run({ action: "boss-connect" })}>
           打开 BOSS 浏览器

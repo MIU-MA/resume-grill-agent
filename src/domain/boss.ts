@@ -56,6 +56,7 @@ export type BossScan = {
   jobs: z.infer<typeof bossJob>[];
   query?: string;
   requestedQuery?: string;
+  searchDeferred?: true;
   state?: "ready" | "loading" | "empty" | "login" | "verification" | "unsupported";
   blocked?: string;
 };

@@ -247,7 +247,9 @@ test("DSH 没有 ego 时可从内置执行器改用 Chrome，继续读取和准�
   let address = "https://www.zhipin.com/web/geek/jobs";
   let state = "login",
     query = "",
-    navigations = 0;
+    navigations = 0,
+    loadingReads = 0,
+    holdInitialLoad = false;
   const page = Object.assign(new EventEmitter(), {
     url: () => address,
     isClosed: () => closed,
@@ -258,15 +260,19 @@ test("DSH 没有 ego 时可从内置执行器改用 Chrome，继续读取和准�
       state = "verification";
       query = "";
     },
-    evaluate: async () => ({
-      address,
-      state,
-      query,
-      jobs:
-        state === "ready"
-          ? [{ url: f.url, title: "Go开发", company: "演示", salary: "" }]
-          : [],
-    }),
+    evaluate: async () => {
+      if (state === "loading" && !holdInitialLoad && loadingReads++ >= 1)
+        state = "unsupported";
+      return {
+        address,
+        state,
+        query,
+        jobs:
+          state === "ready"
+            ? [{ url: f.url, title: "Go开发", company: "演示", salary: "" }]
+            : [],
+      };
+    },
   });
   const reader = {
     isConnected: () => !closed,
@@ -306,8 +312,17 @@ test("DSH 没有 ego 时可从内置执行器改用 Chrome，继续读取和准�
   assert.equal((await f.boss.search("Go")).state, "login");
   assert.equal(navigations, 0);
 
-  state = "unsupported";
-  assert.equal((await f.boss.search("Go")).state, "verification");
+  state = "loading";
+  holdInitialLoad = true;
+  const deferred = await f.boss.search("Go", searchResume.id);
+  assert.equal(deferred.state, "loading");
+  assert.equal(deferred.searchDeferred, true);
+  assert.equal(deferred.requestedQuery, "Go");
+  assert.equal(navigations, 0);
+
+  holdInitialLoad = false;
+  assert.equal((await f.boss.search("Go", searchResume.id)).state, "verification");
+  assert.equal(loadingReads, 2, "首屏加载结束后应发起搜索");
   assert.equal((await f.boss.search("Go")).state, "verification");
   assert.equal((await f.boss.read()).state, "verification");
   assert.equal(navigations, 1, "read/retry must not interrupt verification");
@@ -596,12 +611,13 @@ test("搜索等待中的旧关键词不能替换本轮关键词或准备附件",
   const loading = await humanAction(f.workspace, input);
   assert.equal(loading.kind === "boss" && loading.scans[0]?.requestedQuery, "Go开发");
   f.state.readResult = {
-    state: "ready", query: "财务", readId: "stale",
+    state: "ready", query: "", readId: "stale",
     jobs: [{ url: f.url, title: "财务", company: "演示" }],
   };
   const old = await humanAction(f.workspace, { ...input, readCurrent: true });
   assert.equal(old.kind === "boss" && old.scans[0]?.requestedQuery, "Go开发");
   assert.equal(old.kind === "boss" && old.scans[0]?.jobs.length, 0);
+  assert.match(old.kind === "boss" ? old.scans[0]?.blocked ?? "" : "", /不是这次搜索的结果/);
   assert.deepEqual(f.requests, ["/search", "/jobs"]);
 
   f.state.readResult = {

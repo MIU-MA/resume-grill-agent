@@ -9,8 +9,9 @@ export type BossJob = {
 
 export type BossJobRead =
   | { state: "ready"; query: string; readId: string; jobs: BossJob[] }
+  | { state: "loading"; query: string; jobs: []; message: string; searchDeferred?: true }
   | {
-      state: "loading" | "empty" | "login" | "verification" | "unsupported";
+      state: "empty" | "login" | "verification" | "unsupported";
       query: string;
       jobs: [];
       message: string;

@@ -24,6 +24,7 @@ const readResult = z.object({
   query: z.string().optional(),
   needsLogin: z.boolean().optional(),
   needsVerification: z.boolean().optional(),
+  searchDeferred: z.literal(true).optional(),
   message: z.string().max(300).optional(),
 });
 
@@ -156,7 +157,7 @@ export class Boss {
         : data.state;
     const mismatched =
       requestedQuery && state !== "login" && state !== "verification" &&
-      state !== "loading" && data.query && data.query !== requestedQuery;
+      state !== "loading" && data.query !== undefined && data.query !== requestedQuery;
     const blocked = mismatched
       ? "当前列表不是这次搜索的结果，请重新搜索。"
       :
@@ -179,6 +180,7 @@ export class Boss {
         ? { query: data.query || requestedQuery }
         : {}),
       ...(requestedQuery ? { requestedQuery } : {}),
+      ...(state === "loading" && data.searchDeferred ? { searchDeferred: true } : {}),
       ...(mismatched ? { state: "unsupported" } : state ? { state } : {}),
       ...(blocked ? { blocked } : {}),
     };
