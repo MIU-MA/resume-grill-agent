@@ -29,6 +29,9 @@ export function RevisionReview({
         <span className="eyebrow">岗位专属版本</span>
         <h2>{resume.name}</h2>
         <p>这一版已保存，右侧是实际生成的 PDF。核对附件后，在下方准备邮件。</p>
+        {resume.headerPhoto && <p className="muted" role="status">
+          {resume.headerPhoto === "copied" ? "本版已带入原 PDF 的页首照片。" : "原 PDF 里没有识别出可单独带入的页首照片。"}
+        </p>}
         <details>
           <summary>查看本版正文</summary>
           <p className="pre">{resume.text}</p>
@@ -65,7 +68,7 @@ export function RevisionReview({
             disabled={busy}
           />
           <p className="muted">
-            保留原文时沿用原 PDF，改写后生成新的单栏版式。
+            保留原文时沿用原 PDF。改写采用单栏版式，并带入识别到的页首照片。
           </p>
           <button
             className="primary"

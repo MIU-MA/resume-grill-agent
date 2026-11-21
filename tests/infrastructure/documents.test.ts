@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PDFDocument } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { readResume, renderPdf } from "../../src/infrastructure/documents.js";
+import { readPdfHeaderPhoto, readResume, renderPdf } from "../../src/infrastructure/documents.js";
 test("实际渲染的每一个中文、英文字母、数字都存在可见字形", async () => {
   const canvasModule = await import("@napi-rs/canvas");
   Object.assign(globalThis, {
@@ -93,6 +93,7 @@ test("OCR 只接收栅格化扫描页，原 PDF 字节仍可复用", async (t) =
   const bytes = Buffer.from(await pdf.save());
   const path = join(home, "扫描版.pdf");
   await writeFile(path, bytes);
+  assert.equal(await readPdfHeaderPhoto(path), undefined, "扫描页不能当成证件照");
   let calls = 0;
   const result = await readResume(path, { ocr: async (png) => {
     calls++;
@@ -102,4 +103,22 @@ test("OCR 只接收栅格化扫描页，原 PDF 字节仍可复用", async (t) =
   assert.equal(calls, 1);
   assert.equal(result.text.trim(), "扫描简历正文");
   assert.deepEqual(result.bytes, bytes);
+});
+
+test("有两个符合页首照片尺寸的图片时不任意挑一张", async (t) => {
+  const home = await mkdtemp(join(tmpdir(), "resume-pdf-photos-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const { createCanvas } = await import("@napi-rs/canvas");
+  const picture = createCanvas(144, 192);
+  const context = picture.getContext("2d");
+  context.fillStyle = "#a93434";
+  context.fillRect(0, 0, picture.width, picture.height);
+  const pdf = await PDFDocument.create();
+  const image = await pdf.embedPng(picture.toBuffer("image/png"));
+  const page = pdf.addPage([595, 842]);
+  page.drawImage(image, { x: 50, y: 700, width: 72, height: 96 });
+  page.drawImage(image, { x: 470, y: 700, width: 72, height: 96 });
+  const path = join(home, "两张图片.pdf");
+  await writeFile(path, await pdf.save());
+  assert.equal(await readPdfHeaderPhoto(path), undefined);
 });

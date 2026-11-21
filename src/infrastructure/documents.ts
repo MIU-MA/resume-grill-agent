@@ -7,6 +7,18 @@ import { createFont } from "fonteditor-core";
 import { resumeSectionHeading } from "../domain/resume-structure.js";
 import { recognizeResumePage } from "./pdf-ocr.js";
 
+async function openPdf(bytes: Uint8Array) {
+  const canvas = await import("@napi-rs/canvas");
+  Object.assign(globalThis, {
+    DOMMatrix: canvas.DOMMatrix,
+    ImageData: canvas.ImageData,
+    Path2D: canvas.Path2D,
+  });
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const task = pdfjs.getDocument({ data: Uint8Array.from(bytes), useSystemFonts: true });
+  return { canvas, pdfjs, task };
+}
+
 export async function readResume(path: string, { ocr = recognizeResumePage } = {}) {
   const bytes = await readFile(path);
   if (bytes.length > 10 * 1024 * 1024 || !bytes.length)
@@ -17,19 +29,9 @@ export async function readResume(path: string, { ocr = recognizeResumePage } = {
     const mammoth = await import("mammoth");
     text = (await mammoth.extractRawText({ buffer: bytes })).value;
   } else if (/\.pdf$/i.test(path)) {
-    const canvas = await import("@napi-rs/canvas");
-    Object.assign(globalThis, {
-      DOMMatrix: canvas.DOMMatrix,
-      ImageData: canvas.ImageData,
-      Path2D: canvas.Path2D,
-    });
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const task = pdfjs.getDocument({
-      data: Uint8Array.from(bytes),
-      useSystemFonts: true,
-    });
-    const pdf = await task.promise;
+    const { canvas, pdfjs, task } = await openPdf(bytes);
     try {
+      const pdf = await task.promise;
       const pages: string[] = [];
       let scans = 0;
       for (let n = 1; n <= pdf.numPages; n++) {
@@ -70,6 +72,64 @@ export async function readResume(path: string, { ocr = recognizeResumePage } = {
   return { text, bytes };
 }
 
+/** Copy a single portrait-sized image from the original PDF's first-page header. */
+export async function readPdfHeaderPhoto(path: string): Promise<Buffer | undefined> {
+  const bytes = await readFile(path);
+  if (bytes.length > 10 * 1024 * 1024) return;
+  const { canvas, pdfjs, task } = await openPdf(bytes);
+  try {
+    const pdf = await task.promise;
+    const page = await pdf.getPage(1);
+    const { fnArray, argsArray } = await page.getOperatorList();
+    const viewport = page.getViewport({ scale: 1 });
+    const { OPS, Util } = pdfjs;
+    let matrix = viewport.transform;
+    const stack: number[][] = [];
+    const regions = new Map<string, number[]>();
+    for (const [index, op] of fnArray.entries()) {
+      const args = argsArray[index];
+      if (op === OPS.save || op === OPS.paintFormXObjectBegin) {
+        stack.push(matrix);
+        if (op === OPS.paintFormXObjectBegin && args?.[0])
+          matrix = Util.transform(matrix, args[0]);
+      } else if (op === OPS.restore || op === OPS.paintFormXObjectEnd) {
+        matrix = stack.pop() ?? viewport.transform;
+      } else if (op === OPS.transform) {
+        matrix = Util.transform(matrix, args);
+      } else if (op === OPS.paintImageXObject || op === OPS.paintInlineImageXObject) {
+        const bounds = [Infinity, Infinity, -Infinity, -Infinity];
+        Util.axialAlignedBoundingBox([0, 0, 1, 1], matrix, bounds);
+        const [left, top, right, bottom] = bounds;
+        const width = right - left, height = bottom - top;
+        if (!bounds.every(Number.isFinite) || left < 0 || top < 0 ||
+            right > viewport.width || bottom > viewport.height ||
+            top > viewport.height * 0.19 || bottom > viewport.height * 0.29 ||
+            width < viewport.width * 0.07 || width > viewport.width * 0.23 ||
+            height < viewport.height * 0.07 || width / height < 0.5 || width / height > 1.13 ||
+            (left > viewport.width * 0.24 && right < viewport.width * 0.76))
+          continue;
+        regions.set(bounds.map(Math.round).join(","), bounds);
+      }
+    }
+    if (regions.size !== 1) return;
+    const [left, top, right, bottom] = [...regions.values()][0];
+    const scale = Math.min(3, 640 / Math.max(right - left, bottom - top));
+    const picture = canvas.createCanvas(Math.ceil((right - left) * scale), Math.ceil((bottom - top) * scale));
+    await page.render({
+      canvas: picture as unknown as HTMLCanvasElement,
+      viewport: page.getViewport({ scale }),
+      transform: [1, 0, 0, 1, -left * scale, -top * scale],
+      annotationMode: pdfjs.AnnotationMode.DISABLE,
+      background: "#fff",
+    }).promise;
+    const { data } = picture.getContext("2d").getImageData(0, 0, picture.width, picture.height);
+    if (!data.some((channel, index) => index % 4 !== 3 && channel < 245)) return;
+    return picture.toBuffer("image/png");
+  } finally {
+    await task.destroy();
+  }
+}
+
 const symbolFallbacks: Record<string, string> = {
   "📱": "电话 ", "☎": "电话 ", "📞": "电话 ", "📧": "邮箱 ", "✉": "邮箱 ",
   "📍": "地点 ", "🔗": "链接 ", "✅": "•", "✔": "•", "▪": "•", "●": "•", "‣": "•",
@@ -89,7 +149,7 @@ function printableText(text: string, available: Set<number>) {
 
 export async function renderPdf(
   text: string,
-  { updateMetadata = true } = {},
+  { updateMetadata = true, photo }: { updateMetadata?: boolean; photo?: Buffer } = {},
 ): Promise<Uint8Array> {
   const pdf = await PDFDocument.create({ updateMetadata });
   pdf.registerFontkit(fontkit);
@@ -117,7 +177,18 @@ export async function renderPdf(
   );
   const size = [595.28, 841.89] as const, margin = 46;
   const ink = rgb(0.13, 0.16, 0.20), accent = rgb(0.14, 0.29, 0.49), rule = rgb(0.80, 0.85, 0.91);
-  let page = pdf.addPage([...size]), y = 795;
+  const firstPage = pdf.addPage([...size]);
+  let page = firstPage, y = 795;
+  const portrait = photo ? await pdf.embedPng(photo) : undefined;
+  const portraitSize = portrait?.scaleToFit(80, 106);
+  const photoBottom = y - (portraitSize?.height ?? 0);
+  if (portrait && portraitSize) firstPage.drawImage(portrait, {
+    x: size[0] - margin - portraitSize.width,
+    y: photoBottom,
+    ...portraitSize,
+  });
+  const rightEdge = (top: number) => page === firstPage && portraitSize && top > photoBottom - 8
+    ? size[0] - margin - portraitSize.width - 16 : size[0] - margin;
   const room = (needed: number) => {
     if (y - needed >= margin) return;
     page = pdf.addPage([...size]);
@@ -139,7 +210,7 @@ export async function renderPdf(
     if (heading) {
       room(52);
       y -= 7;
-      page.drawLine({ start: { x: margin, y: y - 5 }, end: { x: size[0] - margin, y: y - 5 }, thickness: 0.7, color: rule });
+      page.drawLine({ start: { x: margin, y: y - 5 }, end: { x: rightEdge(y - 5), y: y - 5 }, thickness: 0.7, color: rule });
     }
     const bullet = /^(?:[-*•●▪]|\d+[.)、])\s*/.exec(label)?.[0];
     let x = margin, current = "";
@@ -150,7 +221,7 @@ export async function renderPdf(
       x = margin + (bullet ? 12 : 0);
       current = "";
     };
-    const fits = (value: string) => font.widthOfTextAtSize(value, textSize) <= size[0] - x - margin;
+    const fits = (value: string) => font.widthOfTextAtSize(value, textSize) <= rightEdge(y + textSize) - x;
     for (const token of label.match(/\p{Script=Han}|\s+|[^\p{Script=Han}\s]+/gu) ?? []) {
       if (current && !fits(current + token)) draw();
       if (fits(token)) {

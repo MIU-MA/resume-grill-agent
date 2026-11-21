@@ -50,7 +50,7 @@ dsh plugin --profile desktop add 'link:C:/path/resume-grill-agent'
 
 「投递记录」汇总 BOSS、官网和邮件记录。点「记录跟进」可保存等回复、已约面、已结束及备注，用「到期跟进」筛出今天和逾期的事项。官网在提交后从岗位卡片点「记录官网已提交」。跟进进展由你填写，邮件回执继续显示 SMTP 发送状态。
 
-保留原文时直接复用原 PDF，包含原版式及照片。改写后生成分节、可选中文字的岗位版，采用新的单栏版式。扫描件可安装 [Tesseract](https://tesseract-ocr.github.io/tessdoc/Installation) 后在本机提取文字，默认语言为简体中文与英文。程序在 PATH 之外时可设置 `RESUME_OCR_EXECUTABLE`，也可用 `RESUME_OCR_LANG` 明确指定已安装语言，例如 `chi_sim+eng`。
+保留原文时直接复用整份 PDF。改写后生成可选中文字的单栏版。如果最初上传的 PDF 首页上方能识别出唯一一张合适尺寸的独立照片，会带入新版本。整页扫描或有多个符合条件的图片时，新版本仍可保存，状态会提示照片未识别。扫描件可安装 [Tesseract](https://tesseract-ocr.github.io/tessdoc/Installation) 后在本机提取文字，默认语言为简体中文与英文。程序在 PATH 之外时可设置 `RESUME_OCR_EXECUTABLE`，也可用 `RESUME_OCR_LANG` 明确指定已安装语言，例如 `chi_sim+eng`。
 
 资料默认在 `DSH_HOME/storages/resume-grill`，通常为 `%USERPROFILE%/.dsh/storages/resume-grill`。可用 `RESUME_AGENT_HOME` 指定绝对目录。恢复卡片时重新读取状态，`sent` 表示 SMTP 接受。
 

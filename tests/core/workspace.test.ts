@@ -7,6 +7,9 @@ import { Store } from "../../src/infrastructure/sqlite-store.js";
 import { Workspace } from "../../src/core/workspace.js";
 import { renderPdf, readResume } from "../../src/infrastructure/documents.js";
 import { tailoringSections } from "../../src/domain/resume-tailoring.js";
+import { resumeImages } from "../../src/infrastructure/resume-images.js";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { PDFDocument } from "pdf-lib";
 
 test("SMTP 回执随投递记录持久化，重开存储仍可查询", async (t) => {
   const receipt = {
@@ -89,6 +92,59 @@ test("保留原文的岗位版直接使用原 PDF 字节", async (t) => {
   }, []);
   assert.deepEqual(await readFile(version.pdf!), await readFile(original.original));
   assert.equal(version.text, original.text);
+});
+
+test("手动改写和应用建议后，导出的 PDF 及投递预览保留原简历照片", async (t) => {
+  const { workspace, home, job } = await fixture(t);
+  const originalText = "林沐\n项目经历\n负责前端页面开发。";
+  const original = await PDFDocument.load(await renderPdf(originalText));
+  const portrait = createCanvas(144, 192);
+  const portraitContext = portrait.getContext("2d");
+  portraitContext.fillStyle = "#bf3434";
+  portraitContext.fillRect(0, 0, portrait.width, portrait.height);
+  const image = await original.embedPng(portrait.toBuffer("image/png"));
+  original.getPage(0).drawImage(image, { x: 469, y: 698, width: 72, height: 96 });
+  const originalPath = join(home, "带照片简历.pdf");
+  const originalBytes = Buffer.from(await original.save());
+  await writeFile(originalPath, originalBytes);
+  const source = await workspace.importResume(originalPath);
+  const [intro, project] = tailoringSections(source.text);
+  const manual = await workspace.saveEditedResume(source.id, "林沐\n项目经历\n负责前端页面开发和维护。");
+  const ai = await workspace.saveVersion(source.id, job.id, {
+    company: "", role: "", sectionOrder: [intro.id, project.id],
+    changes: [{
+      sectionId: project.id, lineIndex: 0, after: "负责前端页面开发及维护。",
+      requirement: "开发", reason: "保留原有经历",
+    }],
+    highlights: [], gaps: [],
+  }, [`${project.id}:0`]);
+  const unchanged = await workspace.saveVersion(source.id, job.id, {
+    company: "", role: "", sectionOrder: [intro.id, project.id],
+    changes: [], highlights: [], gaps: [],
+  }, []);
+  assert.deepEqual(await readFile(unchanged.pdf!), originalBytes);
+  assert.deepEqual(await readFile(source.original), originalBytes);
+  assert.equal(manual.headerPhoto, "copied");
+  assert.equal(ai.headerPhoto, "copied");
+  const redraft = await workspace.saveEditedResume(ai.id, "林沐\n项目经历\n负责前端页面开发、维护与测试。", job.id);
+  assert.equal(redraft.headerPhoto, "copied");
+  const mail = await workspace.prepare(job.id, ai.id, "hr@example.com", "应聘", "您好，附件是简历。");
+  assert.deepEqual(await readFile(mail.attachment), await readFile(ai.pdf!));
+  const photos = [];
+  for (const version of [manual, ai, redraft]) {
+    assert.match((await readResume(version.pdf!)).text, /维护/);
+    const { images } = await resumeImages(version.pdf!);
+    const page = await loadImage(images[0].bytes);
+    const target = createCanvas(page.width, page.height);
+    const context = target.getContext("2d");
+    context.drawImage(page, 0, 0);
+    const { data } = context.getImageData(Math.floor(page.width * 0.84), 0, Math.floor(page.width * 0.1), Math.floor(page.height * 0.22));
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4)
+      if (data[i] > 160 && data[i + 1] < 100 && data[i + 2] < 100) count++;
+    photos.push(count > 500);
+  }
+  assert.deepEqual(photos, [true, true, true], "手动修改、岗位版及后续编辑均应在附件预览里显示照片");
 });
 
 test("修改邮件冻结新预览，沿用原附件，旧确认及旧预览不能发送", async (t) => {

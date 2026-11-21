@@ -3,7 +3,7 @@ import { readFile, writeFile, unlink } from "node:fs/promises";
 import { resolve, basename, extname } from "node:path";
 import { z } from "zod";
 import { Store } from "../infrastructure/sqlite-store.js";
-import { readResume, renderPdf } from "../infrastructure/documents.js";
+import { readPdfHeaderPhoto, readResume, renderPdf } from "../infrastructure/documents.js";
 import { capabilities as defaultCapabilities, type Capability } from "../shared/capabilities.js";
 import {
   applicationMail,
@@ -32,6 +32,7 @@ export type Resume = {
   jobId?: string;
   pdf?: string;
   pdfHash?: string;
+  headerPhoto?: "copied" | "unidentified";
   createdAt?: number;
   updatedAt?: number;
   deletedAt?: number;
@@ -251,11 +252,7 @@ export class Workspace {
     );
     const id = randomUUID(),
       pdf = resolve(this.store.home, `${id}.pdf`),
-      sourcePdf = source.pdf ?? source.original,
-      keepPdf = text === source.text && extname(sourcePdf).toLowerCase() === ".pdf",
-      bytes = keepPdf ? await readFile(sourcePdf) : await renderPdf(text);
-    if (keepPdf && source.pdfHash && hash(bytes) !== source.pdfHash)
-      throw new Error("原简历 PDF 已变化，请重新上传后再保存。");
+      { bytes, headerPhoto } = await this.renderResumeVersion(source, text);
     await writeFile(pdf, bytes, { flag: "wx", mode: 0o600 });
     const version: Resume = {
       id,
@@ -266,6 +263,7 @@ export class Workspace {
       jobId,
       pdf,
       pdfHash: hash(bytes),
+      ...(headerPhoto ? { headerPhoto } : {}),
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -297,7 +295,7 @@ export class Workspace {
     const job = jobId ? this.store.get<Job>("job", jobId) : undefined;
     const id = randomUUID(),
       pdf = resolve(this.store.home, `${id}.pdf`),
-      bytes = await renderPdf(text);
+      { bytes, headerPhoto } = await this.renderResumeVersion(source, text);
     await writeFile(pdf, bytes, { flag: "wx", mode: 0o600 });
     const version: Resume = {
       id,
@@ -310,11 +308,29 @@ export class Workspace {
       ...(jobId ? { jobId } : {}),
       pdf,
       pdfHash: hash(bytes),
+      ...(headerPhoto ? { headerPhoto } : {}),
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
     this.store.put("resume", version);
     return version;
+  }
+  private async renderResumeVersion(source: Resume, text: string) {
+    const current = source.pdf ?? source.original;
+    if (text.replace(/\r\n?/g, "\n").trim() === source.text.replace(/\r\n?/g, "\n").trim() &&
+        extname(current).toLowerCase() === ".pdf") {
+      const bytes = await readFile(current);
+      if (source.pdfHash && hash(bytes) !== source.pdfHash)
+        throw new Error("原简历 PDF 已变化，请重新上传后再保存。");
+      return { bytes, headerPhoto: source.headerPhoto };
+    }
+    const fromPdf = extname(source.original).toLowerCase() === ".pdf";
+    const photo = fromPdf ? await readPdfHeaderPhoto(source.original).catch(() => undefined) : undefined;
+    const headerPhoto: Resume["headerPhoto"] = photo ? "copied" : fromPdf ? "unidentified" : undefined;
+    return {
+      bytes: await renderPdf(text, { photo }),
+      headerPhoto,
+    };
   }
   async prepare(
     jobId: string,

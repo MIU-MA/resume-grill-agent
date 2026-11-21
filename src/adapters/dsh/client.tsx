@@ -367,7 +367,7 @@ export function NativeCard({
                 disabled={busy}
               />
               <p className="rg-note">
-                应用勾选的修改后生成单栏 PDF。保留原文时沿用原 PDF。
+                改写后生成单栏 PDF，并带入识别到的页首照片。保留原文时沿用原 PDF。
               </p>
               <button
                 disabled={busy}

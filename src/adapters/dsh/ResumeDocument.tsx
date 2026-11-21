@@ -32,13 +32,16 @@ export function ResumeDocument({
         disabled={busy}
         onClick={() => openFile(resume.pdf ?? resume.original)}
       >
-        查看原文件 / PDF
+        {resume.pdf ? "查看本版 PDF" : "查看原文件"}
       </button>
       {resume.pdf && resume.original !== resume.pdf && (
         <button onClick={() => openFile(resume.original)}>
           查看最初上传的文件
         </button>
       )}
+      {resume.headerPhoto && <p className="rg-note" role="status">
+        {resume.headerPhoto === "copied" ? "本版已带入原 PDF 的页首照片。" : "原 PDF 里没有识别出可单独带入的页首照片。"}
+      </p>}
       <label>
         简历正文
         <textarea
@@ -50,7 +53,7 @@ export function ResumeDocument({
         />
       </label>
       <p className="rg-note">
-        原文件保留。保存会另存文本排版的 PDF；需要核对原排版、照片时打开原文件。
+        修改会另存为单栏 PDF，识别到的原 PDF 页首照片会一起带入。
       </p>
       <button
         disabled={busy || text === resume.text || !text.trim()}
