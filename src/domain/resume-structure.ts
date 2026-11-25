@@ -5,6 +5,8 @@ export type ResumeSectionKind =
   | "work"
   | "internship"
   | "project"
+  | "competition"
+  | "campus"
   | "skills"
   | "awards"
   | "selfReview"
@@ -32,6 +34,8 @@ const HEADING_MATCHERS: Array<[ResumeSectionKind, RegExp]> =
     ["internship", /^(实习经历|实习经验|internship|internships)$/i],
     ["custom", /^(?:工作(?:与|及|和|[ /／]+)实习经历|work and internship experience)$/i],
     ["project", /^(项目经历|项目经验|项目|projects?)$/i],
+    ["competition", /^(竞赛经历|竞赛经验|竞赛项目|学科竞赛|比赛经历|竞赛获奖|获奖竞赛|竞赛与获奖|竞赛及获奖|荣誉与竞赛|竞赛|competitions?|competition experience|contests?)$/i],
+    ["campus", /^(校园经历|校园经验|在校经历|校内经历|在校实践|校园活动|社团经历|社团活动|学生工作|志愿服务|社会实践|校园实践|campus experience|campus activities|extracurricular(?: activities)?|volunteer experience)$/i],
     [
       "skills",
       /^(技能特长|专业技能|技术技能|技术能力|专业能力|职业技能|技能|技术栈|核心技能|skills?|technical skills|technical competencies)$/i,
@@ -113,11 +117,13 @@ export function resumeSectionHeading(
   const explicitlyMarked = /^#+\s*/.test(line) || /[：:]\s*$/.test(line);
   const normalized = line
     .replace(/^#+\s*/, "")
+    .replace(/^\*\*(.+?)\*\*\s*([：:]?)$/, "$1$2")
+    .replace(/^(?:第[一二三四五六七八九十]+[部分章节]\s*[:：]?|[一二三四五六七八九十\d]+[.、．)）]\s*)/, "")
     .replace(/[：:\s]+$/, "")
     .trim();
   if (!normalized || normalized.length > 40) return null;
   const known = HEADING_MATCHERS.find(([, matcher]) =>
-    matcher.test(normalized),
+    matcher.test(normalized.replace(/(?<=\p{Script=Han})\s+(?=\p{Script=Han})/gu, "")),
   );
   if (known) return { kind: known[0], title: normalized };
   if (

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ResumeProfileData } from "./resume-profile.js";
+import { experienceKinds, experienceLimit, type ResumeProfileData } from "./resume-profile.js";
 export const formFieldSchema = z
   .object({
     uid: z.string().min(1).max(100),
@@ -9,8 +9,8 @@ export const formFieldSchema = z
     value: z.string().max(10000).default(""),
     options: z.array(z.string().max(300)).max(300).default([]),
     manual: z.boolean().optional(),
-    group: z.enum(["education", "work", "project"]).optional(),
-    index: z.number().int().min(0).max(29).optional(),
+    group: z.enum(experienceKinds).optional(),
+    index: z.number().int().min(0).max(experienceLimit - 1).optional(),
   })
   .strict();
 export type FormField = z.infer<typeof formFieldSchema>;
@@ -60,7 +60,11 @@ export function matchFormField(
   }
   const kind =
     field.group ??
-    (/学校|院校|学历|学位|专业|入学|毕业|education|school|university|major|degree/.test(
+    (/竞赛|比赛|参赛|competition|contest/.test(label)
+      ? "competition"
+      : /校园|社团|学生会|志愿服务|campus|extracurricular|volunteer/.test(label)
+        ? "campus"
+        : /学校|院校|学历|学位|专业|入学|毕业|education|school|university|major|degree/.test(
       label,
     )
       ? "education"
@@ -87,25 +91,27 @@ export function matchFormField(
           : "没有对应经历，不能用其他类型经历代替",
     };
   const key =
-    /学校|院校|公司|单位|项目名|school|university|employer|organization/.test(
+    /学校|院校|公司|单位|项目名|竞赛名|比赛名|活动名|社团名|school|university|employer|organization|competitionname|contestname|activityname/.test(
       label,
     )
       ? "organization"
       : /学历|学位|degree/.test(label)
         ? "degree"
-        : /专业|职位|角色|major|title|role/.test(label)
+        : /专业|职位|角色|职务|major|title|role/.test(label)
           ? "title"
           : /预计.*毕业/.test(label)
             ? "expectedEnd"
-            : /开始|入学|入职|start/.test(label)
+            : /开始|入学|入职|start/.test(label) || (kind === "competition" && /^(?:获奖|参赛|比赛|竞赛)(?:日期|时间)$/.test(label))
               ? "start"
               : /结束|毕业|离职|end/.test(label)
                 ? kind === "education" && selected.entry.expectedEnd
                   ? "expectedEnd"
                   : "end"
-                : /描述|内容|职责|项目经历|项目经验|description/.test(label)
-                  ? "description"
-                  : undefined;
+                : kind === "competition" && /奖项|名次|成绩|获奖|award|result/.test(label)
+                  ? "award"
+                  : /描述|内容|职责|项目经历|项目经验|竞赛经历|校园经历|description/.test(label)
+                    ? "description"
+                    : undefined;
   if (!key) return { reason: "需要进一步识别字段含义" };
   const value = selected.entry[key];
   return value

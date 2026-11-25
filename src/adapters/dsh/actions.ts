@@ -42,6 +42,7 @@ const actionSchema = z.discriminatedUnion("action", [
       resumeId: z.string(),
       jobId: z.string().optional(),
       goalId: z.string().optional(),
+      reparse: z.literal(true).optional(),
     })
     .strict(),
   z
@@ -227,8 +228,10 @@ export async function humanAction(
     return workspaceView(workspace);
   }
   if (input.action === "resume") return resumeView(workspace, input.id);
-  if (input.action === "profile")
+  if (input.action === "profile") {
+    if (input.reparse) await new ResumeProfiles(workspace).reparse(input.resumeId);
     return profileView(workspace, input.resumeId, input.jobId, input.goalId);
+  }
   if (input.action === "confirm-profile") {
     const profile = new ResumeProfiles(workspace).confirm(input.id, input.data);
     return profileView(workspace, profile.resumeId, input.jobId, input.goalId);

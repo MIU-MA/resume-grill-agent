@@ -84,6 +84,8 @@ export function applicationPage(page: Page, validateHost: (hostname: string) => 
               if (/教育经历|education/i.test(legend)) return "education";
               if (/工作经历|实习经历|employment|work experience/i.test(legend)) return "work";
               if (/项目经历|project experience/i.test(legend)) return "project";
+              if (/竞赛经历|比赛经历|competition|contest/i.test(legend)) return "competition";
+              if (/校园经历|社团经历|志愿服务|campus experience|extracurricular/i.test(legend)) return "campus";
             };
             const sections = Array.from(container.querySelectorAll(expected.sections))
               .filter((item) => visible(item) && !!sectionKind(item));

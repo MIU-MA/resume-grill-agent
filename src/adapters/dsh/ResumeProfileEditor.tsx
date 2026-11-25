@@ -1,6 +1,9 @@
 import type { NativeView } from "./views.js";
 import {
   CONTACT_LABELS,
+  EXPERIENCE_LABELS,
+  experienceKinds,
+  experienceLimit,
   type ResumeProfileData,
   type ContactKey,
 } from "../../domain/resume-profile.js";
@@ -46,6 +49,12 @@ export function ResumeProfileEditor({
             : "资料已确认，可在不同岗位重复使用。"
           : "解析草稿，尚未确认。请核对内容和经历分类。"}
       </p>
+      {view.profile.sourcePages && <p>已读取 PDF 共 {view.profile.sourcePages} 页。</p>}
+      <button disabled={busy || dirty} onClick={() => void run({
+        action: "profile", resumeId: view.resume.id, reparse: true,
+        ...(view.jobId ? { jobId: view.jobId } : {}),
+        ...(view.goalId ? { goalId: view.goalId } : {}),
+      })}>重新解析原文</button>
       <div className="rg-profile-grid">
         {(Object.keys(CONTACT_LABELS) as ContactKey[]).map((key) => (
           <label key={key}>
@@ -67,27 +76,15 @@ export function ResumeProfileEditor({
           </label>
         ))}
       </div>
-      {(["education", "work", "project"] as const).map((kind) => (
+      {experienceKinds.map((kind) => (
         <section key={kind}>
-          <h4>
-            {
-              {
-                education: "教育经历",
-                work: "工作 / 实习经历",
-                project: "项目经历",
-              }[kind]
-            }
-          </h4>
+          <h4>{EXPERIENCE_LABELS[kind].section}</h4>
           {data.experiences.map((item, index) =>
             item.kind === kind ? (
               <article key={item.id}>
                 <div className="rg-profile-grid">
                   <label>
-                    {kind === "education"
-                      ? "学校"
-                      : kind === "work"
-                        ? "公司 / 单位"
-                        : "项目名称"}
+                    {EXPERIENCE_LABELS[kind].organization}
                     <input
                       value={item.organization}
                       disabled={busy}
@@ -97,7 +94,7 @@ export function ResumeProfileEditor({
                     />
                   </label>
                   <label>
-                    {kind === "education" ? "专业" : "职位 / 角色"}
+                    {EXPERIENCE_LABELS[kind].title}
                     <input
                       value={item.title}
                       disabled={busy}
@@ -116,6 +113,13 @@ export function ResumeProfileEditor({
                           editExperience(index, "degree", e.target.value)
                         }
                       />
+                    </label>
+                  )}
+                  {kind === "competition" && (
+                    <label>
+                      奖项 / 名次
+                      <input value={item.award ?? ""} disabled={busy}
+                        onChange={(e) => editExperience(index, "award", e.target.value)} />
                     </label>
                   )}
                   <label>
@@ -189,11 +193,11 @@ export function ResumeProfileEditor({
           )}
           {!data.experiences.some((e) => e.kind === kind) && (
             <p className="rg-note">
-              没有解析出这类经历，可自行补充；不要把项目填成工作。
+              没有解析出这类经历，可自行补充。
             </p>
           )}
           <button
-            disabled={busy || data.experiences.length >= 30}
+            disabled={busy || data.experiences.length >= experienceLimit}
             onClick={() =>
               update({
                 ...data,
@@ -215,14 +219,7 @@ export function ResumeProfileEditor({
               })
             }
           >
-            添加
-            {
-              {
-                education: "教育经历",
-                work: "工作 / 实习经历",
-                project: "项目经历",
-              }[kind]
-            }
+            添加{EXPERIENCE_LABELS[kind].section}
           </button>
         </section>
       ))}

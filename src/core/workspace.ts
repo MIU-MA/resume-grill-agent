@@ -33,6 +33,7 @@ export type Resume = {
   pdf?: string;
   pdfHash?: string;
   headerPhoto?: "copied" | "unidentified";
+  sourcePages?: number;
   createdAt?: number;
   updatedAt?: number;
   deletedAt?: number;
@@ -162,7 +163,7 @@ export class Workspace {
     return item;
   }
   async importResume(path: string) {
-    const { text, bytes } = await readResume(path),
+    const { text, bytes, pageCount } = await readResume(path),
       id = randomUUID();
     const original = resolve(
       this.store.home,
@@ -175,6 +176,7 @@ export class Workspace {
       name: basename(path),
       text,
       original,
+      ...(pageCount ? { sourcePages: pageCount } : {}),
       createdAt: now,
       updatedAt: now,
     };

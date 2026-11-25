@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { readPdfHeaderPhoto, readResume, renderPdf } from "../../src/infrastructure/documents.js";
 test("实际渲染的每一个中文、英文字母、数字都存在可见字形", async () => {
@@ -121,4 +121,28 @@ test("有两个符合页首照片尺寸的图片时不任意挑一张", async (t
   const path = join(home, "两张图片.pdf");
   await writeFile(path, await pdf.save());
   assert.equal(await readPdfHeaderPhoto(path), undefined);
+});
+
+test("续页扫描图带有原生页眉时，仍送到 OCR", async (t) => {
+  const home = await mkdtemp(join(tmpdir(), "resume-pdf-mixed-pages-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const { createCanvas } = await import("@napi-rs/canvas");
+  const scanned = createCanvas(300, 400);
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const image = await pdf.embedPng(scanned.toBuffer("image/png"));
+  pdf.addPage([300, 400]).drawText("Experience on page one", { x: 10, y: 380, font });
+  const second = pdf.addPage([300, 400]);
+  second.drawImage(image, { x: 0, y: 0, width: 300, height: 400 });
+  second.drawText("Resume - page 2", { x: 10, y: 380, font });
+  const path = join(home, "两页简历.pdf");
+  await writeFile(path, await pdf.save());
+  let calls = 0;
+  const result = await readResume(path, { ocr: async () => {
+    calls++;
+    return "第二页竞赛经历";
+  } });
+  assert.equal(calls, 1);
+  assert.equal(result.pageCount, 2);
+  assert.match(result.text, /page one\n第二页竞赛经历/);
 });

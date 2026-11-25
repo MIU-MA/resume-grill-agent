@@ -17,6 +17,8 @@ export function modelCanRewriteLine(
 ): boolean {
   const line = section.lines[lineIndex]?.trim();
   if (!line || ["education", "awards"].includes(section.kind)) return false;
+  if (section.kind === "competition" && /(?:特等|[一二三四]等)奖|[金银铜](?:奖|牌)|名次|获奖|奖项/.test(line))
+    return false;
   if (section.kind !== "general") return true;
   if (
     IDENTITY_LABEL.test(line) ||

@@ -52,6 +52,8 @@ dsh plugin --profile desktop add 'link:C:/path/resume-grill-agent'
 
 保留原文时直接复用整份 PDF。改写后生成可选中文字的单栏版。如果最初上传的 PDF 首页上方能识别出唯一一张合适尺寸的独立照片，会带入新版本。整页扫描或有多个符合条件的图片时，新版本仍可保存，状态会提示照片未识别。扫描件可安装 [Tesseract](https://tesseract-ocr.github.io/tessdoc/Installation) 后在本机提取文字，默认语言为简体中文与英文。程序在 PATH 之外时可设置 `RESUME_OCR_EXECUTABLE`，也可用 `RESUME_OCR_LANG` 明确指定已安装语言，例如 `chi_sim+eng`。
 
+「解析为可复用资料」会显示已读取的 PDF 页数，并分类展示教育、工作、项目、竞赛和校园经历。原文件已上传时，可以在资料页点「重新解析原文」，核对新增字段后再确认。确认前，官网仍使用上次确认的资料。
+
 资料默认在 `DSH_HOME/storages/resume-grill`，通常为 `%USERPROFILE%/.dsh/storages/resume-grill`。可用 `RESUME_AGENT_HOME` 指定绝对目录。恢复卡片时重新读取状态，`sent` 表示 SMTP 接受。
 
 ## 模块配置

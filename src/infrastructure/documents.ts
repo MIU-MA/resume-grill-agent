@@ -19,11 +19,67 @@ async function openPdf(bytes: Uint8Array) {
   return { canvas, pdfjs, task };
 }
 
+type TextItem = { str: string; transform: number[]; width: number; height: number; hasEOL: boolean };
+
+function pdfPageText(items: (TextItem | { type: string })[]) {
+  const lines: string[] = [];
+  let line = "";
+  let previous: TextItem | undefined;
+  for (const item of items) {
+    if (!("str" in item)) continue;
+    const newLine = previous && item.str.trim() &&
+      Math.abs(item.transform[5] - previous.transform[5]) > Math.max(2, Math.min(item.height, previous.height) * 0.3);
+    if (newLine && line.trim()) {
+      lines.push(line.trim());
+      line = "";
+    }
+    if (line && item.str && previous && !/\s$/.test(line) && !/^\s/.test(item.str)) {
+      const gap = item.transform[4] - (previous.transform[4] + previous.width);
+      if (gap > Math.max(1, item.height * 0.17)) line += " ";
+    }
+    line += item.str;
+    if (item.hasEOL) {
+      if (line.trim()) lines.push(line.trim());
+      line = "";
+      previous = undefined;
+    } else if (item.str.trim()) {
+      previous = item;
+    }
+  }
+  if (line.trim()) lines.push(line.trim());
+  return lines.join("\n");
+}
+
+type PdfLibrary = Awaited<ReturnType<typeof openPdf>>["pdfjs"];
+type PdfOperators = { fnArray: number[]; argsArray: any[] };
+function pdfImageRegions({ OPS, Util }: PdfLibrary, { fnArray, argsArray }: PdfOperators, initial: number[], includeMasks = false) {
+  let matrix = initial;
+  const stack: number[][] = [], regions: number[][] = [];
+  for (const [index, op] of fnArray.entries()) {
+    const args = argsArray[index];
+    if (op === OPS.save || op === OPS.paintFormXObjectBegin) {
+      stack.push(matrix);
+      if (op === OPS.paintFormXObjectBegin && args?.[0])
+        matrix = Util.transform(matrix, args[0]);
+    } else if (op === OPS.restore || op === OPS.paintFormXObjectEnd) {
+      matrix = stack.pop() ?? initial;
+    } else if (op === OPS.transform) {
+      matrix = Util.transform(matrix, args);
+    } else if (op === OPS.paintImageXObject || op === OPS.paintInlineImageXObject ||
+        (includeMasks && op === OPS.paintImageMaskXObject)) {
+      const bounds = [Infinity, Infinity, -Infinity, -Infinity];
+      Util.axialAlignedBoundingBox([0, 0, 1, 1], matrix, bounds);
+      if (bounds.every(Number.isFinite)) regions.push(bounds);
+    }
+  }
+  return regions;
+}
+
 export async function readResume(path: string, { ocr = recognizeResumePage } = {}) {
   const bytes = await readFile(path);
   if (bytes.length > 10 * 1024 * 1024 || !bytes.length)
     throw new Error("简历须在 10 MiB 以内且不能为空。");
-  let text: string;
+  let text: string, pageCount: number | undefined;
   if (/\.(txt|md)$/i.test(path)) text = bytes.toString("utf8");
   else if (/\.docx$/i.test(path)) {
     const mammoth = await import("mammoth");
@@ -32,30 +88,28 @@ export async function readResume(path: string, { ocr = recognizeResumePage } = {
     const { canvas, pdfjs, task } = await openPdf(bytes);
     try {
       const pdf = await task.promise;
+      pageCount = pdf.numPages;
       const pages: string[] = [];
       let scans = 0;
       for (let n = 1; n <= pdf.numPages; n++) {
         const page = await pdf.getPage(n);
         const content = await page.getTextContent();
-        const extracted = content.items
-            .map((item) =>
-              "str" in item ? item.str + (item.hasEOL ? "\n" : " ") : "",
-            )
-            .join("");
-        if (/\p{L}/u.test(extracted) || extracted.trim().length > 5) {
+        const extracted = pdfPageText(content.items);
+        if (extracted.replace(/\s/g, "").length >= 120 && extracted.split("\n").length >= 3) {
           pages.push(extracted);
           continue;
         }
-        const operators = await page.getOperatorList();
-        const hasImage = operators.fnArray.some((op) =>
-          [pdfjs.OPS.paintImageXObject, pdfjs.OPS.paintInlineImageXObject, pdfjs.OPS.paintImageMaskXObject].includes(op));
-        if (!hasImage && pdf.numPages > 1) {
+        const original = page.getViewport({ scale: 1 });
+        const regions = pdfImageRegions(pdfjs, await page.getOperatorList(), original.transform, true);
+        const hasText = /\p{L}/u.test(extracted) || extracted.trim().length > 5;
+        const fullPageImage = regions.some(([left, top, right, bottom]) =>
+          right - left >= original.width * 0.55 && bottom - top >= original.height * 0.55);
+        if ((!regions.length && pdf.numPages > 1) || (hasText && !fullPageImage)) {
           pages.push(extracted);
           continue;
         }
         if (++scans > 6)
           throw new Error("扫描页超过 6 页，请拆分或先生成带文字层的 PDF。");
-        const original = page.getViewport({ scale: 1 });
         const viewport = page.getViewport({ scale: Math.min(3, 2300 / original.width, 3200 / original.height) });
         if (!(viewport.width >= 1 && viewport.height >= 1)) throw new Error("扫描页尺寸无效。");
         const target = canvas.createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
@@ -69,7 +123,7 @@ export async function readResume(path: string, { ocr = recognizeResumePage } = {
   } else throw new Error("支持 PDF、DOCX、TXT、Markdown。");
   if (!text.trim()) throw new Error("没有识别到可用的简历正文。");
   if (text.length > 30000) throw new Error("简历正文超过 30000 字。");
-  return { text, bytes };
+  return { text, bytes, pageCount };
 }
 
 /** Copy a single portrait-sized image from the original PDF's first-page header. */
@@ -80,28 +134,12 @@ export async function readPdfHeaderPhoto(path: string): Promise<Buffer | undefin
   try {
     const pdf = await task.promise;
     const page = await pdf.getPage(1);
-    const { fnArray, argsArray } = await page.getOperatorList();
     const viewport = page.getViewport({ scale: 1 });
-    const { OPS, Util } = pdfjs;
-    let matrix = viewport.transform;
-    const stack: number[][] = [];
     const regions = new Map<string, number[]>();
-    for (const [index, op] of fnArray.entries()) {
-      const args = argsArray[index];
-      if (op === OPS.save || op === OPS.paintFormXObjectBegin) {
-        stack.push(matrix);
-        if (op === OPS.paintFormXObjectBegin && args?.[0])
-          matrix = Util.transform(matrix, args[0]);
-      } else if (op === OPS.restore || op === OPS.paintFormXObjectEnd) {
-        matrix = stack.pop() ?? viewport.transform;
-      } else if (op === OPS.transform) {
-        matrix = Util.transform(matrix, args);
-      } else if (op === OPS.paintImageXObject || op === OPS.paintInlineImageXObject) {
-        const bounds = [Infinity, Infinity, -Infinity, -Infinity];
-        Util.axialAlignedBoundingBox([0, 0, 1, 1], matrix, bounds);
+    for (const bounds of pdfImageRegions(pdfjs, await page.getOperatorList(), viewport.transform)) {
         const [left, top, right, bottom] = bounds;
         const width = right - left, height = bottom - top;
-        if (!bounds.every(Number.isFinite) || left < 0 || top < 0 ||
+        if (left < 0 || top < 0 ||
             right > viewport.width || bottom > viewport.height ||
             top > viewport.height * 0.19 || bottom > viewport.height * 0.29 ||
             width < viewport.width * 0.07 || width > viewport.width * 0.23 ||
@@ -109,7 +147,6 @@ export async function readPdfHeaderPhoto(path: string): Promise<Buffer | undefin
             (left > viewport.width * 0.24 && right < viewport.width * 0.76))
           continue;
         regions.set(bounds.map(Math.round).join(","), bounds);
-      }
     }
     if (regions.size !== 1) return;
     const [left, top, right, bottom] = [...regions.values()][0];
