@@ -43,16 +43,14 @@
 
 ## 安装
 
-在 DSH 打开 **插件 → 添加插件 → 安装第三方插件**，填写预构建 `.tgz` 的绝对路径，启用「Resume Grill」。
+从 [GitHub Releases](https://github.com/MIU-MA/resume-grill-agent/releases/latest) 下载 `resume-grill-agent-*.tgz`。在 DSH 打开 **插件 → 添加插件 → 安装第三方插件**，填写下载文件的绝对路径，启用「Resume Grill」。详见 [DSH 安装说明](docs/dsh.md)。
 
-当前可从本仓库生成安装包，需要 Node.js 24+：
+从源码打包需要 Node.js 24+，生成的安装包在 `artifacts/` 下。
 
 ```sh
 npm ci
 npm run package:plugin
 ```
-
-终端会给出 `artifacts/` 下的插件包路径。安装后从 DSH 左侧打开 **Resume Grill**。详见 [DSH 安装说明](docs/dsh.md)。
 
 <details>
 <summary>让 AI 安装</summary>
@@ -63,8 +61,8 @@ npm run package:plugin
 请把 Resume Grill 安装到我本机的 DSH 桌面版。
 源码仓库 https://github.com/MIU-MA/resume-grill-agent
 
-1. 优先用我提供的 .tgz。没有安装包时，用本地已有源码或克隆仓库。
-   确认 Node.js 24+，在仓库目录运行 npm ci 和 npm run package:plugin。
+1. 用我提供的 .tgz，或从 https://github.com/MIU-MA/resume-grill-agent/releases/latest
+   下载 resume-grill-agent-*.tgz 安装包。
 2. 使用实际 .tgz 路径运行 dsh plugin --profile desktop add "<.tgz 绝对路径>"。
    dsh 不在 PATH 时查找桌面版自带的 CLI。若无法调用 CLI，把包的绝对路径给我，
    我会粘贴到 DSH 的「安装第三方插件」。

@@ -4,19 +4,17 @@
 
 DSH 的“插件 → 添加插件 → 安装第三方插件”可以安装 npm 包、Git 仓库、本地目录和插件压缩包；不要求每个用户克隆项目后构建。[官方安装器说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/ui-plugin-manager/README.zh.md)
 
-本项目当前提供本地预构建包：
+1. 从 [GitHub Releases](https://github.com/MIU-MA/resume-grill-agent/releases/latest) 的 Assets 下载 `resume-grill-agent-*.tgz`。
+2. 在 DSH 安装入口填写下载文件的绝对路径，安装并启用「Resume Grill」。
+3. 从 DSH 左侧打开 **Resume Grill**。
 
-1. 由维护者在仓库运行 `npm ci`、`npm run package:plugin`。
-2. 将 `artifacts/` 中生成的 `.tgz` 交给使用者。
-3. 使用者在 DSH 官方安装入口填写下载文件的绝对路径，安装并启用「Resume Grill」。CLI 等价方式如下，路径须替换为实际下载位置：
+也可以用 CLI 安装，将示例路径换成实际下载位置。
 
 ```powershell
 dsh plugin --profile desktop add 'C:/Downloads/resume-grill-agent-0.4.5.tgz'
 ```
 
-Web 版将 `desktop` 换成 `web`。升级时用同一入口安装新版 `.tgz`，完全退出 DSH（包括托盘菜单里的「退出」）后重新打开，让界面和后端一起加载。只刷新页面会保留运行中的后端。此包包含构建后的 Host、React 卡片、字体和插件声明，安装时仍需下载运行依赖。包尚未发布到 npm，也没有公开下载版本。
-
-以后发布 npm 或公开的预构建包后，可直接在同一安装器填包名或下载地址；不要在发布前将这些示例写成已可用入口。私有 Git 仓库还需要安装器能使用的仓库凭据。
+Web 版将 `desktop` 换成 `web`。升级时用同一入口安装新版 `.tgz`，完全退出 DSH（包括托盘菜单里的「退出」）后重新打开。安装包包含构建后的 Host、React 卡片、字体和插件声明，安装时仍需下载运行依赖。
 
 ## 开发者本地链接
 
