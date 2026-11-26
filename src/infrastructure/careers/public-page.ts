@@ -377,6 +377,30 @@ function extractPageJobs(
   }
   const $ = load(html);
   $("script,style,noscript,svg,template,nav,footer,header,aside").remove();
+  const source = new URL(url);
+  if (source.hostname === "talent.baidu.com" && source.pathname.startsWith("/jobs/")) {
+    $('[class*="post-item__"]').slice(0, 30).each((_, element) => {
+      const card = $(element);
+      const role = card.find('[class*="post-title-content__"] span').first().text().trim();
+      const id = role.match(/[（(](J\d+)[）)]$/)?.[1];
+      const description = card.find('[class*="post-content__"]').first().html();
+      if (!id || !description) return;
+      const lines = descriptionLines(descriptionDocument(description));
+      if (!lines.length) return;
+      const metadata = card.find('[class*="post-subtitle__"]').first().children()
+        .map((_, field) => $(field).text().trim()).get().filter(Boolean);
+      jobs.push({
+        id,
+        role,
+        company: "百度",
+        emails: [],
+        recommendedEmail: "",
+        jobDescription: [...metadata, "官网列表中的岗位描述", ...lines]
+          .join("\n").slice(0, MAX_DESCRIPTION_LENGTH),
+      });
+    });
+    if (jobs.length) return jobs;
+  }
   const headings = $(
     'h1,h2,h3,h4,h5,h6,[role="heading"],[role="tab"],[class*="roleTitle"],[class*="job-title"],[class*="jobTitle"],[class*="position-title"]',
   )

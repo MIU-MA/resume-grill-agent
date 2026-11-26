@@ -23,23 +23,29 @@ import {
   searchQueries,
 } from "../../domain/job-search.js";
 
-export async function launchCareerBrowser(): Promise<Browser> {
+export async function launchCareerBrowser(deadline = Infinity): Promise<Browser> {
+  const launchTimeout = () => {
+    if (Date.now() >= deadline) throw new Error("已达到招聘页读取时间限制");
+    return Math.min(8000, deadline - Date.now());
+  };
   for (const channel of ["msedge", "chrome"]) {
+    const timeout = launchTimeout();
     try {
       return await chromium.launch({
         channel,
         headless: true,
-        timeout: 8000,
+        timeout,
         chromiumSandbox: true,
       });
     } catch {
       /* Try the next installed browser. */
     }
   }
+  const timeout = launchTimeout();
   try {
     return await chromium.launch({
       headless: true,
-      timeout: 8000,
+      timeout,
       chromiumSandbox: true,
     });
   } catch {
@@ -84,6 +90,8 @@ export async function discoverBrowserCareers(
   keywords: string[] = [],
   options: {
     detail?: boolean;
+    deadline?: number;
+    maxPages?: number;
     launch?: typeof launchCareerBrowser;
     onProgress?: (stage: string) => void;
     onResourceError?: (url: string, message: string) => void;
@@ -91,8 +99,9 @@ export async function discoverBrowserCareers(
 ): Promise<CareerDiscovery> {
   sourceUrlSchema.parse(input);
   keywords = searchKeywords(keywords);
-  const deadline = Date.now() + 45000;
-  const browser = await (options.launch ?? launchCareerBrowser)();
+  const deadline = Math.min(options.deadline ?? Infinity, Date.now() + 45000);
+  if (Date.now() >= deadline) throw new Error("已达到招聘页读取时间限制");
+  const browser = await (options.launch ?? launchCareerBrowser)(deadline);
   const hardStop = setTimeout(
     () => {
       void browser.close().catch(() => undefined);
@@ -112,6 +121,8 @@ export async function discoverBrowserCareers(
       throw error;
     });
   let requests = 0;
+  let pagesRead = 1;
+  const pageBudget = options.maxPages ?? Infinity;
   const collected = new Map<string, CareerPage>();
   const notes: string[] = ["已使用独立浏览器读取公开招聘页面。"];
   const hosts = new Map<string, ReturnType<typeof resolvePublicHost>>();
@@ -219,7 +230,8 @@ export async function discoverBrowserCareers(
           ) &&
           link.url !== page.url(),
       );
-      if (entry) {
+      if (entry && pagesRead < pageBudget) {
+        pagesRead++;
         options.onProgress?.(`进入职位列表 ${entry.url}`);
         await page.goto(entry.url, {
           waitUntil: "domcontentloaded",
@@ -251,11 +263,12 @@ export async function discoverBrowserCareers(
         if (!(await search.count())) continue;
         try {
           for (const keyword of searchQueries(keywords)) {
-            if (Date.now() + 6000 >= deadline) {
-              notes.push("时间限制内未完成全部关键词搜索，已读岗位保留。");
+            if (pagesRead >= pageBudget || Date.now() + 6000 >= deadline) {
+              notes.push("读取限额内未完成全部关键词搜索，已读岗位保留。");
               break;
             }
             options.onProgress?.(`搜索 ${keyword}`);
+            pagesRead++;
             await search.fill(keyword, { timeout: 5000 });
             await search.press("Enter");
             await settle(page, deadline);
@@ -347,7 +360,7 @@ export async function discoverBrowserCareers(
             ),
         );
       for (const title of [...new Set(candidates)].slice(0, 4)) {
-        if (Date.now() + 5000 >= deadline) break;
+        if (pagesRead >= pageBudget || Date.now() + 5000 >= deadline) break;
         let target = page
           .getByText(title, { exact: true })
           .filter({ visible: true })
@@ -360,6 +373,7 @@ export async function discoverBrowserCareers(
         if (!(await target.count())) continue;
         const listUrl = page.url();
         try {
+          pagesRead++;
           await target.click();
           await page
             .waitForURL((url) => url.href !== listUrl, { timeout: 2500 })
@@ -432,11 +446,12 @@ export async function discoverBrowserCareers(
             )
       ).slice(0, 3);
       for (const link of details) {
-        if (Date.now() + 3000 >= deadline) {
-          notes.push("时间限制内未读完所有详情，已读取岗位保留。");
+        if (pagesRead >= pageBudget || Date.now() + 3000 >= deadline) {
+          notes.push("读取限额内未读完所有详情，已读取岗位保留。");
           break;
         }
         try {
+          pagesRead++;
           const address = new URL(link.url);
           const anchor = page
             .locator(
@@ -495,8 +510,9 @@ export async function discoverBrowserCareers(
     return {
       links,
       pages,
-      pagesRead: 1 + pages.length,
+      pagesRead,
       listingRead: pages.length > 0,
+      partial: pagesRead >= pageBudget || Date.now() >= deadline,
       notes,
     };
   } catch (error) {
@@ -504,8 +520,9 @@ export async function discoverBrowserCareers(
       return {
         links: [],
         pages: [...collected.values()],
-        pagesRead: collected.size,
+        pagesRead,
         listingRead: true,
+        partial: true,
         notes: [...notes, "时间限制内未读完详情，已读取岗位保留。"],
       };
     if (Date.now() >= deadline)

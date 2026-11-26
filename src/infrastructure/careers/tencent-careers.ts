@@ -86,9 +86,10 @@ export async function discoverTencentCareers(
   input: string,
   keywords: string[] = [],
   read: ReadJson = readCareerJson,
+  options: { deadline?: number; maxRequests?: number } = {},
 ): Promise<CareerDiscovery> {
   if (!isTencentCareer(input)) throw new Error("不是腾讯招聘官网地址");
-  const deadline = Date.now() + 26000;
+  const deadline = Math.min(options.deadline ?? Infinity, Date.now() + 26000);
   if (new URL(input).searchParams.has("postId"))
     return {
       links: [],
@@ -100,9 +101,10 @@ export async function discoverTencentCareers(
   const query = searchQueries(keywords);
   const posts = new Map<string, Post>();
   let calls = 0,
+    listRead = false,
     truncated = false;
   for (const keyword of query.length ? query : [""]) {
-    if (Date.now() >= deadline || posts.size >= 30) {
+    if (Date.now() >= deadline || posts.size >= 30 || calls >= (options.maxRequests ?? Infinity)) {
       truncated = true;
       break;
     }
@@ -113,6 +115,7 @@ export async function discoverTencentCareers(
     endpoint.searchParams.set("language", "zh-cn");
     endpoint.searchParams.set("area", "cn");
     try {
+      calls++;
       const result = parseResponse(
         z.object({
           Code: z.literal(200),
@@ -120,27 +123,28 @@ export async function discoverTencentCareers(
         }),
         await read(endpoint.href, deadline, allowed),
       );
-      calls++;
+      listRead = true;
       if (result.Data.Count > result.Data.Posts.length) truncated = true;
       for (const post of result.Data.Posts)
         if (post.IsValid !== false && posts.size < 30)
           posts.set(post.PostId, post);
     } catch (error) {
-      if (!calls) throw error;
+      if (!listRead) throw error;
       truncated = true;
       break;
     }
   }
+  if (!listRead) throw new Error("未能在读取限额内取得腾讯岗位列表");
   const pages = [...posts.values()].map((post) => pageFor(post, false));
   let detailFailures = 0;
   for (
     let index = 0;
-    index < Math.min(5, pages.length) && Date.now() < deadline;
+    index < Math.min(5, pages.length) && Date.now() < deadline && calls < (options.maxRequests ?? Infinity);
     index++
   ) {
     try {
-      pages[index] = await readTencentCareer(pages[index].url, deadline, read);
       calls++;
+      pages[index] = await readTencentCareer(pages[index].url, deadline, read);
     } catch {
       detailFailures++;
       break;
@@ -150,6 +154,7 @@ export async function discoverTencentCareers(
     pagesRead: calls,
     pages,
     listingRead: true,
+    partial: truncated || detailFailures > 0,
     links: pages.map((page) => ({
       url: page.url,
       label: page.role,

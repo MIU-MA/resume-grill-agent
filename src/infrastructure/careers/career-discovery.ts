@@ -10,20 +10,21 @@ import { readCareerPage } from "./public-page.js";
 export async function discoverCareers(
   input: string,
   read = readCareerPage,
+  options: { deadline?: number; maxPages?: number } = {},
 ): Promise<CareerDiscovery> {
   const start = normalizeCareerUrl(sourceUrlSchema.parse(input))!;
   // Exact host only, plus its www alias. Linked external recruiting systems remain visible.
   const host = new URL(start).hostname.replace(/^www\./, "");
   const inScope = (value: string) =>
     new URL(value).hostname.replace(/^www\./, "") === host;
-  const deadline = Date.now() + 18000;
+  const deadline = Math.min(options.deadline ?? Infinity, Date.now() + 18000);
   const pending = [{ url: start, depth: 0 }];
   const visited = new Set<string>();
   const found = new Map<string, CareerLink>();
   const notes = new Set<string>();
   const pages: CareerPage[] = [];
   let pagesRead = 0;
-  while (pending.length && visited.size < 6 && Date.now() < deadline) {
+  while (pending.length && visited.size < (options.maxPages ?? 6) && Date.now() < deadline) {
     const current = pending.shift()!;
     if (visited.has(current.url)) continue;
     visited.add(current.url);
@@ -76,6 +77,7 @@ export async function discoverCareers(
     links: [...found.values()],
     pagesRead,
     notes: [...notes],
+    partial: pending.length > 0 || Date.now() >= deadline,
     ...(pages.length ? { pages } : {}),
   };
 }

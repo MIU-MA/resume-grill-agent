@@ -6,6 +6,9 @@ import { tmpdir } from "node:os";
 import { Store } from "../../src/infrastructure/sqlite-store.js";
 import { Workspace } from "../../src/core/workspace.js";
 import { Tasks } from "../../src/core/tasks.js";
+import { discoverRecruitingPage } from "../../src/infrastructure/careers/career-reader.js";
+import { discoverCareers } from "../../src/infrastructure/careers/career-discovery.js";
+import { discoverTencentCareers } from "../../src/infrastructure/careers/tencent-careers.js";
 import {
   extractCareerEmails,
   isPublicAddress,
@@ -186,6 +189,39 @@ test("失败的详情请求也计入十页预算，并标记部分读取", async
     sources: ["https://example.com/list/single"],
   });
   assert.equal((await tasks.discover(one.id)).status, "partial");
+});
+
+test("按目标找岗位复用腾讯接口与百度首屏列表", async (t) => {
+  const f = await setup(t);
+  const baidu = "https://talent.baidu.com/jobs/social-list";
+  const tencent = "https://careers.tencent.com/";
+  const calls: string[] = [];
+  const tasks = new Tasks(f.workspace, readCareerPage, (url, keywords, _, limits) =>
+    discoverRecruitingPage(url, keywords, {
+      tencent: (input, terms, _read, options) => discoverTencentCareers(input, terms, async (address) => {
+        calls.push(address);
+        const post = { PostId: "123", RecruitPostName: "产品运营", Responsibility: "负责游戏运营。", LocationName: "深圳" };
+        return { Code: 200, Data: address.includes("ByPostId") ? { ...post, Requirement: "熟悉社区运营。" } : { Count: 1, Posts: [post] } };
+      }, options),
+      static: (input, _read, options) => discoverCareers(input, async (address) => {
+        assert.equal(address, baidu);
+        return extractCareerEmails(`<div class="post-item__abc">
+          <div class="post-title-content__abc"><span>产品运营（J123456）</span></div>
+          <div class="post-subtitle__abc"><span>北京</span></div>
+          <div class="post-content__abc"><p>负责产品运营。</p></div>
+        </div>`, address);
+      }, options),
+      browser: async () => { throw new Error("此场景应直接读取公开数据"); },
+    }, limits),
+  );
+  const goal = tasks.saveGoal({ resumeId: f.resume.id, directions: ["产品运营"], sources: [tencent, baidu] });
+  const run = await tasks.discover(goal.id);
+  assert.deepEqual(run.sources.map(({ status }) => status), ["read", "read"]);
+  assert.ok(calls.some((url) => url.includes("ByPostId")));
+  const [fromTencent, fromBaidu] = run.candidates.map(({ jobId }) => f.workspace.store.get<{ sourceUrl: string; jd: string }>("job", jobId));
+  assert.match(fromTencent.jd, /熟悉社区运营/);
+  assert.equal(fromBaidu.sourceUrl, baidu);
+  assert.match(fromBaidu.jd, /北京[\s\S]*负责产品运营/);
 });
 
 test("真实 HTML 提取按全栈别名筛选，排除条件及来源失败可追溯", async (t) => {

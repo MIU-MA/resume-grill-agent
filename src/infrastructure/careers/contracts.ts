@@ -27,6 +27,7 @@ export type CareerDiscovery = {
   notes: string[];
   pages?: CareerPage[];
   listingRead?: boolean;
+  partial?: boolean;
 };
 export type CareerLink = {
   url: string;

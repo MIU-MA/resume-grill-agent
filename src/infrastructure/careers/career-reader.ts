@@ -18,22 +18,33 @@ export async function discoverRecruitingPage(
     browser: discoverBrowserCareers,
     tencent: discoverTencentCareers,
   },
+  limits?: { deadline: number; maxPages: number },
 ): Promise<CareerDiscovery> {
   sourceUrlSchema.parse(input);
   keywords = searchKeywords(keywords);
+  let spent = 0;
   if (isTencentCareer(input)) {
     try {
-      return await tools.tencent(input, keywords);
+      return await tools.tencent(input, keywords, undefined, {
+        deadline: limits?.deadline,
+        maxRequests: limits?.maxPages,
+      });
     } catch {
       /* Keep the original page reader available if the public API fails. */
+      spent++;
     }
   }
+  if (limits && (limits.maxPages <= spent || Date.now() >= limits.deadline))
+    throw new Error("已达到招聘页读取限额");
   let initial: CareerDiscovery | undefined;
+  let staticError: unknown;
   try {
-    initial = await tools.static(input);
-  } catch {
+    initial = await tools.static(input, undefined, limits && { ...limits, maxPages: 1 });
+  } catch (error) {
+    staticError = error;
     /* A browser can read script-generated navigation and redirects. */
   }
+  spent += Math.max(1, initial?.pagesRead ?? 0);
   const titles = [
     ...(initial?.pages ?? []).flatMap((page) => [
       page.role,
@@ -48,12 +59,20 @@ export async function discoverRecruitingPage(
     (!keywords.length ||
       titles.some((title) => matchesJobTitle(title, keywords)))
   )
-    return initial!;
+    return { ...initial!, pagesRead: spent };
+  if (limits && (limits.maxPages <= spent || Date.now() >= limits.deadline)) {
+    if (initial) return { ...initial, pagesRead: spent, partial: true };
+    throw staticError ?? new Error("已达到招聘页读取限额");
+  }
   try {
-    const rendered = await tools.browser(input, keywords);
-    if (!initial) return rendered;
+    const rendered = await tools.browser(input, keywords, limits && {
+      deadline: limits.deadline,
+      maxPages: limits.maxPages - spent,
+    });
+    if (!initial) return { ...rendered, pagesRead: spent + rendered.pagesRead };
     return {
       ...rendered,
+      pagesRead: spent + rendered.pagesRead,
       pages: [
         ...new Map(
           [...(initial?.pages ?? []), ...(rendered.pages ?? [])].map((page) => [
@@ -63,6 +82,7 @@ export async function discoverRecruitingPage(
         ).values(),
       ],
       listingRead: initial?.listingRead || rendered.listingRead,
+      partial: initial.partial || rendered.partial,
       links: [
         ...new Map(
           [...(initial?.links ?? []), ...rendered.links].map((link) => [
@@ -77,6 +97,8 @@ export async function discoverRecruitingPage(
     if (initial)
       return {
         ...initial,
+        pagesRead: Math.max(spent + 1, limits?.maxPages ?? 0),
+        partial: true,
         notes: [
           ...initial.notes,
           `动态读取未完成，已保留原网页的链接和内容。${error instanceof Error ? error.message : ""}`,

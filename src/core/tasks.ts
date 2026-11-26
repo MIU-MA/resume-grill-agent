@@ -2,12 +2,15 @@ import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 import type { Workspace, Job, Application } from "./workspace.js";
 import { readCareerPage } from "../infrastructure/careers/public-page.js";
+import { discoverRecruitingPage } from "../infrastructure/careers/career-reader.js";
 import {
   sourceUrlSchema,
+  type CareerLink,
   type CareerPage,
 } from "../infrastructure/careers/contracts.js";
 import { crawlCareerSites } from "../infrastructure/careers/sites.js";
 import { matchesJob } from "../domain/job-search.js";
+import { requireCompanyWebsite } from "../domain/boss.js";
 import {
   tailoringSections,
   groundedTailoringSchema,
@@ -75,6 +78,11 @@ export const batchChoice = z
 const batchChoiceWithRecipient = batchChoice.extend({ recipient: z.email().optional() });
 const normalized = (s: string) =>
   s.normalize("NFKC").replace(/\s/g, "").toLowerCase();
+const defaultSearchSources = [
+  "https://careers.tencent.com/",
+  "https://talent.baidu.com/jobs/social-list",
+  ...crawlCareerSites.map((site) => site.url),
+];
 
 const pendingBatches = new Map<string, Promise<Batch>>();
 function otherProcessIsPreparing(pid: number | undefined) {
@@ -91,6 +99,7 @@ export class Tasks {
   constructor(
     readonly workspace: Workspace,
     readonly read: typeof readCareerPage = readCareerPage,
+    readonly discoverSource: typeof discoverRecruitingPage = discoverRecruitingPage,
   ) {}
   saveGoal(value: unknown) {
     const data = goalInput.parse(value);
@@ -144,9 +153,7 @@ export class Tasks {
       goal = store.get<Goal>("goal", goalId);
     const urls = [
       ...new Set(
-        goal.sources.length
-          ? goal.sources
-          : crawlCareerSites.map((site) => site.url),
+        goal.sources.length ? goal.sources : defaultSearchSources,
       ),
     ];
     const run: SearchRun = {
@@ -161,6 +168,7 @@ export class Tasks {
     store.put("search", run);
     const deadline = Date.now() + 40000;
     let pages = 0;
+    let incomplete = false;
     const seen = new Set<string>();
     const consume = (page: CareerPage) => {
       const rows = page.jobs?.length
@@ -209,56 +217,77 @@ export class Tasks {
         run.candidates.length >= goal.limit
       )
         break;
+      const maxSourcePages = Math.min(3, 10 - pages);
+      const sourceDeadline = Math.min(deadline, Date.now() + 10000);
+      const directRead = this.read !== readCareerPage;
+      const pagesBefore = pages;
       try {
+        requireCompanyWebsite(source.url);
         const host = new URL(source.url).hostname.replace(/^www\./, "");
         const sameHost = (url: string) =>
           new URL(url).hostname.replace(/^www\./, "") === host;
-        pages++;
-        const page = await this.read(
-          source.url,
-          0,
-          Math.min(deadline, Date.now() + 6000),
-          sameHost,
-        );
+        let links: CareerLink[];
+        if (directRead) {
+          pages++;
+          const page = await this.read(source.url, 0, sourceDeadline, sameHost);
+          consume(page);
+          links = page.links ?? [];
+        } else {
+          const result = await this.discoverSource(source.url, goal.directions, undefined, {
+            deadline: sourceDeadline,
+            maxPages: maxSourcePages,
+          });
+          pages += Math.max(1, result.pagesRead);
+          if (result.partial) incomplete = true;
+          links = result.links;
+          if (!result.listingRead && !result.pages?.length && !links.some((link) => link.kind === "job"))
+            throw new Error(result.notes.join(" ") || "未读取到可识别的招聘列表");
+          for (const page of result.pages ?? []) consume(page);
+          if (result.notes.length) run.notes.push(...result.notes.map((note) => `${source.url}：${note}`));
+        }
         source.status = "read";
-        consume(page);
-        for (const link of (page.links ?? [])
+        for (const link of links
           .filter(
             (link) =>
               link.kind === "job" &&
               sameHost(link.url) &&
+              !seen.has(`${link.url}\n${normalized(link.label)}`) &&
               matchesJob(link.label, "", goal.directions),
           )
           .slice(0, 2)) {
           if (
             pages >= 10 ||
-            Date.now() >= deadline ||
+            Date.now() >= sourceDeadline ||
             run.candidates.length >= goal.limit
-          )
+          ) {
+            incomplete = true;
             break;
+          }
           try {
             pages++;
             const detail = await this.read(
               link.url,
               0,
-              Math.min(deadline, Date.now() + 6000),
+              Math.min(sourceDeadline, Date.now() + 6000),
               sameHost,
             );
             consume(detail);
           } catch (error) {
+            incomplete = true;
             run.notes.push(
               `详情读取失败：${link.url}（${error instanceof Error ? error.message : "未知错误"}）`,
             );
           }
         }
       } catch (error) {
+        if (!directRead && pagesBefore === pages) pages += maxSourcePages;
         source.status = "failed";
         source.error = error instanceof Error ? error.message : "读取失败";
       }
       store.put("search", run);
     }
     run.status =
-      run.notes.length || run.sources.some((source) => source.status !== "read")
+      incomplete || run.sources.some((source) => source.status !== "read")
         ? "partial"
         : "complete";
     run.notes.push(
