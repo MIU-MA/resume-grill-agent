@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { NativeView } from "./views.js";
 import { BossResumePreview } from "./BossResumePreview.js";
 import { BossResumeSwitch } from "./BossResumeSwitch.js";
+import { BossJobDescription } from "./BossJobDescription.js";
 import type { ReadResumeImage } from "./controls.js";
 type View = Extract<NativeView, { kind: "boss" }>;
 export function BossTaskPanel({
@@ -61,6 +62,7 @@ export function BossTaskPanel({
                     }[i.state]
                   }
                 </p>
+                {d && <BossJobDescription jd={view.jobDescriptions?.[d.jobId]} role={d.role} reviewReasons={d.reviewReasons} />}
                 {editable && d && (
                   <div className="rg-boss-item-actions">
                     {g.items.length > 1 && <>

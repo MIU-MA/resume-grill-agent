@@ -135,13 +135,13 @@ export class BossShortlists {
         const job = await readDetail(row.url);
         item.jobId = job.id;
         item.recruitment = classifyBossRecruitment(job.role, row.description, job.jd, job.facts);
-        const { kind, conflict } = item.recruitment;
+        const { kind, conflict, parttime } = item.recruitment;
         item.requirements = checkBossRequirements(job.jd, resume.text, goal.cities, kind, {
           title: job.role, facts: job.facts,
         });
         const otherRole = bossDirectionConflict(job.jd, directions);
         if (otherRole) {
-          item.requirements.push({ label: "岗位职责", quote: otherRole, status: "unknown" });
+          item.requirements.push({ label: "岗位职责", quote: otherRole, status: "mismatch" });
           item.reasons.push("JD 中写的招聘岗位与标题方向不一致");
         }
         item.skillMatches = bossSkillEvidence(job.jd, resume.text);
@@ -155,12 +155,14 @@ export class BossShortlists {
         }
         const mismatches = item.requirements.filter(({ status }) => status === "mismatch");
         const unknown = item.requirements.filter(({ status }) => status === "unknown");
-        const differentType = recruitment !== "all" && kind !== "unknown" && kind !== recruitment;
+        const differentType = recruitment !== "all" &&
+          (parttime || (kind !== "unknown" && kind !== recruitment));
         item.status = differentType || mismatches.length ? "excluded"
           : kind === "unknown" || unknown.length ? "needs_review" : "candidate";
 
-        if (differentType) item.reasons.push(`岗位类型为${recruitmentLabels[kind]}，本轮搜索选了${recruitmentLabels[recruitment]}`);
-        if (kind === "unknown")
+        if (differentType) item.reasons.push(`岗位类型为${parttime ? "兼职" : recruitmentLabels[kind]}，本轮搜索选了${recruitmentLabels[recruitment]}`);
+        if (parttime && !differentType) item.reasons.push("岗位标为兼职，可手动加入待投");
+        if (kind === "unknown" && !parttime)
           item.reasons.push(conflict ? "招聘类型的描述有冲突" : "完整 JD 和岗位名称未能确认招聘类型");
         if (mismatches.length) item.reasons.push([...new Set(mismatches.map(({ label }) => label))].join("、") + "与已知条件不符");
         if (unknown.length) item.reasons.push([...new Set(unknown.map(({ label }) => label))].join("、") + "缺少明确依据");

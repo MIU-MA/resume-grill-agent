@@ -20,6 +20,7 @@ export type Recruitment = {
   kind: RecruitmentKind;
   evidence: { source: "title" | "list" | "jd" | "page"; quote: string }[];
   conflict: boolean;
+  parttime?: true;
 };
 
 const normalize = (text: string) => text.normalize("NFKC");
@@ -113,7 +114,12 @@ export function classifyBossRecruitment(title: string, list: string, jd?: string
     : confirmed.has("internship") ? "internship"
     : confirmed.has("campus") || (confirmed.has("campusCohort") && !confirmed.has("social")) ? "campus"
     : "fulltime";
-  return { kind, evidence, conflict };
+  return {
+    kind,
+    evidence,
+    conflict,
+    ...(confirmed.has("parttime") && !conflict ? { parttime: true } : {}),
+  };
 }
 
 export function bossDirectionConflict(jd: string, directions: string[]) {

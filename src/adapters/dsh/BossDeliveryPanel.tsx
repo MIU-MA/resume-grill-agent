@@ -4,6 +4,7 @@ import { groupedBossDeliveryIds } from "./boss-task-view.js";
 import { BossTaskPanel } from "./BossTaskPanel.js";
 import { BossResumePreview } from "./BossResumePreview.js";
 import { BossResumeSwitch } from "./BossResumeSwitch.js";
+import { BossJobDescription } from "./BossJobDescription.js";
 import type { ReadResumeImage } from "./controls.js";
 import { JobList, JobListRow } from "./JobList.js";
 import type { BossTaskKind } from "../../core/boss-archives.js";
@@ -98,6 +99,7 @@ export function BossDeliveryPanel({
             简历：{d.resumeName} · {d.images.length} 张图片
           </p>
           <p>实验功能。首次沟通使用账号默认招呼，简历以聊天图片发送。</p>
+          <BossJobDescription jd={view.jobDescriptions?.[d.jobId]} role={d.role} reviewReasons={d.reviewReasons} />
           <BossResumePreview images={d.images} readImage={readResumeImage} />
           {d.error && <p role="alert">{d.error}</p>}
           {archived.has(d.id) && (

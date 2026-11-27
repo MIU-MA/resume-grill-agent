@@ -41,13 +41,39 @@ export function bossView(
   const boss = new Boss(workspace);
   const browserState = boss.browserState;
   const browserSessionId = boss.browserSessionId;
+  const scans = workspace.store.list<BossScan>("boss-scan")
+    .filter((scan) => !browserSessionId || scan.browserSessionId === browserSessionId)
+    .slice(0, 5);
+  const shortlists = workspace.store.list<BossShortlist>("boss-shortlist", 5);
+  const groups = new BossGroups(workspace).list();
+  const deliveries = new BossDeliveries(workspace).list().map(({ previewId, ...d }) => d);
+  const focusedItems = groups.find(({ id }) => id === options.groupFocus)?.items ?? [];
+  const jobIds = new Set<string>();
+  if (options.groupFocus || options.deliveryFocus) {
+    for (const delivery of deliveries) {
+      if (delivery.id === options.deliveryFocus || focusedItems.some(({ deliveryId }) => deliveryId === delivery.id))
+        jobIds.add(delivery.jobId);
+    }
+  } else {
+    for (const shortlist of shortlists.filter(({ scanId }) => scanId === scans[0]?.id)) {
+      for (const { jobId } of shortlist.items) if (jobId) jobIds.add(jobId);
+    }
+  }
+  const jobDescriptions = Object.fromEntries([...jobIds].flatMap((id) => {
+    try {
+      return [[id, workspace.store.get<Job>("job", id).jd] as const];
+    } catch {
+      return [];
+    }
+  }));
   return {
     v: 1 as const,
     kind: "boss" as const,
     ...options,
     goals: workspace.store.list<Goal>("goal"),
-    shortlists: workspace.store.list<BossShortlist>("boss-shortlist", 5),
-    groups: new BossGroups(workspace).list(),
+    shortlists,
+    jobDescriptions,
+    groups,
     archivedTaskIds: [...new BossArchives(workspace).ids()],
     canEditQueue: true,
     connected: boss.connected,
@@ -59,13 +85,9 @@ export function bossView(
       hasPdf: (r.pdf ?? r.original).toLowerCase().endsWith(".pdf"),
       ...(r.jobId ? { jobId: r.jobId } : {}),
     })),
-    scans: workspace.store.list<BossScan>("boss-scan")
-      .filter((scan) => !browserSessionId || scan.browserSessionId === browserSessionId)
-      .slice(0, 5),
+    scans,
     runs: workspace.store.list<BossRun>("boss-run"),
-    deliveries: new BossDeliveries(workspace)
-      .list()
-      .map(({ previewId, ...d }) => d),
+    deliveries,
   };
 }
 export function profileView(

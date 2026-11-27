@@ -1,12 +1,19 @@
 import { Boss } from "./boss.js";
 import { BossDeliveries } from "./boss-deliveries.js";
 import { BossGroups } from "./boss-groups.js";
-import { BossShortlists } from "./boss-shortlists.js";
+import { BossShortlists, type BossShortlistItem } from "./boss-shortlists.js";
 import type { Goal } from "./tasks.js";
 import type { Workspace } from "./workspace.js";
 import { bossBatchLimit, type BossBrowserChoice, type BossScan } from "../domain/boss.js";
 import { bossSearchQuery, type BossRecruitmentFilter } from "../domain/boss-recruitment.js";
 import { extname } from "node:path";
+
+function reviewCount(item: BossShortlistItem) {
+  const labels = new Set(item.requirements
+    ?.filter(({ status }) => status === "unknown")
+    .map(({ label }) => label));
+  return labels.size + Number(item.recruitment?.kind === "unknown");
+}
 
 export class BossAutoPrepare {
   constructor(readonly workspace: Workspace) {}
@@ -58,22 +65,30 @@ export class BossAutoPrepare {
     if (!hasPdf) return { note: "岗位筛选结果已更新。添加待投附件需要 PDF，可上传 PDF 或保存岗位版 PDF。" };
 
     const candidates = shortlist.items
-      .filter((item) => item.status === "candidate")
-      .sort((a, b) => (b.skillMatches?.length ?? 0) - (a.skillMatches?.length ?? 0));
+      .filter((item) => item.jobId && (item.status === "candidate" || (
+        item.status === "needs_review" && item.requirements &&
+        !item.recruitment?.conflict && !item.recruitment?.parttime
+      )))
+      .sort((a, b) => reviewCount(a) - reviewCount(b) ||
+        (b.skillMatches?.length ?? 0) - (a.skillMatches?.length ?? 0));
 
     const deliveries = new BossDeliveries(this.workspace);
     const seen = new Set(deliveries.list().map((delivery) => delivery.url));
     const ids: string[] = [];
+    let queuedForReview = 0;
     let skipped = 0;
-    for (const { jobId, url } of candidates) {
+    for (const { jobId, url, status, reasons } of candidates) {
       if (!jobId || seen.has(url)) continue;
       try {
-        ids.push((await deliveries.prepare(resumeId, jobId)).id);
+        const reviewReasons = status === "needs_review" ? reasons : undefined;
+        ids.push((await deliveries.prepare(resumeId, jobId, reviewReasons)).id);
+        seen.add(url);
+        if (status === "needs_review") queuedForReview++;
       } catch {
         skipped++;
       }
     }
-    const pending = shortlist.items.filter((item) => item.status === "needs_review").length;
+    const pending = shortlist.items.filter((item) => item.status === "needs_review").length - queuedForReview;
     const resultNote = skipped
       ? `${skipped} 个岗位未能准备附件，可打开岗位单独检查。`
       : !ids.length
@@ -81,7 +96,11 @@ export class BossAutoPrepare {
           ? "这页匹配的岗位已有待投或处理记录，可在列表中查看。"
           : pending ? undefined : "这页没有符合条件、且能读到完整 JD 的岗位。"
         : undefined;
-    const note = [resultNote, pending ? `${pending} 个岗位待核对，可在岗位列表查看原因。` : undefined]
+    const note = [
+      resultNote,
+      queuedForReview ? `已加入 ${queuedForReview} 个条件待核对的岗位，请先看 JD。` : undefined,
+      pending ? `${pending} 个岗位留在列表供手动核对。` : undefined,
+    ]
       .filter(Boolean).join(" ") || undefined;
     if (!ids.length) return { note };
     const group = await new BossGroups(this.workspace).prepare(ids);

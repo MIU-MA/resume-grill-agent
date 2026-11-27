@@ -638,6 +638,17 @@
 .rg-job-row-action { display: flex; flex-wrap: wrap; gap: 6px; }
 .rg-job-row-action a { align-self: center; font-size: 13px; }
 .rg-job-row-details { grid-column: 2 / -1; min-width: 0; }
+.rg-boss-jd {
+  max-block-size: 12rem;
+  overflow: auto;
+  padding: 8px 12px;
+  margin-block: 6px 10px;
+  border-inline-start: 2px solid var(--dsw-alias-border-l2);
+  background: var(--rg-surface);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rg-boss-jd:focus-visible { outline: 2px solid var(--rg-edge); }
 .rg-followup-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 6px; }
 .rg-followup-summary strong { color: var(--rg-highlight); }
 .rg-followup-summary [data-due="true"] { color: var(--dsw-alias-state-error-primary); }

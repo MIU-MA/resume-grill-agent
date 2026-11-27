@@ -31,6 +31,7 @@ export type BossDelivery = {
   remoteId: string;
   error?: string;
   withdrawnAt?: number;
+  reviewReasons?: string[];
 };
 const previewSchema = z.object({
   id: z.string().min(1),
@@ -83,10 +84,13 @@ export class BossDeliveries {
   async validate(d: BossDelivery) {
     await this.check(d);
   }
-  async prepare(resumeId: string, jobId: string) {
+  async prepare(resumeId: string, jobId: string, reviewReasons?: string[]) {
     const { delivery, existing } = await this.freeze(resumeId, jobId, true);
     if (existing && (delivery.expiresAt ?? 0) > Date.now()) return delivery;
-    if (!existing) this.save(delivery);
+    if (!existing) {
+      if (reviewReasons?.length) delivery.reviewReasons = reviewReasons;
+      this.save(delivery);
+    }
     return this.preview(delivery);
   }
   async withDraft<T>(resumeId: string, jobId: string, use: (draft: BossDelivery) => Promise<T>) {

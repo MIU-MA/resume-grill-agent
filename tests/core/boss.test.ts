@@ -763,7 +763,7 @@ test("搜索等待中的旧关键词不能替换本轮关键词或准备附件",
   assert.equal(f.state.confirmations, undefined);
 });
 
-test("BOSS 优先核对指定类型，只准备完整 JD 硬条件有依据的岗位", async (t) => {
+test("BOSS 将条件待核对的完整 JD 加入待投，明确冲突仍留在结果列表", async (t) => {
   const f = await fixture(t);
   f.boss.connect(f.link);
   const resume = await f.workspace.createResume(
@@ -779,6 +779,7 @@ test("BOSS 优先核对指定类型，只准备完整 JD 硬条件有依据的�
     ["matched", "Go开发实习生", "开发 Go 服务\n面向 2027 届毕业生\n每周至少 4 天\n实习至少 3 个月"],
     ["missing", "Go开发实习生", "开发 Go 服务\n每周 3–5 天"],
     ["wrong-role", "Go开发实习生", "招聘文员，负责统计报表。"],
+    ["parttime", "兼职 Go开发", "岗位类型：兼职\n开发 Go 服务"],
   ];
   const jobs = cases.map(([id, title]) => ({
     url: `https://www.zhipin.com/job_detail/${id}.html`, title, company: id === "missing-company" ? "" : id,
@@ -794,12 +795,14 @@ test("BOSS 优先核对指定类型，只准备完整 JD 硬条件有依据的�
   assert.equal(f.state.inspected[0], jobs[2].url);
   assert.equal(f.state.searched, "Go开发实习");
   assert.deepEqual(view.shortlists[0].items.map(({ status }) => status), [
-    "excluded", "needs_review", "needs_review", "excluded", "needs_review", "candidate", "needs_review", "needs_review",
+    "excluded", "needs_review", "needs_review", "excluded", "needs_review", "candidate", "needs_review", "excluded", "excluded",
   ]);
   assert.equal(view.shortlists[0].items[5].skillMatches?.[0].resumeQuote, "负责 Go 服务开发。");
   assert.ok(!f.state.inspected.includes(jobs[4].url));
-  assert.deepEqual(view.deliveries.map(({ url }) => url), [jobs[5].url]);
-  assert.match(view.note ?? "", /5 个岗位待核对/);
+  const group = view.groups.find((batch) => batch.id === view.groupFocus);
+  const queued = group?.items.map(({ deliveryId }) => view.deliveries.find(({ id }) => id === deliveryId)?.url);
+  assert.deepEqual(queued, [jobs[5].url, jobs[1].url, jobs[6].url]);
+  assert.match(view.note ?? "", /已加入 2 个条件待核对的岗位/);
   assert.equal(f.state.confirmations, undefined);
 
   const html = renderToStaticMarkup(createElement(BossWorkbench, {
@@ -808,6 +811,12 @@ test("BOSS 优先核对指定类型，只准备完整 JD 硬条件有依据的�
   for (const label of ["招聘类型", "校招", "全职", "查看筛选依据", "招聘类型的描述有冲突", "实习时长"]) {
     assert.ok(html.includes(label), label);
   }
+  assert.match(html, /class="rg-boss-jd"[^>]*>开发 Go 服务/);
+  const batchHtml = renderToStaticMarkup(createElement(BossWorkbench, {
+    view: bossView(f.workspace, { groupFocus: group?.id }), busy: false, run: async () => {},
+  }));
+  assert.match(batchHtml, /条件待核对/);
+  assert.match(batchHtml, /class="rg-boss-jd"[^>]*>开发 Go 服务/);
 });
 
 test("核对附件期间移出岗位，正在等待的旧确认不能开始投递", async (t) => {

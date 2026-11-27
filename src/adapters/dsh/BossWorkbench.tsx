@@ -14,6 +14,7 @@ import type { ReadResumeImage } from "./controls.js";
 import { JobList, JobListRow } from "./JobList.js";
 import { WorkbenchHeading } from "./WorkbenchHeading.js";
 import { bossQueueStatus } from "./boss-task-view.js";
+import { BossJobDescription } from "./BossJobDescription.js";
 
 const browserOptions = [
   ["auto", "自动"],
@@ -260,6 +261,7 @@ export function BossWorkbench({
               <JobList>
                 {visibleJobs.map(({ job, item, kind }) => {
                   const queueStatus = bossQueueStatus(view, job.url);
+                  const jd = item?.jobId ? view.jobDescriptions?.[item.jobId] : undefined;
                   return (
                   <JobListRow
                     key={job.url}
@@ -273,10 +275,16 @@ export function BossWorkbench({
                       {[job.company, job.salary, recruitmentLabels[kind]].filter(Boolean).join(" · ")}
                       {!!item?.reasons.length && <div>{item.reasons.join("；")}</div>}
                     </>}
-                    details={item?.jobId && (item.recruitment?.evidence.length || item.requirements?.length || item.skillMatches?.length)
-                      ? <BossMatchDetails item={item} /> : undefined}
+                    details={jd ? <>
+                      <BossJobDescription jd={jd} role={job.title} />
+                      {item && !!(item.recruitment?.evidence.length || item.requirements?.length || item.skillMatches?.length) &&
+                        <BossMatchDetails item={item} />}
+                    </> : undefined}
                     action={<>
-                      {job.company.trim() ? <button
+                      {item?.jobId && hasResume ? <button
+                        disabled={busy}
+                        onClick={() => void run({ action: "review", resumeId, jobId: item.jobId })}
+                      >按 JD 改简历</button> : job.company.trim() ? <button
                         disabled={busy || !view.connected}
                         onClick={() => void run({
                           action: "boss-detail",
@@ -285,7 +293,7 @@ export function BossWorkbench({
                           ...(hasResume ? { resumeId } : {}),
                         })}
                       >
-                        查看岗位
+                        读取 JD
                       </button> : <a href={job.url} target="_blank" rel="noopener noreferrer">查看官网</a>}
                       {view.canEditQueue && !queueStatus && !!job.company.trim() && (
                         <button className="rg-quiet-action" disabled={busy || !view.connected || !selected?.hasPdf}
