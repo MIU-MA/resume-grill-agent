@@ -1,0 +1,200 @@
+[
+  {
+    "id": "tg-01",
+    "category": "legal_alias_go",
+    "resume": "林示例\n项目经历\n2023.03 - 2024.06 订单网关项目\n- 使用 Golang 和 PostgreSQL 负责核心接口开发，将 P99 耗时控制在 100毫秒 内。",
+    "jd": "后端工程师：熟悉 Go 与 PostgreSQL，负责高可用 API 开发。",
+    "lineMatch": "Golang",
+    "after": "- 使用 Go 和 Postgres 负责核心 API 开发，将 P99 耗时控制在 100ms 内。",
+    "expectedBlocked": false
+  },
+  {
+    "id": "tg-02",
+    "category": "legal_same_experience_tech_reuse",
+    "resume": "林示例\n项目经历\n2023.03 - 2024.06 订单网关项目\n- 基于 Redis 和 Kafka 搭建订单异步链路。\n- 负责网关接口性能优化与异常处理。",
+    "jd": "负责订单网关与缓存异步处理。",
+    "lineMatch": "网关接口性能优化",
+    "after": "- 结合 Redis 缓存机制负责网关 API 性能优化与异常处理。",
+    "expectedBlocked": false
+  },
+  {
+    "id": "tg-03",
+    "category": "legal_cicd_alias",
+    "resume": "林示例\n工作经历\n2022.07 - 2024.05 示例科技\n- 搭建持续集成与持续交付流水线，提升发布效率。",
+    "jd": "具备 CI/CD 与工程治理经验。",
+    "lineMatch": "持续集成",
+    "after": "- 搭建 CI/CD 自动化发布流水线，提升工程交付效率。",
+    "expectedBlocked": false
+  },
+  {
+    "id": "tg-04",
+    "category": "legal_vue_node_alias",
+    "resume": "林示例\n项目经历\n2023.01 - 2024.01 管理台重构\n- 使用 Vue.js 和 NodeJS 开发后台管理页面。",
+    "jd": "熟悉 Vue 与 Node.js 前端工程化。",
+    "lineMatch": "Vue.js",
+    "after": "- 基于 Vue 与 Node.js 参与后台管理页面开发与重构。",
+    "expectedBlocked": false
+  },
+  {
+    "id": "tg-05",
+    "category": "legal_intro_preserve_facts",
+    "resume": "林示例\n本人为 2025 届计算机本科在读生，具备扎实后端开发基础，参与过多个接口服务实践项目。",
+    "jd": "招聘后端开发岗位，需要扎实开发基础。",
+    "lineMatch": "2025 届",
+    "after": "2025 届计算机本科在读生，具备扎实后端开发基础，参与过多个 API 服务工程实践。",
+    "expectedBlocked": false
+  },
+  {
+    "id": "tg-06",
+    "category": "legal_skills_cross_section",
+    "resume": "林示例\n专业技能\n- 熟悉后端服务开发与数据库设计。\n项目经历\n2023.01 - 2024.01 搜索服务\n- 使用 Go、MySQL、Docker 部署服务。",
+    "jd": "熟悉 Go、MySQL、Docker。",
+    "lineMatch": "熟悉后端服务开发",
+    "after": "- 熟悉 Go 后端服务开发、MySQL 数据库设计与 Docker 容器部署。",
+    "expectedBlocked": false
+  },
+  {
+    "id": "tg-07",
+    "category": "legal_rest_alias",
+    "resume": "林示例\n工作经历\n2022.01 - 2023.12 云服务部\n- 设计并维护 RESTful 接口服务。",
+    "jd": "负责 REST API 设计。",
+    "lineMatch": "RESTful",
+    "after": "- 参与设计并维护 REST API 后端服务。",
+    "expectedBlocked": false
+  },
+  {
+    "id": "tg-08",
+    "category": "legal_keep_existing_contribution",
+    "resume": "林示例\n项目经历\n2023.01 - 2024.01 权限系统\n- 独立负责权限校验模块重构，降低鉴权开销。",
+    "jd": "负责权限体系设计与重构。",
+    "lineMatch": "独立负责",
+    "after": "- 独立负责权限校验模块代码重构，优化鉴权路径。",
+    "expectedBlocked": false
+  },
+  {
+    "id": "tg-09",
+    "category": "legal_keep_existing_number",
+    "resume": "林示例\n工作经历\n2022.01 - 2024.01 支付组\n- 支持日均 50万 笔对账任务稳定运行。",
+    "jd": "负责海量对账系统稳定性。",
+    "lineMatch": "50万",
+    "after": "- 保障日均 50万 笔对账核心任务稳定运行。",
+    "expectedBlocked": false
+  },
+  {
+    "id": "tg-10",
+    "category": "hallucination_invented_tech",
+    "resume": "林示例\n项目经历\n2023.01 - 2024.01 订单系统\n- 使用 Go 和 MySQL 开发订单查询接口。",
+    "jd": "要求熟悉 Kubernetes 和 Kafka。",
+    "lineMatch": "订单查询接口",
+    "after": "- 使用 Go、MySQL、Kubernetes 和 Kafka 开发订单查询接口。",
+    "expectedBlocked": true
+  },
+  {
+    "id": "tg-11",
+    "category": "hallucination_cross_experience_tech_leak",
+    "resume": "林示例\n项目经历\n2022.01 - 2022.12 聊天系统\n- 使用 Redis 实现在线状态缓存。\n2023.01 - 2024.01 静态博客\n- 使用 HTML 与 CSS 编写个人博客页面。",
+    "jd": "需要 Redis 高并发经验。",
+    "lineMatch": "个人博客页面",
+    "after": "- 使用 HTML、CSS 和 Redis 编写高并发个人博客页面。",
+    "expectedBlocked": true
+  },
+  {
+    "id": "tg-12",
+    "category": "hallucination_invented_number",
+    "resume": "林示例\n项目经历\n2023.01 - 2024.01 推荐服务\n- 优化数据库查询索引，提升接口响应速度。",
+    "jd": "具备性能优化经验。",
+    "lineMatch": "提升接口响应速度",
+    "after": "- 优化数据库查询索引，使接口响应速度提升 60%。",
+    "expectedBlocked": true
+  },
+  {
+    "id": "tg-13",
+    "category": "hallucination_modified_number",
+    "resume": "林示例\n工作经历\n2022.01 - 2024.01 基础架构部\n- 将服务内存占用降低 15%。",
+    "jd": "负责性能调优。",
+    "lineMatch": "降低 15%",
+    "after": "- 将核心服务内存占用降低 45%。",
+    "expectedBlocked": true
+  },
+  {
+    "id": "tg-14",
+    "category": "hallucination_inflated_contribution_lead",
+    "resume": "林示例\n工作经历\n2022.01 - 2024.01 交易团队\n- 参与订单支付模块的接口联调与维护。",
+    "jd": "主导交易系统架构设计。",
+    "lineMatch": "参与订单支付模块",
+    "after": "- 主导订单支付模块的接口联调与架构维护。",
+    "expectedBlocked": true
+  },
+  {
+    "id": "tg-15",
+    "category": "hallucination_inflated_contribution_expert",
+    "resume": "林示例\n专业技能\n- 熟悉 Python 和 SQL。",
+    "jd": "精通 Python 开发。",
+    "lineMatch": "熟悉 Python",
+    "after": "- 精通 Python 和 SQL。",
+    "expectedBlocked": true
+  },
+  {
+    "id": "tg-16",
+    "category": "hallucination_inflated_zero_to_one",
+    "resume": "林示例\n项目经历\n2023.01 - 2024.01 监控平台\n- 参与告警通知模块开发。",
+    "jd": "有从零搭建平台经验。",
+    "lineMatch": "告警通知模块",
+    "after": "- 从零搭建监控告警通知平台。",
+    "expectedBlocked": true
+  },
+  {
+    "id": "tg-17",
+    "category": "forbidden_education_edit",
+    "resume": "林示例\n教育背景\n2020.09 - 2024.06 示例大学 计算机科学与技术 本科",
+    "jd": "硕士及以上优先。",
+    "lineMatch": "示例大学",
+    "after": "2020.09 - 2024.06 示例大学 计算机科学与技术 硕士",
+    "expectedBlocked": true
+  },
+  {
+    "id": "tg-18",
+    "category": "forbidden_awards_edit",
+    "resume": "林示例\n荣誉奖项\n- 校级优秀学生二等奖学金",
+    "jd": "成绩优异者优先。",
+    "lineMatch": "二等奖学金",
+    "after": "- 国家级一等奖学金",
+    "expectedBlocked": true
+  },
+  {
+    "id": "tg-19",
+    "category": "forbidden_contact_edit",
+    "resume": "林示例\n电话：13800138000\n项目经历\n- 参与 Go 接口开发。",
+    "jd": "Go 开发工程师。",
+    "lineMatch": "13800138000",
+    "after": "电话：13900139000",
+    "expectedBlocked": true
+  },
+  {
+    "id": "tg-20",
+    "category": "forbidden_drop_graduation_fact",
+    "resume": "林示例\n本人为 2025 届本科毕业生，具备扎实软件开发实践与工程交付基础。",
+    "jd": "后端开发工程师。",
+    "lineMatch": "2025 届",
+    "after": "具备扎实软件开发实践与高并发工程交付基础。",
+    "expectedBlocked": true
+  },
+  {
+    "id": "tg-21",
+    "category": "forbidden_competition_rank_edit",
+    "resume": "林示例\n竞赛经历\n- 蓝桥杯省赛二等奖，参与算法题解优化。",
+    "jd": "有竞赛背景优先。",
+    "lineMatch": "二等奖",
+    "after": "- 蓝桥杯国赛一等奖，负责算法优化。",
+    "expectedBlocked": true
+  },
+  {
+    "id": "tg-22",
+    "category": "hallucination_invented_llm_rag",
+    "resume": "林示例\n项目经历\n2023.01 - 2024.01 客服工单系统\n- 使用 TypeScript 开发工单流转接口。",
+    "jd": "有 LLM 和 RAG 应用经验优先。",
+    "lineMatch": "工单流转接口",
+    "after": "- 使用 TypeScript、LLM 和 RAG 开发智能工单流转接口。",
+    "expectedBlocked": true
+  }
+]

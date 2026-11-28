@@ -33,6 +33,16 @@ test("React 面板 API：来源校验、共享建议、PDF、冻结预览、确�
     )
       await rm(home, { recursive: true, force: true, maxRetries: 5 });
   });
+  assert.equal(
+    (
+      await fetch(`${origin}/api/session`, {
+        method: "POST",
+        headers: { Origin: origin, "Content-Type": "application/json" },
+        body: "{invalid-json",
+      })
+    ).status,
+    400,
+  );
   const session = await fetch(`${origin}/api/session`, {
     method: "POST",
     headers: { Origin: origin, "Content-Type": "application/json" },

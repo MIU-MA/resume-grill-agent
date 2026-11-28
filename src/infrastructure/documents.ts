@@ -7,7 +7,7 @@ import { createFont } from "fonteditor-core";
 import { resumeSectionHeading } from "../domain/resume-structure.js";
 import { recognizeResumePage } from "./pdf-ocr.js";
 
-async function openPdf(bytes: Uint8Array) {
+export async function openPdf(bytes: Uint8Array) {
   const canvas = await import("@napi-rs/canvas");
   Object.assign(globalThis, {
     DOMMatrix: canvas.DOMMatrix,
@@ -17,6 +17,23 @@ async function openPdf(bytes: Uint8Array) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const task = pdfjs.getDocument({ data: Uint8Array.from(bytes), useSystemFonts: true });
   return { canvas, pdfjs, task };
+}
+
+type FontAsset = { bytes: Buffer; available: Set<number> };
+let cachedFont: Promise<FontAsset> | undefined;
+function loadNotoSansFont(): Promise<FontAsset> {
+  if (!cachedFont) {
+    cachedFont = readFile(join(packageRoot, "assets/NotoSansSC-Regular.ttf"))
+      .then((bytes) => ({
+        bytes,
+        available: new Set(fontkit.create(bytes).characterSet),
+      }))
+      .catch((error) => {
+        cachedFont = undefined;
+        throw error;
+      });
+  }
+  return cachedFont;
 }
 
 type TextItem = { str: string; transform: number[]; width: number; height: number; hasEOL: boolean };
@@ -190,10 +207,7 @@ export async function renderPdf(
 ): Promise<Uint8Array> {
   const pdf = await PDFDocument.create({ updateMetadata });
   pdf.registerFontkit(fontkit);
-  const bytes = await readFile(
-    join(packageRoot, "assets/NotoSansSC-Regular.ttf"),
-  );
-  const available = new Set(fontkit.create(bytes).characterSet);
+  const { bytes, available } = await loadNotoSansFont();
   const printable = printableText(text, available);
   // Same standalone TTF approach as Resume Grill: pdf-lib CJK subsetting can omit glyphs.
   const subset = createFont(Uint8Array.from(bytes).buffer, {

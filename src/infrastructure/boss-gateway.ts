@@ -7,7 +7,12 @@ export class BossGateway {
     private readonly token: string,
   ) {}
   static fromLink(link: string) {
-    const u = new URL(link);
+    let u: URL;
+    try {
+      u = new URL(link);
+    } catch {
+      throw new Error("请粘贴本机 BOSS 服务输出的工作台链接。");
+    }
     if (
       u.protocol !== "http:" ||
       !["localhost", "127.0.0.1", "[::1]"].includes(u.hostname) ||
@@ -16,8 +21,13 @@ export class BossGateway {
     )
       throw new Error("请粘贴本机 BOSS 服务输出的工作台链接。");
     const p = new URLSearchParams(u.hash.slice(1)),
-      origin = new URL(p.get("boss-origin") ?? ""),
       token = p.get("boss-token") ?? "";
+    let origin: URL;
+    try {
+      origin = new URL(p.get("boss-origin") ?? "");
+    } catch {
+      throw new Error("BOSS 连接凭据无效，请使用本次服务输出的新链接。");
+    }
     if (
       origin.protocol !== "http:" ||
       origin.hostname !== "127.0.0.1" ||
@@ -62,8 +72,10 @@ export class BossGateway {
         "本机 BOSS 服务未响应。请检查服务是否运行，再读取状态；不要重复投递。",
       );
     }
-    if (Number(response.headers.get("content-length") ?? 0) > 2 * 1024 * 1024)
+    if (Number(response.headers.get("content-length") ?? 0) > 2 * 1024 * 1024) {
+      await response.body?.cancel();
       throw new Error("BOSS 服务返回内容过大。");
+    }
     // Bound chunked responses too; never forward executor errors containing credentials.
     const reader = response.body?.getReader();
     let size = 0;

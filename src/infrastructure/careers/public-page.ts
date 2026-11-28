@@ -1,5 +1,7 @@
 import { lookup } from "node:dns/promises";
 import { request } from "node:https";
+import type { Readable } from "node:stream";
+import { createGunzip, createInflate } from "node:zlib";
 import ipaddr from "ipaddr.js";
 import { load } from "cheerio";
 import { extractCareerLinks } from "./career-links.js";
@@ -9,6 +11,7 @@ import {
   type CareerJob,
   type CareerPage,
 } from "./contracts.js";
+import { ResourceCache } from "./resource-cache.js";
 import { companyFromCareerUrl } from "./sites.js";
 
 const ROLE_PATTERN =
@@ -139,7 +142,7 @@ export async function resolvePublicHost(
     new Promise<never>((_, reject) => {
       timer = setTimeout(
         () => reject(new Error("招聘网站域名解析超时，请稍后再试")),
-        Math.min(6000, deadline - Date.now()),
+        Math.max(1, Math.min(6000, deadline - Date.now())),
       );
     }),
   ]).finally(() => clearTimeout(timer));
@@ -504,12 +507,85 @@ function extractPageJobs(
 }
 
 const MAX_PAGE_BYTES = 2 * 1024 * 1024;
-export async function readCareerResource(
+export const careerResourceCache = new ResourceCache();
+
+/**
+ * Stream-decode identity/gzip/deflate payloads while enforcing a strict byte ceiling
+ * on BOTH compressed wire bytes and decompressed output bytes (defends against zip bombs).
+ */
+export function readBoundedStream(
+  source: Readable,
+  encoding: string | undefined,
+  maxBytes = MAX_PAGE_BYTES,
+  onLimitExceeded?: () => void,
+): Promise<Buffer> {
+  const normalized = (encoding ?? "identity").trim().toLowerCase();
+  if (!["", "identity", "gzip", "x-gzip", "deflate"].includes(normalized)) {
+    source.resume();
+    return Promise.reject(
+      new Error("该地址不是可读取的网页，请使用官网招聘详情页"),
+    );
+  }
+  return new Promise<Buffer>((resolve, reject) => {
+    let settled = false;
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      onLimitExceeded?.();
+      decoder?.destroy();
+      source.destroy();
+      reject(error);
+    };
+    const decoder =
+      normalized === "gzip" || normalized === "x-gzip"
+        ? createGunzip()
+        : normalized === "deflate"
+          ? createInflate()
+          : undefined;
+
+    let wireBytes = 0;
+    source.on("data", (chunk: Buffer) => {
+      wireBytes += chunk.length;
+      if (wireBytes > maxBytes) {
+        fail(new Error("招聘页面超过 2 MB，请手动填写邮箱"));
+      }
+    });
+    source.on("error", (error) =>
+      fail(error instanceof Error ? error : new Error("读取招聘页失败")),
+    );
+
+    const output: Readable = decoder ? source.pipe(decoder) : source;
+    const chunks: Buffer[] = [];
+    let outputBytes = 0;
+    output.on("data", (chunk: Buffer) => {
+      outputBytes += chunk.length;
+      if (outputBytes > maxBytes) {
+        fail(new Error("招聘页面超过 2 MB，请手动填写邮箱"));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    output.on("error", (error) =>
+      fail(
+        error instanceof Error
+          ? new Error(`招聘页解码失败：${error.message}`)
+          : new Error("招聘页解码失败"),
+      ),
+    );
+    output.on("end", () => {
+      if (settled) return;
+      settled = true;
+      resolve(Buffer.concat(chunks));
+    });
+  });
+}
+
+async function fetchCareerResource(
   input: string,
-  redirects = 0,
-  deadline = Date.now() + 20000,
-  allowUrl?: (url: string) => boolean,
-  json = false,
+  redirects: number,
+  deadline: number,
+  allowUrl: ((url: string) => boolean) | undefined,
+  json: boolean,
 ): Promise<{ text: string; url: string }> {
   const parsed = sourceUrlSchema.safeParse(input);
   if (!parsed.success)
@@ -536,7 +612,7 @@ export async function readCareerResource(
           headers: {
             "User-Agent": "ResumeGrill-CareerReader/1.0",
             Accept: json ? "application/json" : "text/html",
-            "Accept-Encoding": "identity",
+            "Accept-Encoding": "gzip, deflate, identity",
           },
         },
         (res) => {
@@ -544,7 +620,11 @@ export async function readCareerResource(
             res.resume();
             if (!res.headers.location)
               return reject(new Error("招聘页面跳转地址为空"));
-            resolve({ redirect: new URL(res.headers.location, url).href });
+            try {
+              resolve({ redirect: new URL(res.headers.location, url).href });
+            } catch {
+              reject(new Error("招聘页面跳转地址无效"));
+            }
             return;
           }
           if (res.statusCode !== 200) {
@@ -562,41 +642,33 @@ export async function readCareerResource(
               json
                 ? /application\/json/i
                 : /text\/html|application\/xhtml\+xml/i
-            ).test(type) ||
-            (res.headers["content-encoding"] &&
-              res.headers["content-encoding"] !== "identity")
+            ).test(type)
           ) {
             res.resume();
             reject(new Error("该地址不是可读取的网页，请使用官网招聘详情页"));
             return;
           }
-          const chunks: Buffer[] = [];
-          let size = 0;
-          res.on("data", (chunk: Buffer) => {
-            size += chunk.length;
-            if (size > MAX_PAGE_BYTES) {
-              req.destroy(new Error("招聘页面超过 2 MB，请手动填写邮箱"));
-              return;
-            }
-            chunks.push(chunk);
-          });
-          res.on("error", reject);
-          res.on("end", () => {
-            const charset =
-              /charset\s*=\s*["']?([^\s;"']+)/i.exec(type)?.[1] ?? "utf-8";
-            try {
-              resolve({
-                html: new TextDecoder(charset).decode(Buffer.concat(chunks)),
-              });
-            } catch {
-              reject(new Error("招聘页编码无法读取，请手动填写邮箱"));
-            }
-          });
+          const encoding = Array.isArray(res.headers["content-encoding"])
+            ? res.headers["content-encoding"][0]
+            : res.headers["content-encoding"];
+          void readBoundedStream(res, encoding, MAX_PAGE_BYTES, () =>
+            req.destroy(),
+          )
+            .then((buffer) => {
+              const charset =
+                /charset\s*=\s*["']?([^\s;"']+)/i.exec(type)?.[1] ?? "utf-8";
+              try {
+                resolve({ html: new TextDecoder(charset).decode(buffer) });
+              } catch {
+                reject(new Error("招聘页编码无法读取，请手动填写邮箱"));
+              }
+            })
+            .catch(reject);
         },
       );
       const timeout = setTimeout(
         () => req.destroy(new Error("读取招聘页超时，请手动填写邮箱")),
-        Math.min(15000, deadline - Date.now()),
+        Math.max(1, Math.min(15000, deadline - Date.now())),
       );
       req.once("close", () => clearTimeout(timeout));
       req.once("error", reject);
@@ -604,7 +676,7 @@ export async function readCareerResource(
     },
   );
   if (result.redirect)
-    return readCareerResource(
+    return fetchCareerResource(
       result.redirect,
       redirects + 1,
       deadline,
@@ -612,6 +684,28 @@ export async function readCareerResource(
       json,
     );
   return { text: result.html ?? "", url: url.href };
+}
+
+export async function readCareerResource(
+  input: string,
+  redirects = 0,
+  deadline = Date.now() + 20000,
+  allowUrl?: (url: string) => boolean,
+  json = false,
+  cacheTtlMs = 0,
+): Promise<{ text: string; url: string }> {
+  if (redirects > 0 || allowUrl) {
+    return fetchCareerResource(input, redirects, deadline, allowUrl, json);
+  }
+  const parsed = sourceUrlSchema.safeParse(input);
+  if (!parsed.success)
+    throw new Error("请填写官网招聘页面的 HTTPS 地址（443 端口）");
+  const key = `${json ? "json" : "html"}:${new URL(parsed.data).href}`;
+  return careerResourceCache.coalesce(
+    key,
+    () => fetchCareerResource(parsed.data, 0, deadline, undefined, json),
+    cacheTtlMs,
+  );
 }
 
 export async function readCareerPage(

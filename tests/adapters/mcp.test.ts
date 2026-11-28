@@ -42,6 +42,16 @@ test(
       await connect();
       const tools = await client!.listTools();
       assert.equal(tools.tools.length, 32);
+      assert.equal(
+        tools.tools.find((tool) => tool.name === "read_recruiting_site")
+          ?.annotations?.openWorldHint,
+        true,
+      );
+      assert.equal(
+        tools.tools.find((tool) => tool.name === "read_job_detail")
+          ?.annotations?.openWorldHint,
+        true,
+      );
       assert.ok(
         tools.tools
           .find((tool) => tool.name === "execute_application")

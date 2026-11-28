@@ -2,9 +2,26 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
+export type ToolAuditRecord = {
+  id: number;
+  traceId: string;
+  caller: string;
+  toolName: string;
+  readOnly: boolean;
+  status: "ok" | "error";
+  errorCode?: string;
+  durationMs: number;
+  summary: Record<string, unknown>;
+  createdAt: number;
+};
+
+const MAX_TOOL_AUDIT_ROWS = 5000;
+
 export class Store {
   readonly db: DatabaseSync;
   readonly home: string;
+  private closed = false;
+  private auditWrites = 0;
   constructor(home: string) {
     mkdirSync(home, { recursive: true, mode: 0o700 });
     this.home = realpathSync(resolve(home));
@@ -18,6 +35,20 @@ export class Store {
       CREATE TABLE IF NOT EXISTS approvals(application_id TEXT PRIMARY KEY, digest TEXT NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, application_id TEXT NOT NULL REFERENCES objects(id), created_at INTEGER NOT NULL, type TEXT NOT NULL, detail TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS events_application ON events(application_id);
+      CREATE TABLE IF NOT EXISTS tool_audit(
+        id INTEGER PRIMARY KEY,
+        trace_id TEXT NOT NULL,
+        caller TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        read_only INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        error_code TEXT,
+        duration_ms INTEGER NOT NULL,
+        summary TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS tool_audit_created ON tool_audit(created_at DESC);
+      CREATE INDEX IF NOT EXISTS tool_audit_trace ON tool_audit(trace_id);
       CREATE INDEX IF NOT EXISTS application_active_job ON objects(json_extract(data,'$.jobId'))
         WHERE kind='application' AND json_extract(data,'$.status') IN ('sent','sending','uncertain');`);
   }
@@ -76,6 +107,50 @@ export class Store {
       )
       .run(id, Date.now(), type, detail);
   }
+  recordToolAudit(entry: Omit<ToolAuditRecord, "id" | "createdAt">) {
+    if (this.closed) return;
+    this.db
+      .prepare(
+        "INSERT INTO tool_audit(trace_id,caller,tool_name,read_only,status,error_code,duration_ms,summary,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+      )
+      .run(
+        entry.traceId,
+        entry.caller,
+        entry.toolName,
+        entry.readOnly ? 1 : 0,
+        entry.status,
+        entry.errorCode ?? null,
+        Math.max(0, Math.round(entry.durationMs)),
+        JSON.stringify(entry.summary),
+        Date.now(),
+      );
+    if (++this.auditWrites % 200 === 0) {
+      this.db
+        .prepare(
+          "DELETE FROM tool_audit WHERE id NOT IN (SELECT id FROM tool_audit ORDER BY id DESC LIMIT ?)",
+        )
+        .run(MAX_TOOL_AUDIT_ROWS);
+    }
+  }
+  listToolAudits(limit = 100): ToolAuditRecord[] {
+    return this.db
+      .prepare(
+        "SELECT id,trace_id,caller,tool_name,read_only,status,error_code,duration_ms,summary,created_at FROM tool_audit ORDER BY id DESC LIMIT ?",
+      )
+      .all(limit)
+      .map((row) => ({
+        id: Number(row.id),
+        traceId: String(row.trace_id),
+        caller: String(row.caller),
+        toolName: String(row.tool_name),
+        readOnly: Number(row.read_only) === 1,
+        status: String(row.status) === "error" ? "error" : "ok",
+        ...(row.error_code ? { errorCode: String(row.error_code) } : {}),
+        durationMs: Number(row.duration_ms),
+        summary: JSON.parse(String(row.summary)) as Record<string, unknown>,
+        createdAt: Number(row.created_at),
+      }));
+  }
   transaction<T>(fn: () => T): T {
     this.db.exec("BEGIN IMMEDIATE");
     try {
@@ -88,6 +163,8 @@ export class Store {
     }
   }
   close() {
+    if (this.closed) return;
+    this.closed = true;
     this.db.close();
   }
 }

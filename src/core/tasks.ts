@@ -17,6 +17,7 @@ import {
   tailoredOriginalResumeText,
   tailoringChangeKey,
 } from "../domain/resume-tailoring.js";
+import { mapWithConcurrency } from "../shared/concurrency.js";
 
 export const goalInput = z
   .object({
@@ -66,7 +67,12 @@ export type Batch = {
   status: "preparing" | "prepared" | "needs_input";
   items: BatchItem[];
 };
-type StoredBatch = Batch & { requestHash: string; ownerPid?: number };
+type StoredBatch = Batch & {
+  requestHash: string;
+  ownerPid?: number;
+  ownerInstance?: string;
+  leaseExpiresAt?: number;
+};
 export const batchChoice = z
   .object({
     jobId: z.string(),
@@ -84,15 +90,27 @@ const defaultSearchSources = [
   ...crawlCareerSites.map((site) => site.url),
 ];
 
+const PROCESS_INSTANCE_ID = randomUUID();
+const BATCH_LEASE_MS = 60_000;
+const BATCH_CONCURRENCY = 3;
 const pendingBatches = new Map<string, Promise<Batch>>();
-function otherProcessIsPreparing(pid: number | undefined) {
-  if (!pid || pid === process.pid) return false;
+
+function pidAlive(pid: number) {
   try {
     process.kill(pid, 0);
     return true;
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "EPERM";
   }
+}
+
+function otherProcessIsPreparing(batch: StoredBatch | undefined) {
+  if (!batch || batch.status !== "preparing") return false;
+  if (batch.ownerInstance === PROCESS_INSTANCE_ID) return false;
+  if (batch.leaseExpiresAt !== undefined && batch.leaseExpiresAt <= Date.now())
+    return false;
+  if (!batch.ownerPid || batch.ownerPid === process.pid) return false;
+  return pidAlive(batch.ownerPid);
 }
 
 export class Tasks {
@@ -108,9 +126,9 @@ export class Tasks {
     this.workspace.store.put("goal", goal);
     return goal;
   }
-  private applied(job: Job, goal: Goal) {
-    const store = this.workspace.store;
-    return store.activeApplicationJobs<Job>().some((previous) => {
+  private applied(job: Job, goal: Goal, activeJobs?: readonly Job[]) {
+    const jobs = activeJobs ?? this.workspace.store.activeApplicationJobs<Job>();
+    return jobs.some((previous) => {
       return (
         (previous.sourceUrl === job.sourceUrl &&
           normalized(previous.role) === normalized(job.role)) ||
@@ -120,12 +138,12 @@ export class Tasks {
       );
     });
   }
-  private assess(job: Job, goal: Goal): Candidate | undefined {
+  private assess(job: Job, goal: Goal, activeJobs?: readonly Job[]): Candidate | undefined {
     const haystack = normalized(`${job.company}\n${job.role}\n${job.jd}`);
     if (
       goal.exclude.some((term) => haystack.includes(normalized(term))) ||
       !matchesJob(job.role, job.jd, goal.directions) ||
-      this.applied(job, goal)
+      this.applied(job, goal, activeJobs)
     )
       return;
     const city = goal.cities.find((city) =>
@@ -170,6 +188,7 @@ export class Tasks {
     let pages = 0;
     let incomplete = false;
     const seen = new Set<string>();
+    const activeJobs = store.activeApplicationJobs<Job>();
     const consume = (page: CareerPage) => {
       const rows = page.jobs?.length
         ? page.jobs
@@ -201,7 +220,7 @@ export class Tasks {
           sourceUrl,
           ...(recipient ? { recipient } : {}),
         };
-        const candidate = this.assess(provisional, goal);
+        const candidate = this.assess(provisional, goal, activeJobs);
         if (!candidate) continue;
         const key = `${sourceUrl}\n${normalized(row.role)}`;
         if (seen.has(key)) continue;
@@ -302,6 +321,7 @@ export class Tasks {
   }
   candidates(goalId: string) {
     const goal = this.workspace.store.get<Goal>("goal", goalId),
+      activeJobs = this.workspace.store.activeApplicationJobs<Job>(),
       seen = new Set<string>();
     return this.workspace.store
       .list<Job>("job")
@@ -309,7 +329,7 @@ export class Tasks {
         const key = `${job.sourceUrl}\n${normalized(job.role)}`;
         if (seen.has(key)) return [];
         seen.add(key);
-        const assessment = this.assess(job, goal);
+        const assessment = this.assess(job, goal, activeJobs);
         return assessment ? [{ ...assessment, job }] : [];
       })
       .slice(0, goal.limit);
@@ -375,9 +395,8 @@ export class Tasks {
       const existing = store
         .list<StoredBatch>("batch")
         .find((item) => item.requestHash === requestHash);
-      if (existing?.status === "prepared" ||
-          (existing?.status === "preparing" && otherProcessIsPreparing(existing.ownerPid)))
-        return { batch: existing, owned: false };
+      if (existing?.status === "prepared" || otherProcessIsPreparing(existing))
+        return { batch: existing!, owned: false };
       // Reuse drafts already persisted before interruption; never resend anything.
       const batch: StoredBatch = existing ?? {
         requestHash,
@@ -389,22 +408,36 @@ export class Tasks {
       };
       batch.status = "preparing";
       batch.ownerPid = process.pid;
+      batch.ownerInstance = PROCESS_INSTANCE_ID;
+      batch.leaseExpiresAt = Date.now() + BATCH_LEASE_MS;
       store.put("batch", batch);
       return { batch, owned: true };
     });
     if (!owned) return batch;
+    const work: Array<{
+      choice: z.infer<typeof batchChoiceWithRecipient>;
+      slot: number;
+    }> = [];
     for (const choice of selected) {
-      const previous = batch.items.find((item) => item.jobId === choice.jobId);
-      if (previous && previous.status !== "blocked") continue;
+      const existingIndex = batch.items.findIndex(
+        (item) => item.jobId === choice.jobId,
+      );
+      if (existingIndex >= 0 && batch.items[existingIndex].status !== "blocked")
+        continue;
+      const placeholder: BatchItem = { jobId: choice.jobId, status: "blocked" };
+      const slot = existingIndex >= 0 ? existingIndex : batch.items.length;
+      batch.items[slot] = placeholder;
+      work.push({ choice, slot });
+    }
+    await mapWithConcurrency(work, BATCH_CONCURRENCY, async ({ choice, slot }) => {
       const item: BatchItem = { jobId: choice.jobId, status: "blocked" };
-      if (previous) batch.items[batch.items.indexOf(previous)] = item;
-      else batch.items.push(item);
+      batch.items[slot] = item;
       try {
         const job = store.get<Job>("job", choice.jobId);
         if (this.applied(job, goal)) {
           item.status = "already_sent";
           item.reason = "已有提交或待核对的投递，不重复准备。";
-          continue;
+          return;
         }
         const candidate = this.assess(job, goal);
         if (!candidate) throw new Error("岗位不符合当前目标或命中排除条件。");
@@ -437,9 +470,9 @@ export class Tasks {
             throw new Error("建议与当前简历或岗位不一致。");
           plan = proposal.plan;
         }
-        const validated = groundedTailoringSchema(source.text, job.jd, { job }).parse(
-          plan,
-        );
+        const validated = groundedTailoringSchema(source.text, job.jd, {
+          job,
+        }).parse(plan);
         const keys = new Set(validated.changes.map(tailoringChangeKey));
         if (choice.accepted.some((key) => !keys.has(key)))
           throw new Error("接受项不属于这份修改建议。");
@@ -453,10 +486,10 @@ export class Tasks {
           this.workspace
             .listResumes()
             .find(
-              (item) =>
-                item.parentId === goal.resumeId &&
-                item.jobId === job.id &&
-                item.text === targetText,
+              (entry) =>
+                entry.parentId === goal.resumeId &&
+                entry.jobId === job.id &&
+                entry.text === targetText,
             ) ??
           (await this.workspace.saveVersion(
             goal.resumeId,
@@ -476,15 +509,18 @@ export class Tasks {
       } catch (error) {
         item.reason = error instanceof Error ? error.message : "准备失败";
       } finally {
+        batch.leaseExpiresAt = Date.now() + BATCH_LEASE_MS;
         store.put("batch", batch);
       }
-    }
+    });
     batch.status = batch.items.every(
       (item) => item.status === "prepared" || item.status === "already_sent",
     )
       ? "prepared"
       : "needs_input";
     delete batch.ownerPid;
+    delete batch.ownerInstance;
+    delete batch.leaseExpiresAt;
     store.put("batch", batch);
     return batch;
   }

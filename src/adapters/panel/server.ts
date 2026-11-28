@@ -15,7 +15,7 @@ import { packageRoot } from "../../shared/package-paths.js";
 import { z } from "zod";
 import { Workspace, type Resume } from "../../core/workspace.js";
 import { Tasks, type Goal, type Batch } from "../../core/tasks.js";
-import { smtpConfigured } from "../../infrastructure/smtp.js";
+import { mailSendingEnabled } from "../../infrastructure/smtp.js";
 
 export async function startPanel(workspace: Workspace, port = 4319) {
   const tasks = new Tasks(workspace);
@@ -46,7 +46,11 @@ export async function startPanel(workspace: Workspace, port = 4319) {
         throw new Error("上传内容过大，文件须小于 10 MiB。");
       chunks.push(chunk);
     }
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    try {
+      return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } catch {
+      throw new Error("请求数据格式无效。");
+    }
   };
   const handle = async (req: IncomingMessage, res: ServerResponse) => {
     const localPort = (server.address() as { port: number }).port;
@@ -71,8 +75,19 @@ export async function startPanel(workspace: Workspace, port = 4319) {
       return json(res, 403, { error: "请求来源无效。" });
     const cookieName = `resume_panel_${localPort}`;
     if (req.method === "POST" && url.pathname === "/api/session") {
-      const input = await body(req);
-      if (!valid(typeof input.token === "string" ? input.token : ""))
+      let input: unknown;
+      try {
+        input = await body(req);
+      } catch (error) {
+        return json(res, 400, {
+          error: error instanceof Error ? error.message : "请求数据格式无效。",
+        });
+      }
+      const tokenValue =
+        input && typeof input === "object" && "token" in input
+          ? (input as { token?: unknown }).token
+          : undefined;
+      if (!valid(typeof tokenValue === "string" ? tokenValue : ""))
         return json(res, 401, {
           error: "面板连接已失效，请使用终端中新生成的地址。",
         });
@@ -112,10 +127,7 @@ export async function startPanel(workspace: Workspace, port = 4319) {
                 .list<Goal>("goal")
                 .map((goal) => [goal.id, tasks.candidates(goal.id)]),
             ),
-            sendingEnabled:
-              process.env.RESUME_ALLOW_SEND === "1" &&
-              !!workspace.send &&
-              smtpConfigured(),
+            sendingEnabled: mailSendingEnabled(workspace),
           });
         const asset = url.pathname.match(/^\/api\/pdf\/([a-f0-9-]+)$/);
         if (req.method === "GET" && asset) {
@@ -153,7 +165,7 @@ export async function startPanel(workspace: Workspace, port = 4319) {
           )
             throw new Error("请选择 10 MiB 以内的 PDF、DOCX 或文本简历。");
           const folder = join(workspace.store.home, `upload-${randomUUID()}`);
-          await mkdir(folder);
+          await mkdir(folder, { mode: 0o700 });
           const file = join(
             folder,
             basename(parsed.name.replaceAll("\\", "/")),
@@ -256,11 +268,7 @@ export async function startPanel(workspace: Workspace, port = 4319) {
             })
             .strict()
             .parse(input);
-          if (
-            process.env.RESUME_ALLOW_SEND !== "1" ||
-            !workspace.send ||
-            !smtpConfigured()
-          )
+          if (!mailSendingEnabled(workspace))
             throw new Error("未配置真实发件邮箱；不会自动改为模拟投递。");
           workspace.approve(p.id, p.digest);
           return json(res, 200, await workspace.execute(p.id, false));

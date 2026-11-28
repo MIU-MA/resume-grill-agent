@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { openPdf } from "./documents.js";
 
 /** Rasterize the selected PDF itself, including its original layout and photos. */
 export async function resumeImages(path: string) {
@@ -9,17 +10,7 @@ export async function resumeImages(path: string) {
     !bytes.subarray(0, 5).equals(Buffer.from("%PDF-"))
   )
     throw new Error("需要 10 MiB 以内的有效 PDF 简历。");
-  const canvas = await import("@napi-rs/canvas");
-  Object.assign(globalThis, {
-    DOMMatrix: canvas.DOMMatrix,
-    ImageData: canvas.ImageData,
-    Path2D: canvas.Path2D,
-  });
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const task = pdfjs.getDocument({
-    data: Uint8Array.from(bytes),
-    useSystemFonts: true,
-  });
+  const { canvas, task } = await openPdf(bytes);
   try {
     const pdf = await task.promise;
     if (pdf.numPages < 1 || pdf.numPages > 3)

@@ -13,6 +13,8 @@ export type BossGroup = {
   status: "prepared" | "running" | "paused" | "finished";
   expiresAt: number;
   ownerPid?: number;
+  ownerInstance?: string;
+  leaseExpiresAt?: number;
   stopRequested?: boolean;
   items: {
     deliveryId: string;
@@ -23,6 +25,8 @@ export type BossGroup = {
 };
 type Edit = { groupId?: string; draft?: BossDelivery; standaloneId?: string; adding?: boolean };
 type Control = { stop: boolean; done?: Promise<void> };
+const PROCESS_INSTANCE_ID = randomUUID();
+const GROUP_LEASE_MS = 60_000;
 const workers = new Map<string, Control>();
 const key = (w: Workspace, id: string) => `${w.store.home}:${id}`;
 const hash = (v: unknown) =>
@@ -45,7 +49,14 @@ export class BossGroups {
   list() {
     return this.workspace.store.list<BossGroup>("boss-group").map((g) => {
       let alive = false;
-      if (g.ownerPid && g.ownerPid !== process.pid) {
+      const leaseValid =
+        g.leaseExpiresAt === undefined || g.leaseExpiresAt > Date.now();
+      if (
+        leaseValid &&
+        g.ownerPid &&
+        g.ownerPid !== process.pid &&
+        g.ownerInstance !== PROCESS_INSTANCE_ID
+      ) {
         try {
           process.kill(g.ownerPid, 0);
           alive = true;
@@ -263,6 +274,8 @@ export class BossGroups {
       }
       current.status = "running";
       current.ownerPid = process.pid;
+      current.ownerInstance = PROCESS_INSTANCE_ID;
+      current.leaseExpiresAt = Date.now() + GROUP_LEASE_MS;
       return this.save(current);
     });
     const control: Control = { stop: false };
@@ -293,6 +306,7 @@ export class BossGroups {
         if (d.status !== "prepared" || d.digest !== item.digest)
           throw new Error("下一岗位已执行或版本改变，已停止。");
         item.state = "running";
+        g.leaseExpiresAt = Date.now() + GROUP_LEASE_MS;
         this.save(g);
         // Refresh only the executor's expiring ticket, never the approved PDF or JD.
         await deliveries.preview(d);

@@ -1,0 +1,133 @@
+[
+  {
+    "id": "br-01",
+    "title": "后端开发实习生",
+    "list": "杭州 · 实习",
+    "jd": "面向 2026 届在校生，实习周期至少 3 个月，表现优秀可转正。",
+    "expectedKind": "internship",
+    "expectedConflict": false
+  },
+  {
+    "id": "br-02",
+    "title": "AI 应用工程师（日常实习）",
+    "list": "北京",
+    "jd": "每周到岗 4 天，实习 3 个月以上。",
+    "facts": { "experience": "4天/周 3个月", "salary": "300-400元/天", "education": "本科" },
+    "expectedKind": "internship",
+    "expectedConflict": false
+  },
+  {
+    "id": "br-03",
+    "title": "Backend Intern",
+    "list": "上海",
+    "jd": "Join our engineering team for a summer internship.",
+    "expectedKind": "internship",
+    "expectedConflict": false
+  },
+  {
+    "id": "br-04",
+    "title": "2026届后端开发校招",
+    "list": "深圳",
+    "jd": "面向 2026 届应届毕业生，校园招聘正式岗位。",
+    "expectedKind": "campus",
+    "expectedConflict": false
+  },
+  {
+    "id": "br-05",
+    "title": "软件工程师（应届生专项）",
+    "list": "成都",
+    "jd": "应届毕业生专项培养计划，限招 2026 届本科及以上。",
+    "expectedKind": "campus",
+    "expectedConflict": false
+  },
+  {
+    "id": "br-06",
+    "title": "资深后端开发工程师",
+    "list": "上海 · 5-10年",
+    "jd": "负责核心交易链路设计与高可用治理。",
+    "facts": { "experience": "5-10年", "salary": "35-60K·15薪", "education": "本科" },
+    "expectedKind": "fulltime",
+    "expectedConflict": false
+  },
+  {
+    "id": "br-07",
+    "title": "AI 应用架构师（全职）",
+    "list": "北京",
+    "jd": "岗位性质：全职，负责 Agent 平台工具编排与工程落地。",
+    "expectedKind": "fulltime",
+    "expectedConflict": false
+  },
+  {
+    "id": "br-08",
+    "title": "Java 高级工程师",
+    "list": "杭州",
+    "jd": "社会招聘，要求 3 年以上分布式系统开发经验。",
+    "expectedKind": "fulltime",
+    "expectedConflict": false
+  },
+  {
+    "id": "br-09",
+    "title": "前端开发工程师",
+    "list": "广州",
+    "jd": "负责 React 中后台开发，具备实习经验者优先。",
+    "facts": { "experience": "3-5年", "salary": "20-35K", "education": "本科" },
+    "expectedKind": "fulltime",
+    "expectedConflict": false
+  },
+  {
+    "id": "br-10",
+    "title": "测试开发（社招/实习均可）",
+    "list": "北京",
+    "jd": "招聘实习生，同时社会招聘正式员工。",
+    "expectedKind": "unknown",
+    "expectedConflict": true
+  },
+  {
+    "id": "br-11",
+    "title": "兼职数据标注",
+    "list": "远程",
+    "jd": "按日结算，可兼职。",
+    "expectedKind": "unknown",
+    "expectedConflict": false
+  },
+  {
+    "id": "br-12",
+    "title": "运营专员（兼职/全职）",
+    "list": "南京",
+    "jd": "兼职全职均可。",
+    "expectedKind": "unknown",
+    "expectedConflict": true
+  },
+  {
+    "id": "br-13",
+    "title": "产品经理",
+    "list": "武汉",
+    "jd": "负责 B 端需求调研与原型设计，沟通能力强。",
+    "expectedKind": "unknown",
+    "expectedConflict": false
+  },
+  {
+    "id": "br-14",
+    "title": "算法工程师（实习转正）",
+    "list": "北京",
+    "jd": "招聘 2026 届暑期实习生，实习可转正。",
+    "expectedKind": "internship",
+    "expectedConflict": false
+  },
+  {
+    "id": "br-15",
+    "title": "Full-Time Systems Engineer",
+    "list": "上海",
+    "jd": "Build reliable infrastructure services.",
+    "expectedKind": "fulltime",
+    "expectedConflict": false
+  },
+  {
+    "id": "br-16",
+    "title": "后端研发（校招与社招同投）",
+    "list": "杭州",
+    "jd": "校园招聘与社会招聘同步开放。",
+    "expectedKind": "unknown",
+    "expectedConflict": true
+  }
+]

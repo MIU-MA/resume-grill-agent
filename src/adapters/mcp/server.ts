@@ -2,10 +2,28 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Workspace } from "../../core/workspace.js";
 import { operations } from "../../core/operations.js";
+import { packageVersion } from "../../shared/package-paths.js";
+import { withTrace } from "../../shared/telemetry.js";
+
+const openWorldOperations = new Set([
+  "execute_application",
+  "discover_jobs",
+  "read_recruiting_site",
+  "read_job_detail",
+  "boss_status",
+  "boss_search",
+  "boss_read_jobs",
+  "boss_read_detail",
+  "boss_delivery_status",
+  "boss_pause_delivery",
+  "boss_shortlist",
+  "boss_pause_group",
+]);
+
 export function createServer(workspace: Workspace) {
   const server = new McpServer({
     name: "resume-grill-agent",
-    version: "0.1.0",
+    version: packageVersion,
   });
   for (const op of operations(workspace))
     server.registerTool(
@@ -16,9 +34,7 @@ export function createServer(workspace: Workspace) {
         annotations: {
           readOnlyHint: op.readOnly,
           destructiveHint: op.name === "execute_application",
-          openWorldHint: ["execute_application", "discover_jobs"].includes(
-            op.name,
-          ),
+          openWorldHint: openWorldOperations.has(op.name),
         },
       },
       async (args) => {
@@ -27,7 +43,9 @@ export function createServer(workspace: Workspace) {
             content: [
               {
                 type: "text" as const,
-                text: JSON.stringify(await op.run(args)),
+                text: JSON.stringify(
+                  await withTrace("mcp", () => op.run(args)),
+                ),
               },
             ],
           };

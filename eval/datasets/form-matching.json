@@ -1,0 +1,79 @@
+[
+  {
+    "id": "fm-01",
+    "field": { "uid": "u1", "label": "姓名*", "type": "text", "required": true },
+    "expectedPath": "contact.name",
+    "expectedValue": "林示例"
+  },
+  {
+    "id": "fm-02",
+    "field": { "uid": "u2", "label": "电子邮箱", "type": "text", "required": true },
+    "expectedPath": "contact.email",
+    "expectedValue": "lin@example.com"
+  },
+  {
+    "id": "fm-03",
+    "field": { "uid": "u3", "label": "手机号码", "type": "text", "required": true },
+    "expectedPath": "contact.phone",
+    "expectedValue": "13800138000"
+  },
+  {
+    "id": "fm-04",
+    "field": { "uid": "u4", "label": "简历附件上传", "type": "file", "required": true },
+    "expectedPath": "attachment"
+  },
+  {
+    "id": "fm-05",
+    "field": { "uid": "u5", "label": "个人作品集证明材料", "type": "file", "required": false },
+    "expectedBlocked": true
+  },
+  {
+    "id": "fm-06",
+    "field": { "uid": "u6", "label": "我已阅读并同意隐私声明", "type": "checkbox", "required": true },
+    "expectedBlocked": true
+  },
+  {
+    "id": "fm-07",
+    "field": { "uid": "u7", "label": "期望薪资", "type": "text", "required": true },
+    "expectedBlocked": true
+  },
+  {
+    "id": "fm-08",
+    "field": { "uid": "u8", "label": "身份证号", "type": "text", "required": false },
+    "expectedBlocked": true
+  },
+  {
+    "id": "fm-09",
+    "field": { "uid": "u9", "label": "毕业院校", "type": "text", "required": true },
+    "expectedPath": "experiences[0].organization",
+    "expectedValue": "示例大学"
+  },
+  {
+    "id": "fm-10",
+    "field": { "uid": "u10", "label": "公司名称", "type": "text", "required": true },
+    "expectedBlocked": true
+  },
+  {
+    "id": "fm-11",
+    "field": { "uid": "u11", "label": "公司名称", "type": "text", "required": true, "group": "work", "index": 0 },
+    "expectedPath": "experiences[1].organization",
+    "expectedValue": "示例科技"
+  },
+  {
+    "id": "fm-12",
+    "field": { "uid": "u12", "label": "公司名称", "type": "text", "required": true, "group": "work", "index": 1 },
+    "expectedPath": "experiences[2].organization",
+    "expectedValue": "云帆软件"
+  },
+  {
+    "id": "fm-13",
+    "field": { "uid": "u13", "label": "项目名称", "type": "text", "required": false },
+    "expectedPath": "experiences[3].organization",
+    "expectedValue": "订单网关"
+  },
+  {
+    "id": "fm-14",
+    "field": { "uid": "u14", "label": "最喜欢的颜色", "type": "text", "required": false },
+    "expectedBlocked": true
+  }
+]
