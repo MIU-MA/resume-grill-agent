@@ -15,10 +15,12 @@ import { packageRoot } from "../../shared/package-paths.js";
 import { z } from "zod";
 import { Workspace, type Resume } from "../../core/workspace.js";
 import { Tasks, type Goal, type Batch } from "../../core/tasks.js";
+import { ResumeGrillService } from "../../core/resume-grill.js";
 import { mailSendingEnabled } from "../../infrastructure/smtp.js";
 
 export async function startPanel(workspace: Workspace, port = 4319) {
   const tasks = new Tasks(workspace);
+  const grill = new ResumeGrillService(workspace);
   const token = randomBytes(32).toString("hex");
   const valid = (value: string) =>
     Buffer.byteLength(value) === Buffer.byteLength(token) &&
@@ -198,6 +200,21 @@ export async function startPanel(workspace: Workspace, port = 4319) {
             .strict()
             .parse(input);
           return json(res, 200, workspace.reviewContext(p.resumeId, p.jobId));
+        }
+        if (url.pathname === "/api/audit") {
+          const p = z.object({ resumeId: z.string() }).strict().parse(input);
+          return json(res, 200, grill.auditResume(p.resumeId));
+        }
+        if (url.pathname === "/api/grill") {
+          const p = z
+            .object({
+              resumeId: z.string().optional(),
+              jobId: z.string().optional(),
+              applicationId: z.string().optional(),
+            })
+            .strict()
+            .parse(input);
+          return json(res, 200, grill.prepareInterviewGrill(p));
         }
         if (url.pathname === "/api/version") {
           const p = z

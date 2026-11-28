@@ -31,6 +31,33 @@ const workers = new Map<string, Control>();
 const key = (w: Workspace, id: string) => `${w.store.home}:${id}`;
 const hash = (v: unknown) =>
   createHash("sha256").update(JSON.stringify(v)).digest("hex");
+
+function pidAlive(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function ownerStillAlive(g: BossGroup) {
+  if (g.ownerInstance) {
+    // Active workers in this process are already guarded by `workers.has(...)`;
+    // a same-instance record absent from `workers` has already terminated.
+    if (g.ownerInstance === PROCESS_INSTANCE_ID) return false;
+    const leaseValid =
+      g.leaseExpiresAt === undefined || g.leaseExpiresAt > Date.now();
+    return leaseValid && !!g.ownerPid && pidAlive(g.ownerPid);
+  }
+  return !!g.ownerPid && g.ownerPid !== process.pid && pidAlive(g.ownerPid);
+}
+
+function clearOwnership(g: BossGroup) {
+  delete g.ownerPid;
+  delete g.ownerInstance;
+  delete g.leaseExpiresAt;
+}
 export class BossGroups {
   constructor(
     readonly workspace: Workspace,
@@ -48,28 +75,28 @@ export class BossGroups {
   }
   list() {
     return this.workspace.store.list<BossGroup>("boss-group").map((g) => {
-      let alive = false;
-      const leaseValid =
-        g.leaseExpiresAt === undefined || g.leaseExpiresAt > Date.now();
-      if (
-        leaseValid &&
-        g.ownerPid &&
-        g.ownerPid !== process.pid &&
-        g.ownerInstance !== PROCESS_INSTANCE_ID
-      ) {
-        try {
-          process.kill(g.ownerPid, 0);
-          alive = true;
-        } catch {}
-      }
       if (
         g.status === "running" &&
         !workers.has(key(this.workspace, g.id)) &&
-        !alive
+        !ownerStillAlive(g)
       ) {
-        g.status = "paused";
-        g.error = "宿主曾退出，已停止后续任务；读取当前回执，不自动恢复发送。";
-        this.save(g);
+        return this.workspace.store.transaction(() => {
+          const current = this.workspace.store.get<BossGroup>(
+            "boss-group",
+            g.id,
+          );
+          if (
+            current.status !== "running" ||
+            workers.has(key(this.workspace, current.id)) ||
+            ownerStillAlive(current)
+          )
+            return current;
+          current.status = "paused";
+          current.error =
+            "宿主曾退出，已停止后续任务；读取当前回执，不自动恢复发送。";
+          clearOwnership(current);
+          return this.save(current);
+        });
       }
       return g;
     });
@@ -286,34 +313,65 @@ export class BossGroups {
     void control.done.catch(() => {});
     return g;
   }
+  private saveOwned(g: BossGroup, finish = false): boolean {
+    return this.workspace.store.transaction(() => {
+      const current = this.workspace.store.get<BossGroup>("boss-group", g.id);
+      if (
+        current.status !== "running" ||
+        current.ownerInstance !== PROCESS_INSTANCE_ID
+      )
+        return false;
+      if (current.stopRequested) g.stopRequested = true;
+      if (finish) clearOwnership(g);
+      else g.leaseExpiresAt = Date.now() + GROUP_LEASE_MS;
+      this.save(g);
+      return true;
+    });
+  }
+  private renewLease(g: BossGroup): boolean {
+    return this.workspace.store.transaction(() => {
+      const current = this.workspace.store.get<BossGroup>("boss-group", g.id);
+      if (
+        current.status !== "running" ||
+        current.ownerInstance !== PROCESS_INSTANCE_ID
+      )
+        return false;
+      if (current.stopRequested) g.stopRequested = true;
+      g.leaseExpiresAt = Date.now() + GROUP_LEASE_MS;
+      current.leaseExpiresAt = g.leaseExpiresAt;
+      this.save(current);
+      return true;
+    });
+  }
   private async execute(g: BossGroup, c: Control) {
     const deliveries = new BossDeliveries(this.workspace);
     try {
       for (const item of g.items) {
+        if (!this.renewLease(g)) return;
         if (
           c.stop ||
-          this.get(g.id).stopRequested ||
+          g.stopRequested ||
           g.expiresAt <= Date.now()
         ) {
           g.status = "paused";
-          g.error = c.stop
+          g.error = c.stop || g.stopRequested
             ? "已暂停，未执行的岗位保持待确认。"
             : "本次授权时间已结束，请重新核对未执行岗位。";
-          this.save(g);
+          this.saveOwned(g, true);
           return;
         }
         let d = deliveries.get(item.deliveryId);
         if (d.status !== "prepared" || d.digest !== item.digest)
           throw new Error("下一岗位已执行或版本改变，已停止。");
         item.state = "running";
-        g.leaseExpiresAt = Date.now() + GROUP_LEASE_MS;
-        this.save(g);
+        if (!this.saveOwned(g)) return;
         // Refresh only the executor's expiring ticket, never the approved PDF or JD.
         await deliveries.preview(d);
-        if (c.stop || this.get(g.id).stopRequested) {
+        if (!this.renewLease(g)) return;
+        if (c.stop || g.stopRequested) {
           item.state = "queued";
           g.status = "paused";
-          this.save(g);
+          this.saveOwned(g, true);
           return;
         }
         d = await deliveries.confirm(d.id, item.digest);
@@ -322,6 +380,13 @@ export class BossGroups {
           d.status === "running" || d.status === "submitting";
           n++
         ) {
+          if (
+            (g.leaseExpiresAt ?? 0) - Date.now() < GROUP_LEASE_MS / 2 &&
+            !this.renewLease(g)
+          ) {
+            await deliveries.pause(d.id).catch(() => {});
+            return;
+          }
           if (n >= this.maxPolls) {
             await deliveries.pause(d.id);
             throw new Error("等待回执已达上限，已请求暂停，请人工核对。");
@@ -335,29 +400,34 @@ export class BossGroups {
           item.state = "needs_review";
           g.status = "paused";
           g.error = "当前岗位需要核对，未执行后续岗位。";
-          this.save(g);
+          this.saveOwned(g, true);
           return;
         }
         item.state = "finished";
-        this.save(g);
+        if (!this.saveOwned(g)) return;
       }
       g.status = "finished";
       delete g.error;
-      this.save(g);
+      this.saveOwned(g, true);
     } catch (error) {
       const active = g.items.find((i) => i.state === "running");
       if (active) active.state = "needs_review";
       g.status = "paused";
       g.error = error instanceof Error ? error.message : "批次已暂停，请核对。";
-      this.save(g);
+      this.saveOwned(g, true);
     }
   }
   async pause(id: string) {
     const g = this.get(id),
       c = workers.get(key(this.workspace, id));
     if (g.status === "running") {
-      g.stopRequested = true;
-      this.save(g);
+      this.workspace.store.transaction(() => {
+        const current = this.workspace.store.get<BossGroup>("boss-group", id);
+        if (current.status === "running") {
+          current.stopRequested = true;
+          this.save(current);
+        }
+      });
     }
     if (c) {
       c.stop = true;

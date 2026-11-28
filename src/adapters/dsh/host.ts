@@ -20,7 +20,7 @@ import { requireBrowserTools } from "./browser-tools.js";
 import { ResumeProfiles } from "../../core/resume-profiles.js";
 import { hasCapability } from "../../shared/capabilities.js";
 import { promptSectionsFor } from "../../shared/prompts.js";
-import { withTrace } from "../../shared/telemetry.js";
+import { sanitizeAuditArgs, withTrace } from "../../shared/telemetry.js";
 import { Boss } from "../../core/boss.js";
 import { BossExecutor } from "../../infrastructure/boss-executor/index.js";
 import { requireCompanyWebsite } from "../../domain/boss.js";
@@ -110,10 +110,25 @@ export function mount(
         execute: async (args: any, exec: { signal: AbortSignal }) => {
           exec.signal.throwIfAborted();
           if (operation.name === "execute_application") await refreshMail?.();
-          if (operation.name === "execute_application" && args.dryRun !== true)
+          if (operation.name === "execute_application" && args?.dryRun !== true) {
+            try {
+              workspace.store.recordToolAudit({
+                traceId: randomUUID(),
+                caller: "dsh-model",
+                toolName: operation.name,
+                readOnly: false,
+                status: "error",
+                errorCode: "APPROVAL_REQUIRED",
+                durationMs: 0,
+                summary: sanitizeAuditArgs(args),
+              });
+            } catch {
+              /* Never mask security block. */
+            }
             throw new Error(
               "真实发送请用户在投递卡片核对并确认；助手不能代为批准。",
             );
+          }
           return JSON.parse(
             JSON.stringify(
               await withTrace("dsh-model", () => operation.run(args)),

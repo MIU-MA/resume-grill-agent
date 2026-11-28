@@ -43,6 +43,8 @@ const SAFE_AUDIT_KEYS = new Set([
   "keepOriginal",
 ]);
 
+const SAFE_ID_PATTERN = /^[A-Za-z0-9_:-]{1,80}$/;
+
 /**
  * Produce a strictly allowlisted summary of tool arguments for local audit logs.
  * Never persists resume text, JD body, email body/recipients, tokens, or file contents.
@@ -53,12 +55,10 @@ export function sanitizeAuditArgs(args: unknown): Record<string, unknown> {
   const summary: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
     if (SAFE_AUDIT_KEYS.has(key)) {
-      if (
-        typeof value === "string" ||
-        typeof value === "number" ||
-        typeof value === "boolean"
-      ) {
-        summary[key] = typeof value === "string" ? value.slice(0, 80) : value;
+      if (typeof value === "number" || typeof value === "boolean") {
+        summary[key] = value;
+      } else if (typeof value === "string") {
+        summary[key] = SAFE_ID_PATTERN.test(value) ? value : "<redacted>";
       }
       continue;
     }

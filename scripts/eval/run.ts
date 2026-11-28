@@ -7,6 +7,8 @@ import {
 } from "../../src/domain/resume-tailoring.js";
 import { classifyBossRecruitment } from "../../src/domain/boss-recruitment.js";
 import { formFieldSchema, matchFormField } from "../../src/domain/form-fields.js";
+import { auditResumeRisks } from "../../src/domain/resume-risk-audit.js";
+import { analyzeJdGap } from "../../src/domain/jd-gap-analysis.js";
 import type { ResumeProfileData } from "../../src/domain/resume-profile.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -256,14 +258,86 @@ async function runFormMatchingEval() {
   };
 }
 
+async function runRiskAndGapEval() {
+  const dataset = JSON.parse(
+    await readFile(resolve(root, "eval/datasets/resume-risk-and-gap.json"), "utf8"),
+  ) as {
+    riskAuditCases: Array<{
+      id: string;
+      resume: string;
+      expectedHighRisk: boolean;
+      expectedMinMedium?: number;
+    }>;
+    jdGapCases: Array<{
+      id: string;
+      role: string;
+      jd: string;
+      resume: string;
+      expectedPrimaryTrack: string;
+      expectedFitLevel: string;
+      expectRiskIsolation: boolean;
+    }>;
+  };
+  let riskPassed = 0;
+  const riskBadcases: Array<{ id: string; detail: string }> = [];
+  for (const item of dataset.riskAuditCases) {
+    const result = auditResumeRisks(item.resume);
+    const hasHigh = result.summary.highCount > 0;
+    const mediumOk =
+      item.expectedMinMedium === undefined ||
+      result.summary.mediumCount >= item.expectedMinMedium;
+    if (hasHigh === item.expectedHighRisk && mediumOk) riskPassed++;
+    else
+      riskBadcases.push({
+        id: item.id,
+        detail: `expected (highRisk=${item.expectedHighRisk}, minMedium=${item.expectedMinMedium ?? 0}), got (high=${result.summary.highCount}, medium=${result.summary.mediumCount})`,
+      });
+  }
+  let gapPassed = 0;
+  const gapBadcases: Array<{ id: string; detail: string }> = [];
+  for (const item of dataset.jdGapCases) {
+    const result = analyzeJdGap(item.resume, item.jd, item.role);
+    const hasIsolation = result.riskIsolations.length > 0;
+    if (
+      result.primaryTrack === item.expectedPrimaryTrack &&
+      result.fitLevel === item.expectedFitLevel &&
+      hasIsolation === item.expectRiskIsolation
+    ) {
+      gapPassed++;
+    } else {
+      gapBadcases.push({
+        id: item.id,
+        detail: `expected (${item.expectedPrimaryTrack}, ${item.expectedFitLevel}, isolation=${item.expectRiskIsolation}), got (${result.primaryTrack}, ${result.fitLevel}, isolation=${hasIsolation})`,
+      });
+    }
+  }
+  return {
+    riskAudit: {
+      name: "resume-risk-audit",
+      total: dataset.riskAuditCases.length,
+      passed: riskPassed,
+      accuracy: rate(riskPassed, dataset.riskAuditCases.length),
+      badcases: riskBadcases,
+    },
+    jdGap: {
+      name: "jd-gap-isolation",
+      total: dataset.jdGapCases.length,
+      passed: gapPassed,
+      accuracy: rate(gapPassed, dataset.jdGapCases.length),
+      badcases: gapBadcases,
+    },
+  };
+}
+
 const tailoring = await runTailoringEval();
 const recruitment = await runRecruitmentEval();
 const formMatching = await runFormMatchingEval();
+const { riskAudit, jdGap } = await runRiskAndGapEval();
 
 const report = {
   evaluatedAt: new Date().toISOString(),
   node: process.version,
-  suites: { tailoring, recruitment, formMatching },
+  suites: { tailoring, recruitment, formMatching, riskAudit, jdGap },
 };
 
 console.log(JSON.stringify(report, null, 2));
@@ -272,7 +346,9 @@ const failed =
   tailoring.falseNegativeRate > 0 ||
   tailoring.falsePositiveRate > 0 ||
   recruitment.accuracy < 1 ||
-  formMatching.accuracy < 1;
+  formMatching.accuracy < 1 ||
+  riskAudit.accuracy < 1 ||
+  jdGap.accuracy < 1;
 
 if (failed) {
   console.error("离线 Eval 阈值未达标，请检查 badcases。");

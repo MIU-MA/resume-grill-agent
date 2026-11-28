@@ -509,9 +509,18 @@ function extractPageJobs(
 const MAX_PAGE_BYTES = 2 * 1024 * 1024;
 export const careerResourceCache = new ResourceCache();
 
+function sizeLimitMessage(maxBytes: number) {
+  if (maxBytes === MAX_PAGE_BYTES) return "招聘页面超过 2 MB，请手动填写邮箱";
+  const mb = maxBytes >= 1024 * 1024
+    ? `${(maxBytes / (1024 * 1024)).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(maxBytes / 1024))} KB`;
+  return `招聘页面超过上限（${mb}），请手动填写邮箱`;
+}
+
 /**
  * Stream-decode identity/gzip/deflate payloads while enforcing a strict byte ceiling
- * on BOTH compressed wire bytes and decompressed output bytes (defends against zip bombs).
+ * on BOTH compressed wire bytes and decompressed output bytes (defends against zip bombs),
+ * with safe unpipe/destroy teardown and premature-close rejection.
  */
 export function readBoundedStream(
   source: Readable,
@@ -526,57 +535,99 @@ export function readBoundedStream(
       new Error("该地址不是可读取的网页，请使用官网招聘详情页"),
     );
   }
+  const limitError = () => new Error(sizeLimitMessage(maxBytes));
   return new Promise<Buffer>((resolve, reject) => {
     let settled = false;
-    const fail = (error: Error) => {
+    const chunks: Buffer[] = [];
+    const decoder =
+      normalized === "gzip" || normalized === "x-gzip"
+        ? createGunzip({ maxOutputLength: maxBytes + 1 })
+        : normalized === "deflate"
+          ? createInflate({ maxOutputLength: maxBytes + 1 })
+          : undefined;
+
+    const fail = (error: Error, limitHit = false) => {
       if (settled) return;
       settled = true;
-      onLimitExceeded?.();
-      decoder?.destroy();
+      chunks.length = 0;
+      if (limitHit) onLimitExceeded?.();
+      if (decoder) {
+        source.unpipe(decoder);
+        decoder.destroy();
+      }
       source.destroy();
       reject(error);
     };
-    const decoder =
-      normalized === "gzip" || normalized === "x-gzip"
-        ? createGunzip()
-        : normalized === "deflate"
-          ? createInflate()
-          : undefined;
 
-    let wireBytes = 0;
-    source.on("data", (chunk: Buffer) => {
-      wireBytes += chunk.length;
-      if (wireBytes > maxBytes) {
-        fail(new Error("招聘页面超过 2 MB，请手动填写邮箱"));
-      }
-    });
-    source.on("error", (error) =>
-      fail(error instanceof Error ? error : new Error("读取招聘页失败")),
-    );
+    if (decoder) {
+      let wireBytes = 0;
+      source.on("data", (chunk: Buffer) => {
+        if (settled) return;
+        wireBytes += chunk.length;
+        if (wireBytes > maxBytes) fail(limitError(), true);
+      });
+      source.on("error", (error) =>
+        fail(error instanceof Error ? error : new Error("读取招聘页失败")),
+      );
+      source.on("close", () => {
+        if (!settled && !source.readableEnded) {
+          fail(new Error("招聘页连接提前中断"));
+        }
+      });
 
-    const output: Readable = decoder ? source.pipe(decoder) : source;
-    const chunks: Buffer[] = [];
-    let outputBytes = 0;
-    output.on("data", (chunk: Buffer) => {
-      outputBytes += chunk.length;
-      if (outputBytes > maxBytes) {
-        fail(new Error("招聘页面超过 2 MB，请手动填写邮箱"));
-        return;
-      }
-      chunks.push(chunk);
-    });
-    output.on("error", (error) =>
-      fail(
-        error instanceof Error
-          ? new Error(`招聘页解码失败：${error.message}`)
-          : new Error("招聘页解码失败"),
-      ),
-    );
-    output.on("end", () => {
-      if (settled) return;
-      settled = true;
-      resolve(Buffer.concat(chunks));
-    });
+      let outputBytes = 0;
+      decoder.on("data", (chunk: Buffer) => {
+        if (settled) return;
+        outputBytes += chunk.length;
+        if (outputBytes > maxBytes) {
+          fail(limitError(), true);
+          return;
+        }
+        chunks.push(chunk);
+      });
+      decoder.on("error", (error: NodeJS.ErrnoException) => {
+        if (error?.code === "ERR_BUFFER_TOO_LARGE" || /maxOutputLength/i.test(error?.message ?? "")) {
+          fail(limitError(), true);
+          return;
+        }
+        fail(
+          error instanceof Error
+            ? new Error(`招聘页解码失败：${error.message}`)
+            : new Error("招聘页解码失败"),
+        );
+      });
+      decoder.on("end", () => {
+        if (settled) return;
+        settled = true;
+        resolve(Buffer.concat(chunks));
+      });
+      decoder.on("close", () => {
+        if (!settled) fail(new Error("招聘页解码连接提前中断"));
+      });
+      source.pipe(decoder);
+    } else {
+      let outputBytes = 0;
+      source.on("data", (chunk: Buffer) => {
+        if (settled) return;
+        outputBytes += chunk.length;
+        if (outputBytes > maxBytes) {
+          fail(limitError(), true);
+          return;
+        }
+        chunks.push(chunk);
+      });
+      source.on("error", (error) =>
+        fail(error instanceof Error ? error : new Error("读取招聘页失败")),
+      );
+      source.on("end", () => {
+        if (settled) return;
+        settled = true;
+        resolve(Buffer.concat(chunks));
+      });
+      source.on("close", () => {
+        if (!settled) fail(new Error("招聘页连接提前中断"));
+      });
+    }
   });
 }
 
@@ -700,12 +751,37 @@ export async function readCareerResource(
   const parsed = sourceUrlSchema.safeParse(input);
   if (!parsed.success)
     throw new Error("请填写官网招聘页面的 HTTPS 地址（443 端口）");
+  if (Date.now() >= deadline)
+    throw new Error("读取招聘页超时，请手动填写邮箱");
   const key = `${json ? "json" : "html"}:${new URL(parsed.data).href}`;
-  return careerResourceCache.coalesce(
+  const inFlight = careerResourceCache.coalesce(
     key,
-    () => fetchCareerResource(parsed.data, 0, deadline, undefined, json),
+    () =>
+      fetchCareerResource(
+        parsed.data,
+        0,
+        Date.now() + 15000,
+        undefined,
+        json,
+      ),
     cacheTtlMs,
   );
+  // Each coalesced caller enforces its own deadline independently without hijacking peers.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      inFlight,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("读取招聘页超时，请手动填写邮箱")),
+          Math.max(1, deadline - Date.now()),
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    void inFlight.catch(() => {});
+  }
 }
 
 export async function readCareerPage(

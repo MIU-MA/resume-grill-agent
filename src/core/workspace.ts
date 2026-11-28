@@ -20,6 +20,9 @@ import {
   tailoredOriginalResumeText,
   tailoringChangeKey,
 } from "../domain/resume-tailoring.js";
+import { auditResumeRisks } from "../domain/resume-risk-audit.js";
+import { analyzeJdGap } from "../domain/jd-gap-analysis.js";
+import { buildInterviewGrill } from "../domain/interview-grill.js";
 
 const hash = (value: string | Uint8Array) =>
   createHash("sha256").update(value).digest("hex");
@@ -221,6 +224,14 @@ export class Workspace {
   reviewContext(resumeId: string, jobId: string) {
     const resume = this.resume(resumeId),
       job = this.store.get<Job>("job", jobId);
+    const riskAudit = auditResumeRisks(resume.text);
+    const jdGapAnalysis = analyzeJdGap(resume.text, job.jd, job.role);
+    const interviewGrill = buildInterviewGrill({
+      resumeText: resume.text,
+      job,
+      riskAudit,
+      jdGapAnalysis,
+    });
     return {
       resumeId,
       jobId,
@@ -228,10 +239,13 @@ export class Workspace {
       job: { company: job.company, role: job.role },
       requirements: tailoringRequirements(job.jd),
       sections: tailoringSections(resume.text),
+      riskAudit,
+      jdGapAnalysis,
+      interviewGrill,
       outputFormat:
         "TailoringPlan: company, role, sectionOrder, changes[{sectionId,lineIndex,after,requirement,requirementId?,reason}], highlights[], gaps[]",
       rules:
-        "公司与职位使用 job 字段。requirement 可以概括岗位要求，requirementId 用 requirements 中对应证据的 ID。润色措辞可调整，同一段经历中已出现的技术可以复用。未经证实的技能、数字或贡献放入 gaps 请用户补充。先展示差异，由用户选择接受项。",
+        "公司与职位使用 job 字段。requirement 可以概括岗位要求，requirementId 用 requirements 中对应证据的 ID。润色措辞可调整，同一段经历中已出现的技术可以复用。禁止新增未经证实的技能、数字或夸大主导词（如主导整体架构/零故障/千万级），缺口放入 gaps 请用户补充。结合 jdGapAnalysis 明确提示赛道差距与风险隔离（不把 API 调用包装成模型推理优化，不把单机实现硬包装成分布式存储），结合 riskAudit 提醒原简历高风险表述；用户需要面试演练时可基于 interviewGrill 展开三层追问。先展示差异，由用户选择接受项。",
     };
   }
   async saveVersion(
@@ -239,6 +253,7 @@ export class Workspace {
     jobId: string,
     proposed: unknown,
     accepted: string[],
+    options: { reuseExisting?: boolean } = {},
   ) {
     const source = this.resume(resumeId),
       job = this.store.get<Job>("job", jobId);
@@ -252,6 +267,22 @@ export class Workspace {
       plan,
       new Set(accepted),
     );
+    const findExisting = () =>
+      this.listResumes().find(
+        (entry) =>
+          entry.parentId === source.id &&
+          entry.jobId === jobId &&
+          entry.text === text &&
+          !!entry.pdf &&
+          !!entry.pdfHash,
+      );
+    const matchedChanges = plan.changes.filter((change) =>
+      accepted.includes(tailoringChangeKey(change)),
+    );
+    if (options.reuseExisting) {
+      const existing = findExisting();
+      if (existing) return { ...existing, changes: matchedChanges };
+    }
     const id = randomUUID(),
       pdf = resolve(this.store.home, `${id}.pdf`),
       { bytes, headerPhoto } = await this.renderResumeVersion(source, text);
@@ -269,13 +300,24 @@ export class Workspace {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    this.store.put("resume", version);
-    return {
-      ...version,
-      changes: plan.changes.filter((change) =>
-        accepted.includes(tailoringChangeKey(change)),
-      ),
-    };
+    let persisted = false;
+    try {
+      const saved = this.store.transaction(() => {
+        if (options.reuseExisting) {
+          const concurrent = findExisting();
+          if (concurrent) return concurrent;
+        }
+        this.store.put("resume", version);
+        persisted = true;
+        return version;
+      });
+      return {
+        ...saved,
+        changes: matchedChanges,
+      };
+    } finally {
+      if (!persisted) await unlink(pdf).catch(() => {});
+    }
   }
   propose(resumeId: string, jobId: string, value: unknown) {
     const resume = this.resume(resumeId),

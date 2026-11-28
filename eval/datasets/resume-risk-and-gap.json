@@ -1,0 +1,82 @@
+{
+  "riskAuditCases": [
+    {
+      "id": "ra-01",
+      "resume": "林示例\n工作经历\n- 主导整体架构设计，实现平台化闭环。",
+      "expectedHighRisk": true
+    },
+    {
+      "id": "ra-02",
+      "resume": "林示例\n项目经历\n- 支撑千万级 QPS 并达成零故障运行。",
+      "expectedHighRisk": true
+    },
+    {
+      "id": "ra-03",
+      "resume": "林示例\n工作经历\n- 参与核心模块设计与实现，围绕订单查询链路落地索引优化与单次审批锁。",
+      "expectedHighRisk": false
+    },
+    {
+      "id": "ra-04",
+      "resume": "林示例\n项目经历\n- 基于本地 Benchmark 实测，引入字体缓存后 PDF 渲染延迟降低 45%。",
+      "expectedHighRisk": false
+    },
+    {
+      "id": "ra-05",
+      "resume": "林示例\n项目经历\n- 主导模型量化优化与 CUDA 算子融合。",
+      "expectedHighRisk": true
+    },
+    {
+      "id": "ra-06",
+      "resume": "林示例\n项目经历\n- 参与实现异地多活、两地三中心与单元化部署。",
+      "expectedHighRisk": false,
+      "expectedMinMedium": 1
+    }
+  ],
+  "jdGapCases": [
+    {
+      "id": "jg-01",
+      "role": "AI 应用架构师",
+      "jd": "负责大模型应用落地，包括 Agent、MCP Tool Use、Workflow 状态机与 Prompt 防幻觉护栏。",
+      "resume": "林示例\n项目经历\n- 参与落地基于 MCP 的 Agent 工具编排、Workflow 持久化状态机与防幻觉 Prompt 护栏。",
+      "expectedPrimaryTrack": "ai-app",
+      "expectedFitLevel": "strong_fit",
+      "expectRiskIsolation": false
+    },
+    {
+      "id": "jg-02",
+      "role": "AI 性能优化架构师",
+      "jd": "负责大模型推理优化：INT4/FP8 量化、KV Cache、Continuous Batching、CUDA/Triton 算子与 RDMA 通信优化。",
+      "resume": "林示例\n项目经历\n- 使用 OpenAI API 与调用 vLLM 接口实现智能问答与文档处理。",
+      "expectedPrimaryTrack": "ai-perf",
+      "expectedFitLevel": "mismatch_warning",
+      "expectRiskIsolation": true
+    },
+    {
+      "id": "jg-03",
+      "role": "分布式存储架构师",
+      "jd": "负责大规模分布式存储与对象存储系统研发，熟悉数据分片、多副本、Raft 共识协议与两地三中心容灾。",
+      "resume": "林示例\n项目经历\n- 基于单机 SQLite WAL 与索引优化完成本地状态管理，并使用 S3 上传用户头像。",
+      "expectedPrimaryTrack": "distributed-storage",
+      "expectedFitLevel": "mismatch_warning",
+      "expectRiskIsolation": true
+    },
+    {
+      "id": "jg-04",
+      "role": "资深后端架构师",
+      "jd": "负责核心交易链路事务一致性、幂等防重、安全边界隔离与模块化平台治理。",
+      "resume": "林示例\n工作经历\n- 负责核心投递链路事务一致性与幂等防重状态机，落地 SSRF/CSRF 安全边界与模块化适配架构。",
+      "expectedPrimaryTrack": "platform-backend",
+      "expectedFitLevel": "strong_fit",
+      "expectRiskIsolation": false
+    },
+    {
+      "id": "jg-05",
+      "role": "RAG 工程师",
+      "jd": "负责 Agent 工具调用及基于 Milvus 向量检索、Embedding 与 Rerank 的 RAG 知识库架构。",
+      "resume": "林示例\n项目经历\n- 负责基于 MCP 的 Agent 工具编排与 Workflow 状态机落地。",
+      "expectedPrimaryTrack": "ai-app",
+      "expectedFitLevel": "partial_fit",
+      "expectRiskIsolation": true
+    }
+  ]
+}

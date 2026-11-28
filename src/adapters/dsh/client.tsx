@@ -226,6 +226,8 @@ export function NativeCard({
         <ResumeDocument
           key={view.resume.id}
           resume={view.resume}
+          riskAudit={view.riskAudit}
+          interviewGrill={view.interviewGrill}
           busy={busy}
           run={run}
           openFile={openFile}

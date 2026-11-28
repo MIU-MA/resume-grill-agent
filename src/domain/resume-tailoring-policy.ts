@@ -6,7 +6,24 @@ const IDENTITY_LABEL =
 const NARRATIVE =
   /开发|熟悉|掌握|擅长|具备|实践|参与|负责|项目|经验|基础|使用|推进|技术栈|求职意向|develop|experience|familiar|proficien|project|built|worked/i;
 const dateOrEntry = /(?:19|20)\d{2}(?:[./年-]\d{1,2}月?)?\s*(?:[-–—~～至到]|至今)|^(?:项目名称|雇主|公司名称|任职单位)\s*[:：]/;
-const contribution = ["主导", "独立负责", "独立完成", "带领团队", "从零搭建", "精通"];
+const contribution = [
+  "主导",
+  "独立负责",
+  "独立完成",
+  "带领团队",
+  "从零搭建",
+  "从0到1搭建",
+  "牵头全局",
+  "平台负责人",
+  "架构负责人",
+  "精通",
+  "业界领先",
+  "行业领先",
+  "零故障",
+  "彻底解决",
+  "千万级",
+  "亿级",
+];
 const technology = /\b(?:rest(?:ful)?|ci\s*\/\s*cd|git(?:hub|lab)?|api|https?|grpc|graphql|go(?:lang)?|rust|java(?:script)?|typescript|python|ruby|php|swift|kotlin|scala|react|vue(?:\.js)?|angular|svelte|next\.js|node(?:\.js|js)|spring|django|flask|fastapi|sql|mysql|postgres(?:ql)?|mongodb|redis|kafka|docker|kubernetes|k8s|jenkins|npm|webpack|vite|tailwind|linux|nginx|aws|azure|pytorch|tensorflow|llm|rag|html|css|oauth|jwt|\w+\.js)(?=\d|\b)|\bc(?:\+\+|#)/gi;
 const numbers = /[+−-]?\d+(?:[.,]\d+)*(?:\s*(?:%|‰|ms\b|fps\b|MB\b|GB\b|秒|毫秒|分钟|小时|天|周|个月|月|年|人|条|次|个|倍|万|亿|元))?/gi;
 
@@ -84,7 +101,13 @@ export function rewriteFactProblem(
     return "身份、联系、教育或证书信息需要你自行修改";
   if (section.kind === "general" && !preservedIntroductionFacts(before, after))
     return "自我介绍中的毕业届别和学历须保留";
-  if (contribution.some((claim) => after.includes(claim) && !before.includes(claim)))
+  const compactBefore = before.normalize("NFKC").replace(/\s+/g, "");
+  const compactAfter = after.normalize("NFKC").replace(/\s+/g, "");
+  if (
+    contribution.some(
+      (claim) => compactAfter.includes(claim) && !compactBefore.includes(claim),
+    )
+  )
     return "贡献或能力表述比原文更强，请先确认";
   const supportedNumbers = new Set(numericFacts(before));
   if (numericFacts(after).some((fact) => !supportedNumbers.has(fact)))

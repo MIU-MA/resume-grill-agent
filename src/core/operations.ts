@@ -59,8 +59,8 @@ function instrumentOperation(workspace: Workspace, op: Operation): Operation {
           }
         };
         const recordErr = (error: unknown) => {
-          const classified = classifyError(error);
           try {
+            const classified = classifyError(error);
             workspace.store.recordToolAudit({
               traceId,
               caller,

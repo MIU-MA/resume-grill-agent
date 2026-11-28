@@ -1,13 +1,19 @@
 import { useEditDraft } from "./use-edit-draft.js";
 import type { Resume } from "../../core/workspace.js";
+import type { ResumeRiskReport } from "../../domain/resume-risk-audit.js";
+import type { InterviewGrillPlan } from "../../domain/interview-grill.js";
 export function ResumeDocument({
   resume,
+  riskAudit,
+  interviewGrill,
   busy,
   run,
   openFile,
   canParseProfile,
 }: {
   resume: Resume;
+  riskAudit?: ResumeRiskReport;
+  interviewGrill?: InterviewGrillPlan;
   busy: boolean;
   run: (input: unknown) => Promise<boolean>;
   openFile: (path: string) => void;
@@ -70,6 +76,52 @@ export function ResumeDocument({
       >
         保存修改副本
       </button>
+      {riskAudit && (
+        <details className="rg-note">
+          <summary>
+            反吹牛风险体检（高风险 {riskAudit.summary.highCount} 项 / 关注{" "}
+            {riskAudit.summary.mediumCount} 项）
+          </summary>
+          {riskAudit.findings.length === 0 ? (
+            <p>未检出常见夸大主导词、绝对化指标或高危硬套术语。</p>
+          ) : (
+            <ul>
+              {riskAudit.findings.map((item) => (
+                <li key={item.id}>
+                  <strong>
+                    [{item.severity === "high" ? "高风险" : "注意"}]{" "}
+                    {item.matchedTerm}
+                  </strong>
+                  （{item.sectionTitle}）：{item.reason} 建议：
+                  {item.suggestedReplacement} 面试追问：{item.interviewerChallenge}
+                </li>
+              ))}
+            </ul>
+          )}
+        </details>
+      )}
+      {interviewGrill && interviewGrill.topics.length > 0 && (
+        <details className="rg-note">
+          <summary>
+            面试三层拷打准备（{interviewGrill.topics.length} 个核心追问点）
+          </summary>
+          <ul>
+            {interviewGrill.topics.map((topic) => (
+              <li key={topic.id}>
+                <strong>
+                  {topic.sectionTitle}：{topic.quote}
+                </strong>
+                <br />
+                一层事实：{topic.layer1FactCheck}
+                <br />
+                二层取舍：{topic.layer2TradeOff}
+                <br />
+                三层压力：{topic.layer3StressAndFailure}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </section>
   );
 }

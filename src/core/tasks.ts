@@ -94,6 +94,7 @@ const PROCESS_INSTANCE_ID = randomUUID();
 const BATCH_LEASE_MS = 60_000;
 const BATCH_CONCURRENCY = 3;
 const pendingBatches = new Map<string, Promise<Batch>>();
+const pendingVersions = new Map<string, Promise<{ id: string }>>();
 
 function pidAlive(pid: number) {
   try {
@@ -106,9 +107,12 @@ function pidAlive(pid: number) {
 
 function otherProcessIsPreparing(batch: StoredBatch | undefined) {
   if (!batch || batch.status !== "preparing") return false;
-  if (batch.ownerInstance === PROCESS_INSTANCE_ID) return false;
-  if (batch.leaseExpiresAt !== undefined && batch.leaseExpiresAt <= Date.now())
-    return false;
+  if (batch.ownerInstance) {
+    if (batch.ownerInstance === PROCESS_INSTANCE_ID) return false;
+    if (batch.leaseExpiresAt !== undefined && batch.leaseExpiresAt <= Date.now())
+      return false;
+    return !!batch.ownerPid && pidAlive(batch.ownerPid);
+  }
   if (!batch.ownerPid || batch.ownerPid === process.pid) return false;
   return pidAlive(batch.ownerPid);
 }
@@ -391,12 +395,19 @@ export class Tasks {
     const store = this.workspace.store,
       goal = store.get<Goal>("goal", goalId),
       source = this.workspace.resume(goal.resumeId);
-    const { batch, owned } = store.transaction(() => {
+    const { batch, owned, work } = store.transaction(() => {
       const existing = store
         .list<StoredBatch>("batch")
         .find((item) => item.requestHash === requestHash);
       if (existing?.status === "prepared" || otherProcessIsPreparing(existing))
-        return { batch: existing!, owned: false };
+        return {
+          batch: existing!,
+          owned: false,
+          work: [] as Array<{
+            choice: z.infer<typeof batchChoiceWithRecipient>;
+            slot: number;
+          }>,
+        };
       // Reuse drafts already persisted before interruption; never resend anything.
       const batch: StoredBatch = existing ?? {
         requestHash,
@@ -406,123 +417,226 @@ export class Tasks {
         status: "preparing",
         items: [],
       };
+      batch.items = batch.items.filter(
+        (item): item is BatchItem =>
+          Boolean(item && typeof item.jobId === "string"),
+      );
+      const work: Array<{
+        choice: z.infer<typeof batchChoiceWithRecipient>;
+        slot: number;
+      }> = [];
+      for (const choice of selected) {
+        const existingIndex = batch.items.findIndex(
+          (item) => item.jobId === choice.jobId,
+        );
+        if (existingIndex >= 0 && batch.items[existingIndex].status !== "blocked")
+          continue;
+        const placeholder: BatchItem = { jobId: choice.jobId, status: "blocked" };
+        const slot = existingIndex >= 0 ? existingIndex : batch.items.length;
+        batch.items[slot] = placeholder;
+        work.push({ choice, slot });
+      }
       batch.status = "preparing";
       batch.ownerPid = process.pid;
       batch.ownerInstance = PROCESS_INSTANCE_ID;
       batch.leaseExpiresAt = Date.now() + BATCH_LEASE_MS;
       store.put("batch", batch);
-      return { batch, owned: true };
+      return { batch, owned: true, work };
     });
     if (!owned) return batch;
-    const work: Array<{
-      choice: z.infer<typeof batchChoiceWithRecipient>;
-      slot: number;
-    }> = [];
-    for (const choice of selected) {
-      const existingIndex = batch.items.findIndex(
-        (item) => item.jobId === choice.jobId,
-      );
-      if (existingIndex >= 0 && batch.items[existingIndex].status !== "blocked")
-        continue;
-      const placeholder: BatchItem = { jobId: choice.jobId, status: "blocked" };
-      const slot = existingIndex >= 0 ? existingIndex : batch.items.length;
-      batch.items[slot] = placeholder;
-      work.push({ choice, slot });
-    }
-    await mapWithConcurrency(work, BATCH_CONCURRENCY, async ({ choice, slot }) => {
-      const item: BatchItem = { jobId: choice.jobId, status: "blocked" };
-      batch.items[slot] = item;
+    const heartbeat = setInterval(() => {
       try {
-        const job = store.get<Job>("job", choice.jobId);
-        if (this.applied(job, goal)) {
-          item.status = "already_sent";
-          item.reason = "已有提交或待核对的投递，不重复准备。";
-          return;
-        }
-        const candidate = this.assess(job, goal);
-        if (!candidate) throw new Error("岗位不符合当前目标或命中排除条件。");
-        if (!candidate.locationVerified)
-          throw new Error("JD 尚无目标城市证据，请核对地点后再准备。");
-        const recipient = choice.recipient ?? job.recipient;
-        if (!recipient)
-          throw new Error("尚无明确招聘邮箱，请核对投递渠道。");
-        let plan: unknown;
-        if (choice.keepOriginal) {
-          if (choice.accepted.length)
-            throw new Error("保留原文与接受修改不能同时选择。");
-          plan = {
-            company: "",
-            role: "",
-            sectionOrder: tailoringSections(source.text).map((s) => s.id),
-            changes: [],
-            highlights: [],
-            gaps: [],
-          };
-        } else {
-          if (!choice.proposalId)
-            throw new Error("先查看岗位修改建议，或明确选择保留原文。");
-          const proposal = store.get<{
-            resumeId: string;
-            jobId: string;
-            plan: unknown;
-          }>("proposal", choice.proposalId);
-          if (proposal.resumeId !== goal.resumeId || proposal.jobId !== job.id)
-            throw new Error("建议与当前简历或岗位不一致。");
-          plan = proposal.plan;
-        }
-        const validated = groundedTailoringSchema(source.text, job.jd, {
-          job,
-        }).parse(plan);
-        const keys = new Set(validated.changes.map(tailoringChangeKey));
-        if (choice.accepted.some((key) => !keys.has(key)))
-          throw new Error("接受项不属于这份修改建议。");
-        const targetText = tailoredOriginalResumeText(
-          source.text,
-          tailoringSections(source.text),
-          validated,
-          new Set(choice.accepted),
-        );
-        const version =
-          this.workspace
-            .listResumes()
-            .find(
-              (entry) =>
-                entry.parentId === goal.resumeId &&
-                entry.jobId === job.id &&
-                entry.text === targetText,
-            ) ??
-          (await this.workspace.saveVersion(
-            goal.resumeId,
-            job.id,
-            validated,
-            choice.accepted,
-          ));
-        const application = await this.workspace.prepare(
-          job.id,
-          version.id,
-          recipient,
-          `应聘${job.role}`,
-          `您好：\n\n我想应聘${job.company || "贵公司"}的${job.role}岗位。附件是针对该岗位整理的简历。\n\n感谢查看。`,
-        );
-        item.status = "prepared";
-        item.applicationId = application.id;
-      } catch (error) {
-        item.reason = error instanceof Error ? error.message : "准备失败";
-      } finally {
-        batch.leaseExpiresAt = Date.now() + BATCH_LEASE_MS;
-        store.put("batch", batch);
+        store.transaction(() => {
+          const current = store.get<StoredBatch>("batch", batch.id);
+          if (
+            current.status !== "preparing" ||
+            current.ownerInstance !== PROCESS_INSTANCE_ID
+          )
+            return;
+          current.leaseExpiresAt = Date.now() + BATCH_LEASE_MS;
+          store.put("batch", current);
+        });
+      } catch {
+        /* Lease refresh failure is handled by fencing checks on commit. */
       }
-    });
-    batch.status = batch.items.every(
-      (item) => item.status === "prepared" || item.status === "already_sent",
-    )
-      ? "prepared"
-      : "needs_input";
-    delete batch.ownerPid;
-    delete batch.ownerInstance;
-    delete batch.leaseExpiresAt;
-    store.put("batch", batch);
-    return batch;
+    }, Math.floor(BATCH_LEASE_MS / 3));
+    heartbeat.unref();
+
+    const persistSlot = (slot: number, item: BatchItem): boolean =>
+      store.transaction(() => {
+        const current = store.get<StoredBatch>("batch", batch.id);
+        if (
+          current.status !== "preparing" ||
+          current.ownerInstance !== PROCESS_INSTANCE_ID
+        )
+          return false;
+        current.items[slot] = item;
+        current.leaseExpiresAt = Date.now() + BATCH_LEASE_MS;
+        store.put("batch", current);
+        batch.items = current.items;
+        return true;
+      });
+
+    const getOrCreateVersion = async (
+      jobId: string,
+      validated: unknown,
+      accepted: string[],
+      targetText: string,
+    ) => {
+      const versionKey = JSON.stringify([
+        store.home,
+        goal.resumeId,
+        jobId,
+        createHash("sha256").update(targetText).digest("hex"),
+      ]);
+      const inflight = pendingVersions.get(versionKey);
+      if (inflight) return inflight;
+      const task = (async () => {
+        const existing = this.workspace
+          .listResumes()
+          .find(
+            (entry) =>
+              entry.parentId === goal.resumeId &&
+              entry.jobId === jobId &&
+              entry.text === targetText,
+          );
+        if (existing) return existing;
+        return this.workspace.saveVersion(
+          goal.resumeId,
+          jobId,
+          validated,
+          accepted,
+          { reuseExisting: true },
+        );
+      })();
+      pendingVersions.set(versionKey, task);
+      try {
+        return await task;
+      } finally {
+        if (pendingVersions.get(versionKey) === task)
+          pendingVersions.delete(versionKey);
+      }
+    };
+
+    try {
+      await mapWithConcurrency(
+        work,
+        BATCH_CONCURRENCY,
+        async ({ choice, slot }) => {
+          const item: BatchItem = { jobId: choice.jobId, status: "blocked" };
+          try {
+            const job = store.get<Job>("job", choice.jobId);
+            if (this.applied(job, goal)) {
+              item.status = "already_sent";
+              item.reason = "已有提交或待核对的投递，不重复准备。";
+              return;
+            }
+            const candidate = this.assess(job, goal);
+            if (!candidate)
+              throw new Error("岗位不符合当前目标或命中排除条件。");
+            if (!candidate.locationVerified)
+              throw new Error("JD 尚无目标城市证据，请核对地点后再准备。");
+            const recipient = choice.recipient ?? job.recipient;
+            if (!recipient)
+              throw new Error("尚无明确招聘邮箱，请核对投递渠道。");
+            let plan: unknown;
+            if (choice.keepOriginal) {
+              if (choice.accepted.length)
+                throw new Error("保留原文与接受修改不能同时选择。");
+              plan = {
+                company: "",
+                role: "",
+                sectionOrder: tailoringSections(source.text).map((s) => s.id),
+                changes: [],
+                highlights: [],
+                gaps: [],
+              };
+            } else {
+              if (!choice.proposalId)
+                throw new Error("先查看岗位修改建议，或明确选择保留原文。");
+              const proposal = store.get<{
+                resumeId: string;
+                jobId: string;
+                plan: unknown;
+              }>("proposal", choice.proposalId);
+              if (
+                proposal.resumeId !== goal.resumeId ||
+                proposal.jobId !== job.id
+              )
+                throw new Error("建议与当前简历或岗位不一致。");
+              plan = proposal.plan;
+            }
+            const validated = groundedTailoringSchema(source.text, job.jd, {
+              job,
+            }).parse(plan);
+            const keys = new Set(validated.changes.map(tailoringChangeKey));
+            if (choice.accepted.some((key) => !keys.has(key)))
+              throw new Error("接受项不属于这份修改建议。");
+            const targetText = tailoredOriginalResumeText(
+              source.text,
+              tailoringSections(source.text),
+              validated,
+              new Set(choice.accepted),
+            );
+            const version = await getOrCreateVersion(
+              job.id,
+              validated,
+              choice.accepted,
+              targetText,
+            );
+            const application = await this.workspace.prepare(
+              job.id,
+              version.id,
+              recipient,
+              `应聘${job.role}`,
+              `您好：\n\n我想应聘${job.company || "贵公司"}的${job.role}岗位。附件是针对该岗位整理的简历。\n\n感谢查看。`,
+            );
+            item.status = "prepared";
+            item.applicationId = application.id;
+          } catch (error) {
+            item.reason = error instanceof Error ? error.message : "准备失败";
+          } finally {
+            persistSlot(slot, item);
+          }
+        },
+      );
+      return store.transaction(() => {
+        const current = store.get<StoredBatch>("batch", batch.id);
+        if (current.ownerInstance !== PROCESS_INSTANCE_ID) return current;
+        current.status = current.items.every(
+          (item) =>
+            item.status === "prepared" || item.status === "already_sent",
+        )
+          ? "prepared"
+          : "needs_input";
+        delete current.ownerPid;
+        delete current.ownerInstance;
+        delete current.leaseExpiresAt;
+        store.put("batch", current);
+        return current;
+      });
+    } catch (error) {
+      try {
+        store.transaction(() => {
+          const current = store.get<StoredBatch>("batch", batch.id);
+          if (
+            current.status === "preparing" &&
+            current.ownerInstance === PROCESS_INSTANCE_ID
+          ) {
+            current.status = "needs_input";
+            delete current.ownerPid;
+            delete current.ownerInstance;
+            delete current.leaseExpiresAt;
+            store.put("batch", current);
+          }
+        });
+      } catch {
+        /* Preserve the primary error. */
+      }
+      throw error;
+    } finally {
+      clearInterval(heartbeat);
+    }
   }
 }
 function provisionalWithoutId({ id, ...job }: Job) {

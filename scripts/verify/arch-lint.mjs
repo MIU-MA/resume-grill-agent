@@ -6,7 +6,19 @@ import ts from "typescript";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const srcDir = resolve(root, "src");
 
-const FORBIDDEN_DOMAIN_NODE_MODULES = new Set([
+const FORBIDDEN_DOMAIN_MODULES = new Set([
+  "fs",
+  "fs/promises",
+  "http",
+  "https",
+  "net",
+  "dns",
+  "dns/promises",
+  "sqlite",
+  "child_process",
+  "os",
+  "zlib",
+  "stream",
   "node:fs",
   "node:fs/promises",
   "node:http",
@@ -19,6 +31,12 @@ const FORBIDDEN_DOMAIN_NODE_MODULES = new Set([
   "node:os",
   "node:zlib",
   "node:stream",
+  "nodemailer",
+  "playwright-core",
+  "pdf-lib",
+  "pdfjs-dist",
+  "mammoth",
+  "@napi-rs/canvas",
 ]);
 
 async function walk(dir) {
@@ -118,8 +136,8 @@ for (const file of files) {
       ) {
         violations.push(`${rel} -> ${spec} (domain 禁止依赖 ${target.split("/")[0]})`);
       }
-      if (!isRelative && FORBIDDEN_DOMAIN_NODE_MODULES.has(spec)) {
-        violations.push(`${rel} -> ${spec} (domain 禁止导入 Node I/O 模块)`);
+      if (!isRelative && FORBIDDEN_DOMAIN_MODULES.has(spec)) {
+        violations.push(`${rel} -> ${spec} (domain 禁止导入 I/O 模块)`);
       }
     }
 
@@ -145,10 +163,11 @@ for (const file of files) {
     }
 
     // Rule 4: Browser-only UI modules must never have runtime imports of Node built-ins, infrastructure, or core.
-    if (
-      !typeOnly &&
-      (rel.startsWith("adapters/panel/ui/") || rel.startsWith("shared/ui/"))
-    ) {
+    const isBrowserUi =
+      rel.startsWith("adapters/panel/ui/") ||
+      rel.startsWith("shared/ui/") ||
+      (rel.startsWith("adapters/dsh/") && rel.endsWith(".tsx"));
+    if (!typeOnly && isBrowserUi) {
       if (!isRelative && spec.startsWith("node:")) {
         violations.push(`${rel} -> ${spec} (浏览器 UI 禁止运行时导入 Node 内置模块)`);
       }

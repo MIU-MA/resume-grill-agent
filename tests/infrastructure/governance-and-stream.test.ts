@@ -36,9 +36,20 @@ test("流式解压支持 gzip/deflate，并在解压输出超限时实时拦截�
     readBoundedStream(Readable.from([bomb]), "gzip", 64 * 1024, () => {
       aborted = true;
     }),
-    /超过 2 MB/,
+    /超过/,
   );
   assert.equal(aborted, true);
+
+  // 无 error 参数提前 destroy() 流时，identity 和 gzip 均须立即 reject，不能永久挂起
+  const abruptIdentity = new Readable({ read() {} });
+  const identityPromise = readBoundedStream(abruptIdentity, "identity", 1024);
+  abruptIdentity.destroy();
+  await assert.rejects(identityPromise, /中断/);
+
+  const abruptGzip = new Readable({ read() {} });
+  const gzipPromise = readBoundedStream(abruptGzip, "gzip", 1024);
+  abruptGzip.destroy();
+  await assert.rejects(gzipPromise, /中断/);
 });
 
 test("ResourceCache 支持 SingleFlight 并发折叠、TTL 过期与 LRU 容量淘汰", async () => {
@@ -69,6 +80,21 @@ test("ResourceCache 支持 SingleFlight 并发折叠、TTL 过期与 LRU 容量�
   assert.equal(cache.get("k2"), undefined);
   assert.equal(cache.get("k1")?.text, "body-1");
   assert.equal(cache.get("k3")?.text, "body-3");
+
+  // 首请求 ttlMs=0、后到折叠请求 ttlMs>0 时，合并结果应写入缓存
+  const cache2 = new ResourceCache(4, 1024);
+  let loads2 = 0;
+  const load2 = async () => {
+    loads2++;
+    await new Promise((r) => setTimeout(r, 20));
+    return { text: "ttl-shared", url: "https://example.com/shared" };
+  };
+  await Promise.all([
+    cache2.coalesce("shared", load2, 0),
+    cache2.coalesce("shared", load2, 5_000),
+  ]);
+  assert.equal(loads2, 1);
+  assert.equal(cache2.get("shared")?.text, "ttl-shared");
 });
 
 test("Semaphore 与 mapWithConcurrency 严格控制并发上限、保序并响应取消", async () => {

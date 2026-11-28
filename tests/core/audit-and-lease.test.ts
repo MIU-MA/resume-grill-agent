@@ -6,6 +6,7 @@ import { join, dirname, basename } from "node:path";
 import { Store } from "../../src/infrastructure/sqlite-store.js";
 import { Workspace } from "../../src/core/workspace.js";
 import { Tasks } from "../../src/core/tasks.js";
+import { BossGroups, type BossGroup } from "../../src/core/boss-groups.js";
 import { operations } from "../../src/core/operations.js";
 import { withTrace } from "../../src/shared/telemetry.js";
 
@@ -42,14 +43,13 @@ test("Tool 审计拦截器透传 Trace、记录错误码且绝不泄露隐私正
   )) as { id: string };
   assert.ok(added.id);
 
-  assert.throws(
-    () =>
-      withTrace(
-        "dsh-model",
-        () => ops.get("preview_application")!.run({ id: "missing-app-id" }),
-        "trace-custom-002",
-      ),
-  );
+  await assert.rejects(async () => {
+    withTrace(
+      "dsh-model",
+      () => ops.get("preview_application")!.run({ id: "leak@example.com" }),
+      "trace-custom-002",
+    );
+  });
 
   const audits = store.listToolAudits(10);
   assert.equal(audits.length, 2);
@@ -59,6 +59,7 @@ test("Tool 审计拦截器透传 Trace、记录错误码且绝不泄露隐私正
   assert.equal(failed.toolName, "preview_application");
   assert.equal(failed.status, "error");
   assert.equal(failed.errorCode, "NOT_FOUND");
+  assert.equal(failed.summary.id, "<redacted>");
 
   assert.equal(ok.traceId, "trace-custom-001");
   assert.equal(ok.caller, "mcp");
@@ -87,7 +88,37 @@ test("批量准备支持受控并行保序，且租约过期可安全接管（�
     }),
   );
   const choices = jobs.map((job) => ({ jobId: job.id, keepOriginal: true }));
-  const batch = await tasks.prepareBatch(goal.id, choices);
+  // 观察每次落盘的中间批次快照：并发乱序完成槽位绝不可产生 null 空洞，且 batchSnapshot() 始终可读
+  const originalPut = store.put.bind(store);
+  const snapshots: Array<{ id: string; items: unknown[] }> = [];
+  store.put = ((kind: string, value: { id: string; items?: unknown[] }) => {
+    originalPut(kind, value);
+    if (kind === "batch" && Array.isArray(value.items)) {
+      snapshots.push({
+        id: value.id,
+        items: JSON.parse(JSON.stringify(value.items)),
+      });
+    }
+  }) as typeof store.put;
+  let batch;
+  try {
+    batch = await tasks.prepareBatch(goal.id, choices);
+  } finally {
+    store.put = originalPut;
+  }
+  assert.ok(snapshots.length >= 2);
+  for (const snap of snapshots) {
+    assert.equal(snap.items.length, jobs.length);
+    assert.ok(
+      snap.items.every(
+        (entry) =>
+          entry !== null &&
+          typeof entry === "object" &&
+          typeof (entry as { jobId?: unknown }).jobId === "string",
+      ),
+    );
+  }
+  assert.equal(tasks.batchSnapshot(batch.id).items.length, jobs.length);
   assert.deepEqual(
     batch.items.map((item) => item.jobId),
     jobs.map((job) => job.id),
@@ -97,12 +128,25 @@ test("批量准备支持受控并行保序，且租约过期可安全接管（�
     ["prepared", "prepared", "blocked", "prepared", "prepared"],
   );
 
-  // 模拟一个已过期租约但 ownerPid 指向存活进程的“僵尸” preparing 批次（如 PID 复用）
+  // 1. 未过期租约且 ownerPid 存活（含同 PID 不同实例或父进程）必须阻塞抢占，返回原 preparing 批次
   const saved = store.list<Record<string, unknown>>("batch")[0];
   store.put("batch", {
     ...saved,
     status: "preparing",
-    ownerPid: process.pid,
+    ownerPid: process.ppid || process.pid,
+    ownerInstance: "other-live-instance-uuid",
+    leaseExpiresAt: Date.now() + 60_000,
+    items: (saved.items as unknown[]).slice(0, 1),
+  });
+  const blocked = await new Tasks(workspace).prepareBatch(goal.id, choices);
+  assert.equal(blocked.status, "preparing");
+  assert.equal(blocked.items.length, 1);
+
+  // 2. 租约过期后，即使 ownerPid 仍然存活（如 OS PID 复用），也能安全接管完成准备
+  store.put("batch", {
+    ...saved,
+    status: "preparing",
+    ownerPid: process.ppid || process.pid,
     ownerInstance: "dead-instance-uuid",
     leaseExpiresAt: Date.now() - 10_000,
     items: (saved.items as unknown[]).slice(0, 1),
@@ -111,4 +155,67 @@ test("批量准备支持受控并行保序，且租约过期可安全接管（�
   assert.equal(recovered.id, batch.id);
   assert.equal(recovered.items.length, 5);
   assert.equal(recovered.items[4].status, "prepared");
+
+  // 3. 两个不同批次并发包含同一新岗位时，版本创建防重只生成一个 Resume 与一条 Application
+  const sharedJob = workspace.addJob({
+    company: "并发重叠公司",
+    role: "Go 后端",
+    jd: "负责 Go API 开发与测试。",
+    sourceUrl: "https://example.com/jobs/shared-overlap",
+    recipient: "overlap@example.com",
+  });
+  const extraJob = workspace.addJob({
+    company: "独立公司",
+    role: "Go 后端",
+    jd: "负责 Go API 开发与测试。",
+    sourceUrl: "https://example.com/jobs/extra-only",
+    recipient: "extra@example.com",
+  });
+  await Promise.all([
+    tasks.prepareBatch(goal.id, [{ jobId: sharedJob.id, keepOriginal: true }]),
+    new Tasks(workspace).prepareBatch(goal.id, [
+      { jobId: sharedJob.id, keepOriginal: true },
+      { jobId: extraJob.id, keepOriginal: true },
+    ]),
+  ]);
+  const sharedApps = workspace
+    .history()
+    .filter((app) => app.jobId === sharedJob.id);
+  assert.equal(sharedApps.length, 1);
+});
+
+test("BossGroups 租约保护跨进程存活批次，租约过期后事务化暂停并清空所有权", async (t) => {
+  const { store, workspace } = await setup(t);
+  const groups = new BossGroups(workspace);
+  const now = Date.now();
+  const baseGroup: BossGroup = {
+    id: "11111111-1111-4111-8111-111111111111",
+    digest: "digest-live-lease",
+    createdAt: now,
+    updatedAt: now,
+    status: "running",
+    expiresAt: now + 15 * 60 * 1000,
+    ownerPid: process.ppid || process.pid,
+    ownerInstance: "other-live-boss-instance",
+    leaseExpiresAt: now + 60_000,
+    items: [],
+  };
+  store.put("boss-group", baseGroup);
+
+  // 1. ownerPid 存活且租约未过期时，list() 绝不可误暂停其他进程的活跃批次
+  const active = groups.list().find((g) => g.id === baseGroup.id)!;
+  assert.equal(active.status, "running");
+  assert.equal(active.ownerInstance, "other-live-boss-instance");
+
+  // 2. 租约过期后，即使 ownerPid 仍存在（例如 PID 复用），也必须事务化暂停并清空所有权字段
+  store.put("boss-group", {
+    ...baseGroup,
+    leaseExpiresAt: now - 10_000,
+  });
+  const recovered = groups.list().find((g) => g.id === baseGroup.id)!;
+  assert.equal(recovered.status, "paused");
+  assert.equal(recovered.ownerPid, undefined);
+  assert.equal(recovered.ownerInstance, undefined);
+  assert.equal(recovered.leaseExpiresAt, undefined);
+  assert.ok(recovered.error?.includes("宿主曾退出"));
 });

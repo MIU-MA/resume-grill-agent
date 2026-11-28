@@ -36,6 +36,15 @@ const actionSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("workspace") }).strict(),
   z.object({ action: z.literal("resume"), id: z.string() }).strict(),
+  z.object({ action: z.literal("resume-audit"), id: z.string() }).strict(),
+  z
+    .object({
+      action: z.literal("interview-grill"),
+      resumeId: z.string().optional(),
+      jobId: z.string().optional(),
+      applicationId: z.string().optional(),
+    })
+    .strict(),
   z
     .object({
       action: z.literal("profile"),
@@ -227,7 +236,36 @@ export async function humanAction(
     new ApplicationFollowups(workspace).save(input.channel, input.applicationId, input.revision, input.data);
     return workspaceView(workspace);
   }
-  if (input.action === "resume") return resumeView(workspace, input.id);
+  if (input.action === "resume" || input.action === "resume-audit")
+    return resumeView(workspace, input.id);
+  if (input.action === "interview-grill") {
+    let resumeId = input.resumeId;
+    let jobId = input.jobId;
+    let applicationId: string | undefined;
+    if (input.applicationId) {
+      const app = workspace.latestApplication(input.applicationId);
+      applicationId = app.id;
+      resumeId = app.resumeId;
+      jobId = app.jobId ?? jobId;
+    }
+    if (!resumeId) throw new Error("请先选择简历或已投递记录。");
+    const resume = applicationId
+      ? workspace.store.get<{ jobId?: string }>("resume", resumeId)
+      : workspace.resume(resumeId);
+    jobId = jobId ?? resume.jobId;
+    return jobId
+      ? reviewView(
+          workspace,
+          resumeId,
+          jobId,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          applicationId ? { applicationId } : {},
+        )
+      : resumeView(workspace, resumeId, { allowTrashed: Boolean(applicationId) });
+  }
   if (input.action === "profile") {
     if (input.reparse) await new ResumeProfiles(workspace).reparse(input.resumeId);
     return profileView(workspace, input.resumeId, input.jobId, input.goalId);

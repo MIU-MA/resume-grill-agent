@@ -14,6 +14,9 @@ import { BossArchives } from "../../core/boss-archives.js";
 import type { BossShortlist } from "../../core/boss-shortlists.js";
 import { hasCapability } from "../../shared/capabilities.js";
 import { ApplicationFollowups } from "../../core/application-followups.js";
+import { ResumeGrillService } from "../../core/resume-grill.js";
+import { auditResumeRisks } from "../../domain/resume-risk-audit.js";
+import { buildInterviewGrill } from "../../domain/interview-grill.js";
 export type Proposal = {
   id: string;
   resumeId: string;
@@ -105,12 +108,26 @@ export function profileView(
     ...(goalId ? { goalId } : {}),
   };
 }
-export function resumeView(workspace: Workspace, id: string) {
+export function resumeView(
+  workspace: Workspace,
+  id: string,
+  options: { allowTrashed?: boolean } = {},
+) {
+  const resume = options.allowTrashed
+    ? workspace.store.get<Resume>("resume", id)
+    : workspace.resume(id);
+  const riskAudit = auditResumeRisks(resume.text);
+  const interviewGrill = buildInterviewGrill({
+    resumeText: resume.text,
+    riskAudit,
+  });
   return {
     v: 1 as const,
     kind: "resume" as const,
     capabilities: workspace.capabilities,
-    resume: workspace.resume(id),
+    resume,
+    riskAudit,
+    interviewGrill,
   };
 }
 export function reviewView(
@@ -121,11 +138,17 @@ export function reviewView(
   goalId?: string,
   websiteNotice?: string,
   websiteApprovalId?: string,
+  options: { applicationId?: string } = {},
 ) {
-  const resume = workspace.resume(resumeId),
+  const resume = options.applicationId
+      ? workspace.store.get<Resume>("resume", resumeId)
+      : workspace.resume(resumeId),
     job = workspace.store.get<Job>("job", jobId);
   const channel = isBossSource(job.sourceUrl) ? "boss" : "website";
-  const website = channel === "website" && hasCapability(workspace.capabilities, "website");
+  const website =
+    channel === "website" &&
+    hasCapability(workspace.capabilities, "website") &&
+    !resume.deletedAt;
   const profile = website
     ? new ResumeProfiles(workspace).current(resumeId)
     : undefined;
@@ -144,6 +167,12 @@ export function reviewView(
     throw new Error("建议与简历或岗位不一致。");
   if (goalId && workspace.store.get<Goal>("goal", goalId).resumeId !== resumeId)
     throw new Error("目标与当前简历不一致。");
+  const grill = new ResumeGrillService(workspace).prepareInterviewGrill({
+    resumeId,
+    jobId,
+    ...(options.applicationId ? { applicationId: options.applicationId } : {}),
+    ...(proposal ? { proposalId: proposal.id } : {}),
+  });
   return {
     v: 1 as const,
     kind: "review" as const,
@@ -153,6 +182,9 @@ export function reviewView(
     jobId,
     sourceText: resume.text,
     job,
+    riskAudit: grill.riskAudit,
+    ...(grill.jdGapAnalysis ? { jdGapAnalysis: grill.jdGapAnalysis } : {}),
+    interviewGrill: grill.interviewGrill,
     ...(profile ? { profile } : {}),
     ...(formRun ? { formRun } : {}),
     canRecordWebsiteSubmission: website,

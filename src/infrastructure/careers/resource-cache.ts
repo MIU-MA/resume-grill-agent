@@ -6,19 +6,31 @@ type Entry = {
   expiresAt: number;
 };
 
+type InFlightEntry = {
+  promise: Promise<CachedResource>;
+  maxTtlMs: number;
+};
+
 /**
  * Bounded LRU + TTL cache with in-flight SingleFlight request coalescing.
  * Used exclusively for verified public HTTPS GET responses.
  */
 export class ResourceCache {
   private readonly entries = new Map<string, Entry>();
-  private readonly inFlight = new Map<string, Promise<CachedResource>>();
+  private readonly inFlight = new Map<string, InFlightEntry>();
   private totalBytes = 0;
 
   constructor(
     private readonly maxEntries = 64,
     private readonly maxTotalBytes = 16 * 1024 * 1024,
-  ) {}
+  ) {
+    if (!Number.isInteger(maxEntries) || maxEntries < 1) {
+      throw new Error("ResourceCache maxEntries must be >= 1.");
+    }
+    if (!Number.isInteger(maxTotalBytes) || maxTotalBytes < 1) {
+      throw new Error("ResourceCache maxTotalBytes must be >= 1.");
+    }
+  }
 
   get(key: string): CachedResource | undefined {
     const entry = this.entries.get(key);
@@ -64,16 +76,24 @@ export class ResourceCache {
       if (cached) return cached;
     }
     const existing = this.inFlight.get(key);
-    if (existing) return existing;
+    if (existing) {
+      if (ttlMs > existing.maxTtlMs) existing.maxTtlMs = ttlMs;
+      return existing.promise;
+    }
+    const holder: InFlightEntry = {
+      promise: undefined as unknown as Promise<CachedResource>,
+      maxTtlMs: Math.max(0, ttlMs),
+    };
     const task = loader().then((result) => {
-      if (ttlMs > 0) this.set(key, result, ttlMs);
+      if (holder.maxTtlMs > 0) this.set(key, result, holder.maxTtlMs);
       return result;
     });
-    this.inFlight.set(key, task);
+    holder.promise = task;
+    this.inFlight.set(key, holder);
     try {
       return await task;
     } finally {
-      if (this.inFlight.get(key) === task) this.inFlight.delete(key);
+      if (this.inFlight.get(key) === holder) this.inFlight.delete(key);
     }
   }
 

@@ -21,7 +21,6 @@ export class Store {
   readonly db: DatabaseSync;
   readonly home: string;
   private closed = false;
-  private auditWrites = 0;
   constructor(home: string) {
     mkdirSync(home, { recursive: true, mode: 0o700 });
     this.home = realpathSync(resolve(home));
@@ -47,7 +46,6 @@ export class Store {
         summary TEXT NOT NULL,
         created_at INTEGER NOT NULL
       );
-      CREATE INDEX IF NOT EXISTS tool_audit_created ON tool_audit(created_at DESC);
       CREATE INDEX IF NOT EXISTS tool_audit_trace ON tool_audit(trace_id);
       CREATE INDEX IF NOT EXISTS application_active_job ON objects(json_extract(data,'$.jobId'))
         WHERE kind='application' AND json_extract(data,'$.status') IN ('sent','sending','uncertain');`);
@@ -109,7 +107,7 @@ export class Store {
   }
   recordToolAudit(entry: Omit<ToolAuditRecord, "id" | "createdAt">) {
     if (this.closed) return;
-    this.db
+    const inserted = this.db
       .prepare(
         "INSERT INTO tool_audit(trace_id,caller,tool_name,read_only,status,error_code,duration_ms,summary,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
       )
@@ -124,20 +122,22 @@ export class Store {
         JSON.stringify(entry.summary),
         Date.now(),
       );
-    if (++this.auditWrites % 200 === 0) {
+    // Trigger pruning via monotonic primary key so short-lived CLI processes also prune reliably.
+    if (Number(inserted.lastInsertRowid) % 200 === 0) {
       this.db
         .prepare(
-          "DELETE FROM tool_audit WHERE id NOT IN (SELECT id FROM tool_audit ORDER BY id DESC LIMIT ?)",
+          "DELETE FROM tool_audit WHERE id <= (SELECT id FROM tool_audit ORDER BY id DESC LIMIT 1 OFFSET ?)",
         )
         .run(MAX_TOOL_AUDIT_ROWS);
     }
   }
   listToolAudits(limit = 100): ToolAuditRecord[] {
+    const bounded = Math.min(500, Math.max(1, Math.trunc(Number(limit) || 100)));
     return this.db
       .prepare(
         "SELECT id,trace_id,caller,tool_name,read_only,status,error_code,duration_ms,summary,created_at FROM tool_audit ORDER BY id DESC LIMIT ?",
       )
-      .all(limit)
+      .all(bounded)
       .map((row) => ({
         id: Number(row.id),
         traceId: String(row.trace_id),
