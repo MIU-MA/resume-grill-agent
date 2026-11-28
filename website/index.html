@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Resume Grill — DSH 本机求职工作台</title>
+  <meta
+    name="description"
+    content="Resume Grill 是一个 DSH 求职插件。在工作台里管理简历库、读取招聘官网与 BOSS 岗位、按 JD 修改简历、准备邮箱投递与官网代填，资料与记录保存在本机。"
+  />
+  <meta property="og:title" content="Resume Grill — DSH 本机求职工作台" />
+  <meta
+    property="og:description"
+    content="在工作台里找岗位、按 JD 修改简历、准备投递，简历和记录保存在本机 SQLite，也提供 MCP 接口。"
+  />
+  <meta property="og:image" content="assets/screenshots/dsh-overview.png" />
+  <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- 原生 12x12 crispEdges 像素图标库（源自 src/adapters/dsh/PixelIcon.tsx 及工具图标） -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="px-overview" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" fill-rule="evenodd" d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z" />
+    </symbol>
+    <symbol id="px-resumes" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" fill-rule="evenodd" d="M2 1h6v1h1v1h1v8H2zm1 1v8h6V4H7V2zm1 4h4v1H4zm0 2h4v1H4z" />
+    </symbol>
+    <symbol id="px-jobs" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" fill-rule="evenodd" d="M2 2h2V1h4v1h2v2h1v4h-1v2H8v1H4v-1H2V8H1V4h1zm2 1H3v2h2V3zm3 0v2h2V3zm-2 2v2h2V5zM3 7v2h2V7zm4 0v2h2V7z" />
+    </symbol>
+    <symbol id="px-boss" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" fill-rule="evenodd" d="M4 1h4v1h1v2h2v7H1V4h2V2h1zm0 2v1h4V3zm-2 2v2h3V6h2v1h3V5zm0 3v2h8V8H7v1H5V8z" />
+    </symbol>
+    <symbol id="px-pending" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" fill-rule="evenodd" d="M1 2h10v8H1zm1 2v5h8V4H9v1H8v1H7v1H5V6H4V5H3V4zm1-1v1h1v1h1v1h2V5h1V4h1V3z" />
+    </symbol>
+    <symbol id="px-history" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" fill-rule="evenodd" d="M2 1h8v10H2zm1 1v8h6V2zm1 2h4v1H4zm0 2h4v1H4zm0 2h3v1H4z" />
+    </symbol>
+    <symbol id="px-refresh" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" fill-rule="evenodd" d="M3 2h5v1h2V1h1v5H6V5h3V4H8V3H3v1H2v2H1V4h1V3h1zm8 4v2h-1v1H9v1H4V9H2v2H1V6h5v1H3v1h1v1h5V8h1V6z" />
+    </symbol>
+    <symbol id="px-upload" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" fill-rule="evenodd" d="M5 1h2v1h1v1h1v1h1v1H7v4H5V5H2V4h1V3h1V2h1zM1 8h1v2h8V8h1v3H1z" />
+    </symbol>
+    <symbol id="px-form" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" fill-rule="evenodd" d="M1 1h10v10H1zm1 2v7h8V3zm1 1h2v1H3zm3 0h3v1H6zM3 6h6v1H3zm0 2h4v1H3z" />
+    </symbol>
+    <symbol id="px-shield" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" fill-rule="evenodd" d="M5 1h2v1h3v4H9v2H8v2H7v1H5v-1H4V8H3V6H2V2h3zm0 2H3v3h1v2h1v1h2V8h1V6h1V3H7V2H5zm0 2h2v2H5z" />
+    </symbol>
+    <symbol id="px-lock" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" fill-rule="evenodd" d="M4 1h4v1h1v3h1v6H2V5h1V2h1zm0 1v3h4V2zm1 5v2h2V7z" />
+    </symbol>
+    <symbol id="px-copy" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" fill-rule="evenodd" d="M4 1h7v7H9V3H4V1zM1 4h7v7H1V4zm1 1v5h5V5H2z" />
+    </symbol>
+    <symbol id="px-download" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" d="M5 1h2v4h3v1H9v1H8v1H7v1H5V8H4V7H3V6H2V5h3V1zM1 9h1v1h8V9h1v2H1V9z" />
+    </symbol>
+    <symbol id="px-github" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" d="M4 1h4v1h2v2h1v4h-1v2H8v-2H7V7h1V5H7V4H5v1H4v2h1v1H4v2H2V8H1V4h1V2h2V1z" />
+    </symbol>
+    <symbol id="px-theme-auto" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" fill-rule="evenodd" d="M2 2h8v6H2V2zm1 1v4h3V3H3zm1 6h4v1H4V9z" />
+    </symbol>
+    <symbol id="px-sun" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" d="M5 1h2v2H5V1zM2 2h1v1H2V2zm7 0h1v1H9V2zM4 4h4v4H4V4zM1 5h2v2H1V5zm8 0h2v2H9V5zM2 9h1v1H2V9zm7 0h1v1H9V9zM5 9h2v2H5V9z" />
+    </symbol>
+    <symbol id="px-moon" viewBox="0 0 12 12" shape-rendering="crispEdges">
+      <path fill="currentColor" d="M5 1h3v1H7v1H6v4h1v1h2V7h1v2H9v1H7v1H4v-1H3V9H2V4h1V2h2V1z" />
+    </symbol>
+  </svg>
+
+  <!-- 像素底纹网格 -->
+  <div class="bg-pixel-grid" aria-hidden="true"></div>
+
+  <!-- 顶栏导航 -->
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="#top" class="brand-link">
+        <img
+          src="assets/ds-chan.webp"
+          width="30"
+          height="30"
+          alt="Resume Grill 的像素 DS 娘图标"
+          class="pixel-img brand-portrait"
+        />
+        <span class="brand-name">Resume Grill</span>
+        <span class="version-tag">v0.4.5</span>
+      </a>
+
+      <nav class="site-nav" aria-label="主导航">
+        <a href="#workbench">工作台入口</a>
+        <a href="#screens">界面预览</a>
+        <a href="#workflow">求职流程</a>
+        <a href="#security">本地与安全</a>
+        <a href="#install">安装与 MCP</a>
+      </nav>
+
+      <div class="header-actions">
+        <button
+          type="button"
+          id="theme-btn"
+          class="rg-btn rg-btn-subtle"
+          title="默认跟随浏览器明暗设置，点击可手动切换"
+        >
+          <svg class="px-icon" width="13" height="13"><use href="#px-theme-auto" id="theme-icon" /></svg>
+          <span id="theme-text">跟随系统</span>
+        </button>
+        <a
+          href="https://github.com/MIU-MA/resume-grill-agent"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="rg-btn"
+        >
+          <svg class="px-icon" width="13" height="13"><use href="#px-github" /></svg>
+          <span>GitHub</span>
+        </a>
+        <a
+          href="https://github.com/MIU-MA/resume-grill-agent/releases/latest"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="rg-btn rg-btn-primary header-dl-btn"
+        >
+          <svg class="px-icon" width="13" height="13"><use href="#px-download" /></svg>
+          <span>下载插件</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- 首屏：聚焦 DSH 像素风求职工作台 -->
+    <section class="hero">
+      <div class="container hero-layout">
+        <div class="hero-intro">
+          <div class="eyebrow-tag">
+            <span class="px-square"></span>
+            <span>DeepSeek Harness (DSH) 求职插件 · MIT 开源</span>
+          </div>
+
+          <h1>在工作台里找岗位、按 JD 改简历、稳妥管理每一次投递。</h1>
+
+          <p class="hero-desc">
+            <strong>Resume Grill</strong> 把分散在本地文件夹、招聘网站和邮箱草稿里的求职流程收进同一个本机工作台。支持管理多版本简历、读取公司招聘官网、连接本机浏览器筛选 BOSS 岗位、对照 JD 逐条核对改写、生成邮箱预览与官网申请表代填——<strong>所有简历和投递记录保存在本机 SQLite，每一次外发都由你本人确认。</strong>
+          </p>
+
+          <div class="hero-cta-row">
+            <a
+              href="https://github.com/MIU-MA/resume-grill-agent/releases/latest"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="rg-btn rg-btn-primary rg-btn-lg"
+            >
+              <svg class="px-icon" width="14" height="14"><use href="#px-download" /></svg>
+              <span>下载最新安装包 (.tgz)</span>
+            </a>
+            <a href="#install" class="rg-btn rg-btn-lg">
+              <span>查看 DSH 安装说明</span>
+            </a>
+            <a
+              href="https://github.com/MIU-MA/resume-grill-agent"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="rg-btn rg-btn-subtle rg-btn-lg"
+            >
+              <svg class="px-icon" width="14" height="14"><use href="#px-github" /></svg>
+              <span>源码仓库</span>
+            </a>
+          </div>
+
+          <div class="tech-badges" aria-label="运行环境与技术栈">
+            <span class="px-badge">Node.js 24+</span>
+            <span class="px-badge">React 19</span>
+            <span class="px-badge">TypeScript 6</span>
+            <span class="px-badge">SQLite 本地存储</span>
+            <span class="px-badge">MCP SDK 1.32</span>
+            <span class="px-badge">Playwright 1.65</span>
+            <a href="https://linux.do/" target="_blank" rel="noopener noreferrer" class="px-badge px-badge-link">
+              LINUX DO 社区 ↗
+            </a>
+          </div>
+        </div>
+
+        <!-- 右侧：真实还原插件像素风工作台微缩看板 -->
+        <div class="workbench-preview-card" aria-label="Resume Grill 工作台界面微缩示意">
+          <div class="wb-chrome-head">
+            <div class="wb-title-left">
+              <img src="assets/ds-chan.webp" width="24" height="24" alt="" class="pixel-img wb-mini-avatar" />
+              <strong>Resume Grill</strong>
+            </div>
+            <span class="wb-local-chip">
+              <svg class="px-icon" width="11" height="11"><use href="#px-shield" /></svg>
+              本机存储
+            </span>
+          </div>
+
+          <!-- 还原工作台顶部分页条 -->
+          <div class="wb-mock-nav" aria-hidden="true">
+            <span class="active">
+              <svg class="px-icon" width="11" height="11"><use href="#px-overview" /></svg>总览
+            </span>
+            <span>
+              <svg class="px-icon" width="11" height="11"><use href="#px-resumes" /></svg>简历库
+            </span>
+            <span>
+              <svg class="px-icon" width="11" height="11"><use href="#px-jobs" /></svg>招聘官网
+            </span>
+            <span>
+              <svg class="px-icon" width="11" height="11"><use href="#px-boss" /></svg>BOSS 投递
+            </span>
+            <span>
+              <svg class="px-icon" width="11" height="11"><use href="#px-pending" /></svg>待确认
+            </span>
+            <span>
+              <svg class="px-icon" width="11" height="11"><use href="#px-history" /></svg>投递记录
+            </span>
+          </div>
+
+          <!-- 标志性深蓝像素网格横幅 + 像素 DS 娘立绘（复刻 WorkspaceOverview） -->
+          <div class="wb-banner">
+            <div class="wb-banner-text">
+              <span class="wb-banner-kicker">DSH WORKBENCH</span>
+              <h2>求职总览</h2>
+              <p>左侧工作台与底部「求职快开」双入口同步，对话回答下方直接生成核对卡片。</p>
+            </div>
+            <div class="wb-portrait-stage">
+              <img
+                src="assets/ds-chan.webp"
+                width="176"
+                height="176"
+                alt="Resume Grill 的像素风 DS 娘立绘"
+                class="pixel-img wb-ds-sprite"
+              />
+            </div>
+          </div>
+
+          <!-- 还原工作台五格数字统计条 -->
+          <div class="wb-counts" aria-hidden="true">
+            <div class="wb-count-item">
+              <div class="wb-count-top">
+                <strong>5</strong>
+                <span class="px-tile"><svg class="px-icon" width="12" height="12"><use href="#px-resumes" /></svg></span>
+              </div>
+              <span>简历版本</span>
+            </div>
+            <div class="wb-count-item">
+              <div class="wb-count-top">
+                <strong>12</strong>
+                <span class="px-tile"><svg class="px-icon" width="12" height="12"><use href="#px-jobs" /></svg></span>
+              </div>
+              <span>已保存岗位</span>
+            </div>
+            <div class="wb-count-item">
+              <div class="wb-count-top">
+                <strong>2</strong>
+                <span class="px-tile"><svg class="px-icon" width="12" height="12"><use href="#px-pending" /></svg></span>
+              </div>
+              <span>待确认邮件</span>
+            </div>
+            <div class="wb-count-item">
+              <div class="wb-count-top">
+                <strong>8</strong>
+                <span class="px-tile"><svg class="px-icon" width="12" height="12"><use href="#px-history" /></svg></span>
+              </div>
+              <span>已发送</span>
+            </div>
+            <div class="wb-count-item">
+              <div class="wb-count-top">
+                <strong>6</strong>
+                <span class="px-tile"><svg class="px-icon" width="12" height="12"><use href="#px-boss" /></svg></span>
+              </div>
+              <span>BOSS 已核验</span>
+            </div>
+          </div>
+
+          <!-- 微缩工作流状态条目 -->
+          <div class="wb-mini-rows">
+            <div class="wb-mini-row">
+              <div>
+                <strong>▪ Go 开发 - 岗位版.pdf</strong>
+                <span>按目标 JD 采纳修改并另存单栏 PDF，原始简历保留不变</span>
+              </div>
+              <span class="status-pill" data-tone="info">派生版本</span>
+            </div>
+            <div class="wb-mini-row">
+              <div>
+                <strong>▪ 应聘后端开发 · 邮件与附件已核对</strong>
+                <span>绑定当前预览摘要，等待你在卡片中手动确认发送</span>
+              </div>
+              <span class="status-pill" data-tone="warn">待人工确认</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 六大核心工作台入口 -->
+    <section id="workbench" class="section section-tinted">
+      <div class="container">
+        <div class="section-head">
+          <p class="section-kicker">WORKBENCH MODULES</p>
+          <h2>六个工作台入口，覆盖从整理解历到跟进回执</h2>
+          <p class="section-sub">
+            默认启用完整工作台能力；也可在 DSH 设置或 Profile 配置中按需停用 <code>boss</code>、<code>mail</code>、<code>website</code> 模块，已存求职资料始终保留。
+          </p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature-card">
+            <div class="feature-head">
+              <span class="px-tile px-tile-lg"><svg class="px-icon" width="16" height="16"><use href="#px-resumes" /></svg></span>
+              <h3>简历库</h3>
+            </div>
+            <p>
+              支持拖拽导入 PDF、DOCX、TXT、Markdown 或粘贴文字新建，查看原文件、搜索摘要、编辑另存派生副本并保留版本来源关系。删除移入回收站可撤销恢复，不会误删派生版本与已投递附件。
+            </p>
+            <ul class="feature-points">
+              <li>未改正文时直接沿用原 PDF；改写后生成可选中文字的单栏岗位 PDF</li>
+              <li>自动识别原 PDF 首页上方独立证件照并带入新版本；扫描件支持本机 Tesseract OCR</li>
+            </ul>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-head">
+              <span class="px-tile px-tile-lg"><svg class="px-icon" width="16" height="16"><use href="#px-jobs" /></svg></span>
+              <h3>招聘官网</h3>
+            </div>
+            <p>
+              新建或打开求职目标，实时读取公司官网静态页、动态页面及公开招聘接口，记录读取时间与失败原因。点击具体职位拉取当前 JD 并匹配简历，也可直接打开官网手动申请。
+            </p>
+            <ul class="feature-points">
+              <li>每次 JD 更新生成独立上下文，旧修改建议不会误套到新 JD</li>
+              <li>仅访问公开 HTTPS 页面并限制请求边界，绝不捏造 JD 或招聘邮箱</li>
+            </ul>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-head">
+              <span class="px-tile px-tile-lg"><svg class="px-icon" width="16" height="16"><use href="#px-boss" /></svg></span>
+              <div class="feature-title-group">
+                <h3>BOSS 投递</h3>
+                <span class="inline-note-tag">含实验功能</span>
+              </div>
+            </div>
+            <p>
+              通过内置本机执行器连接已安装的 ego、Edge 或 Chrome，按所选简历和招聘类型（实习、校招、全职）从当前页最多核对 10 份完整 JD，对照检查届别、学历、工作年限、到岗时间与城市。
+            </p>
+            <ul class="feature-points">
+              <li>核对前可增减岗位、单岗切换简历、上下调整发送顺序或归档批次</li>
+              <li>自动发招呼与简历图片属于实验功能，遇登录或安全验证会立即暂停交由你处理</li>
+            </ul>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-head">
+              <span class="px-tile px-tile-lg"><svg class="px-icon" width="16" height="16"><use href="#px-pending" /></svg></span>
+              <h3>邮箱投递</h3>
+            </div>
+            <p>
+              选好简历、填写收件邮箱即可生成投递预览，支持修改收件人、主题与正文，也可按求职目标批量准备邮件草稿。内置 QQ、163、126 邮箱配置，企业邮箱支持自定义 TLS / STARTTLS。
+            </p>
+            <ul class="feature-points">
+              <li>SMTP 授权码保存到 DSH 凭据服务，不进入聊天参数或插件数据库</li>
+              <li>开启真实发送开关后，仍需核对实际附件并手动输入确认才能发出</li>
+            </ul>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-head">
+              <span class="px-tile px-tile-lg"><svg class="px-icon" width="16" height="16"><use href="#px-form" /></svg></span>
+              <h3>官网代填</h3>
+            </div>
+            <p>
+              将简历解析并确认为可复用的教育、工作、项目、竞赛与校园经历资料。从岗位卡片打开专用 Edge 或 Chrome 窗口，自动填写能识别的标准申请表、附上所选简历并执行字段回读核对。
+            </p>
+            <ul class="feature-points">
+              <li>跳转第三方 ATS 申请页时清晰提示目标域名，确认后再继续填写</li>
+              <li>账号登录、验证码与最终点击提交全程留给用户在官网完成</li>
+            </ul>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-head">
+              <span class="px-tile px-tile-lg"><svg class="px-icon" width="16" height="16"><use href="#px-history" /></svg></span>
+              <h3>投递记录</h3>
+            </div>
+            <p>
+              在同一张列表汇总查看 BOSS 投递回执、招聘官网提交记录与 SMTP 邮件状态。可随时登记「等回复、已约面、已结束」及面试备注，并用「到期跟进」筛出今天与逾期的待办事项。
+            </p>
+            <ul class="feature-points">
+              <li>同一 DSH 会话切回分页自动恢复上次浏览的详情、搜索词与筛选条件</li>
+              <li>支持左侧完整工作台与右侧「求职快开」侧栏协同查阅</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 工作台真实界面展示 -->
+    <section id="screens" class="section">
+      <div class="container">
+        <div class="section-head">
+          <p class="section-kicker">WORKBENCH INTERFACE</p>
+          <h2>真实工作台界面预览</h2>
+          <p class="section-sub">
+            原生接入 DSH 界面插槽与主题体系，无需跳出工作区即可完成岗位读取、简历逐条核对与批次管理。点击下方截图可放大查看细节。
+          </p>
+        </div>
+
+        <div class="showcase-box">
+          <div class="showcase-bar">
+            <div class="showcase-tabs" role="tablist" aria-label="工作台界面切换">
+              <button
+                type="button"
+                class="sc-tab active"
+                role="tab"
+                aria-selected="true"
+                data-shot="assets/screenshots/dsh-overview.png"
+                data-title="求职总览工作台"
+                data-desc="从 DSH 左侧导航进入 Resume Grill：集中查看简历数量、已保存岗位、待确认邮件与 BOSS 已核验记录，快速继续编辑最近简历或核对待发邮件。"
+              >
+                <svg class="px-icon" width="12" height="12"><use href="#px-overview" /></svg>
+                <span>求职总览</span>
+              </button>
+              <button
+                type="button"
+                class="sc-tab"
+                role="tab"
+                aria-selected="false"
+                data-shot="assets/screenshots/dsh-job-review.png"
+                data-title="按岗位 JD 核对与修改简历"
+                data-desc="左右对照岗位要求与当前简历正文，下方逐条展示原文与修改建议对比；仅应用勾选的修改另存为岗位版 PDF，并可直接衔接邮件准备或官网代填。"
+              >
+                <svg class="px-icon" width="12" height="12"><use href="#px-resumes" /></svg>
+                <span>按岗位改简历</span>
+              </button>
+              <button
+                type="button"
+                class="sc-tab"
+                role="tab"
+                aria-selected="false"
+                data-shot="assets/screenshots/dsh-boss.png"
+                data-title="BOSS 岗位列表与待投任务"
+                data-desc="选定简历检索筛选岗位列表，清晰标记已加入状态；在投递任务中核对实际将发出的图片附件、调整顺序或归档暂不处理的批次（截图使用演示数据）。"
+              >
+                <svg class="px-icon" width="12" height="12"><use href="#px-boss" /></svg>
+                <span>BOSS 投递工作台</span>
+              </button>
+            </div>
+            <span class="zoom-tip">点击截图放大查看 ⤢</span>
+          </div>
+
+          <figure class="showcase-figure">
+            <button type="button" id="zoom-shot-btn" class="shot-button" aria-label="放大查看当前工作台截图">
+              <img
+                id="showcase-img"
+                src="assets/screenshots/dsh-overview.png"
+                alt="求职总览工作台"
+              />
+            </button>
+            <figcaption class="showcase-caption">
+              <strong id="showcase-title">求职总览工作台</strong>
+              <p id="showcase-desc">
+                从 DSH 左侧导航进入 Resume Grill：集中查看简历数量、已保存岗位、待确认邮件与 BOSS 已核验记录，快速继续编辑最近简历或核对待发邮件。
+              </p>
+            </figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- 四步求职工作流 -->
+    <section id="workflow" class="section section-tinted">
+      <div class="container">
+        <div class="section-head">
+          <p class="section-kicker">WORKFLOW</p>
+          <h2>清晰可控的四步求职闭环</h2>
+          <p class="section-sub">
+            把重复搜集与格式整理的体力活交给工具，把简历措辞取舍与最终投递决定留给自己。
+          </p>
+        </div>
+
+        <ol class="workflow-grid">
+          <li class="workflow-step">
+            <span class="step-index">01</span>
+            <h3>导入主简历与拆解资料</h3>
+            <p>上传 PDF / DOCX / Markdown 简历，保留原件的同时，按需拆解为可复用的教育、工作与项目经历结构。</p>
+          </li>
+          <li class="workflow-step">
+            <span class="step-index">02</span>
+            <h3>拉取官网与 BOSS 岗位</h3>
+            <p>按求职方向读取公司招聘官网实时 JD，或通过本机浏览器读取并核查 BOSS 岗位条件与筛选依据。</p>
+          </li>
+          <li class="workflow-step">
+            <span class="step-index">03</span>
+            <h3>勾选修改并冻结附件预览</h3>
+            <p>逐条勾选要采纳的简历改写建议或手动润色正文，另存岗位版 PDF，生成待核对的邮件草稿、BOSS 批次或代填表单。</p>
+          </li>
+          <li class="workflow-step">
+            <span class="step-index">04</span>
+            <h3>人工确认外发与定期跟进</h3>
+            <p>核对收件人、正文与实际附件无误后手动确认发送；所有渠道记录自动归集到「投递记录」，按跟进日期提醒复盘。</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- 本地存储与安全边界 -->
+    <section id="security" class="section">
+      <div class="container">
+        <div class="section-head">
+          <p class="section-kicker">LOCAL-FIRST &amp; HUMAN CONFIRMATION</p>
+          <h2>本机隐私与人工确认机制</h2>
+          <p class="section-sub">
+            求职资料高度敏感，投递动作不可撤回。Resume Grill 在架构层面严格隔离了模型工具权限与人类确认通道。
+          </p>
+        </div>
+
+        <div class="security-grid">
+          <article class="security-card">
+            <div class="sec-icon-row">
+              <span class="px-tile"><svg class="px-icon" width="14" height="14"><use href="#px-shield" /></svg></span>
+              <h3>资料仅保存在本机</h3>
+            </div>
+            <p>
+              简历文件、派生版本、SQLite 数据库与投递回执默认存储在 <code>DSH_HOME/storages/resume-grill</code>（CLI / MCP 模式为 <code>.resume-agent</code>），也可通过 <code>RESUME_AGENT_HOME</code> 指定本机目录，不上传第三方云端。
+            </p>
+          </article>
+
+          <article class="security-card">
+            <div class="sec-icon-row">
+              <span class="px-tile"><svg class="px-icon" width="14" height="14"><use href="#px-lock" /></svg></span>
+              <h3>AI 无直接发信确认权限</h3>
+            </div>
+            <p>
+              审批确认绝不暴露为 MCP 或对话模型工具。模型只能执行读取、准备草稿、查询与暂停；真实发送必须经由原生卡片的人类专属通道、CLI 交互式 <code>approve</code> 或本机认证面板完成。
+            </p>
+          </article>
+
+          <article class="security-card">
+            <div class="sec-icon-row">
+              <span class="px-tile"><svg class="px-icon" width="14" height="14"><use href="#px-resumes" /></svg></span>
+              <h3>内容摘要与哈希严格绑定</h3>
+            </div>
+            <p>
+              邮件确认绑定不可变预览摘要；BOSS 批次为每个岗位独立冻结 JD、简历版本、PDF 哈希与图片哈希。一旦修改邮件、更换简历或调整顺序，旧确认立即作废，不会沿用历史授权。
+            </p>
+          </article>
+
+          <article class="security-card">
+            <div class="sec-icon-row">
+              <span class="px-tile"><svg class="px-icon" width="14" height="14"><use href="#px-refresh" /></svg></span>
+              <h3>凭据隔离与异常停机保护</h3>
+            </div>
+            <p>
+              原生 SMTP 授权码存入 DSH 凭据服务，BOSS 连接码仅驻留内存。投递前先持久化执行意图；遇到断连、超时或回执不明时立即停止后续队列并标为待核对，重启宿主也不会自动重发。
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 安装说明与 MCP 接口 -->
+    <section id="install" class="section section-tinted">
+      <div class="container">
+        <div class="section-head">
+          <p class="section-kicker">INSTALLATION &amp; MCP</p>
+          <h2>安装到 DSH 工作台，或作为标准 MCP 服务接入</h2>
+          <p class="section-sub">
+            普通用户可直接下载预构建 <code>.tgz</code> 插件包通过 DSH 官方安装器启用，无需在本机克隆仓库编译。
+          </p>
+        </div>
+
+        <div class="install-panel">
+          <div class="install-tabs" role="tablist" aria-label="安装与配置方式">
+            <button type="button" class="inst-tab active" role="tab" aria-selected="true" data-pane="dsh">
+              DSH 插件安装（推荐）
+            </button>
+            <button type="button" class="inst-tab" role="tab" aria-selected="false" data-pane="ai">
+              让 AI 助手安装
+            </button>
+            <button type="button" class="inst-tab" role="tab" aria-selected="false" data-pane="mcp">
+              MCP 接口与可选面板
+            </button>
+            <button type="button" class="inst-tab" role="tab" aria-selected="false" data-pane="config">
+              模块开关与源码打包
+            </button>
+          </div>
+
+          <!-- 面板 1：DSH 官方安装器 -->
+          <div class="inst-body active" id="pane-dsh">
+            <ol class="step-list">
+              <li>
+                前往 <a href="https://github.com/MIU-MA/resume-grill-agent/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Releases</a> 下载最新的 <code>resume-grill-agent-*.tgz</code>。
+              </li>
+              <li>
+                打开 DSH <strong>插件 → 添加插件 → 安装第三方插件</strong>，填写下载文件的<strong>绝对路径</strong>，启用「Resume Grill」。
+              </li>
+              <li>
+                从 DSH 左侧栏打开 <strong>Resume Grill</strong>（或使用底部「求职快开」快捷入口）。
+              </li>
+            </ol>
+
+            <div class="code-block">
+              <div class="code-head">
+                <span>使用 DSH CLI 安装（Web 版将 desktop 替换为 web）</span>
+                <button type="button" class="rg-btn rg-btn-sm copy-trigger" data-target="cmd-dsh">
+                  <svg class="px-icon" width="12" height="12"><use href="#px-copy" /></svg>
+                  <span>复制</span>
+                </button>
+              </div>
+              <pre id="cmd-dsh"><code>dsh plugin --profile desktop add 'C:/Downloads/resume-grill-agent-0.4.5.tgz'</code></pre>
+            </div>
+            <p class="panel-footnote">
+              升级新版时通过同一入口安装新 <code>.tgz</code>，完全退出 DSH（包含系统托盘菜单中的「退出」）后重新打开即可生效。
+            </p>
+          </div>
+
+          <!-- 面板 2：让 AI 安装 -->
+          <div class="inst-body" id="pane-ai" hidden>
+            <p class="panel-intro">
+              将以下提示词复制给具备本机终端执行权限的 AI 助手，即可自动下载并安装到你的 DSH 桌面版：
+            </p>
+            <div class="code-block">
+              <div class="code-head">
+                <span>AI 安装提示词</span>
+                <button type="button" class="rg-btn rg-btn-primary rg-btn-sm copy-trigger" data-target="cmd-ai">
+                  <svg class="px-icon" width="12" height="12"><use href="#px-copy" /></svg>
+                  <span>复制提示词</span>
+                </button>
+              </div>
+              <pre id="cmd-ai"><code>请把 Resume Grill 安装到我本机的 DSH 桌面版。
+源码仓库 https://github.com/MIU-MA/resume-grill-agent
+
+1. 用我提供的 .tgz，或从 https://github.com/MIU-MA/resume-grill-agent/releases/latest
+   下载 resume-grill-agent-*.tgz 安装包。
+2. 使用实际 .tgz 路径运行 dsh plugin --profile desktop add "&lt;.tgz 绝对路径&gt;"。
+   dsh 不在 PATH 时查找桌面版自带的 CLI。若无法调用 CLI，把包的绝对路径给我，
+   我会粘贴到 DSH 的「安装第三方插件」。
+3. 告诉我安装结果。若 DSH 已在运行，请提醒我完全退出并重新打开，
+   然后从左侧打开 Resume Grill。做到安装这一步就可以了。</code></pre>
+            </div>
+          </div>
+
+          <!-- 面板 3：MCP 接口与本机面板 -->
+          <div class="inst-body" id="pane-mcp" hidden>
+            <p class="panel-intro">
+              DSH 原生插件之外，其他支持 MCP 的宿主也可直接接入同一套后端服务（同一 DSH Profile 请勿同时挂载原生插件与 MCP 以避免重复工具）：
+            </p>
+            <div class="code-block">
+              <div class="code-head">
+                <span>MCP Server 配置示例</span>
+                <button type="button" class="rg-btn rg-btn-sm copy-trigger" data-target="cmd-mcp">
+                  <svg class="px-icon" width="12" height="12"><use href="#px-copy" /></svg>
+                  <span>复制 JSON</span>
+                </button>
+              </div>
+              <pre id="cmd-mcp"><code>{
+  "mcpServers": {
+    "resume-grill": {
+      "command": "node",
+      "args": ["C:/path/resume-grill-agent/dist/adapters/cli/main.js", "serve"],
+      "env": { "RESUME_AGENT_HOME": "C:/path/private-resume-data" }
+    }
+  }
+}</code></pre>
+            </div>
+
+            <div class="code-block">
+              <div class="code-head">
+                <span>启动可选本机 React 面板（默认 127.0.0.1:4319）与 CLI 人工发信确认</span>
+                <button type="button" class="rg-btn rg-btn-sm copy-trigger" data-target="cmd-panel">
+                  <svg class="px-icon" width="12" height="12"><use href="#px-copy" /></svg>
+                  <span>复制命令</span>
+                </button>
+              </div>
+              <pre id="cmd-panel"><code>npm run panel
+node dist/adapters/cli/main.js approve &lt;applicationId&gt; &lt;digest&gt;</code></pre>
+            </div>
+          </div>
+
+          <!-- 面板 4：模块配置与源码打包 -->
+          <div class="inst-body" id="pane-config" hidden>
+            <div class="code-block">
+              <div class="code-head">
+                <span>按需停用可选模块（cordis.patch.yml，也可在 DSH 设置中勾选）</span>
+                <button type="button" class="rg-btn rg-btn-sm copy-trigger" data-target="cmd-yaml">
+                  <svg class="px-icon" width="12" height="12"><use href="#px-copy" /></svg>
+                  <span>复制配置</span>
+                </button>
+              </div>
+              <pre id="cmd-yaml"><code>- id: resume-grill
+  config:
+    disabledCapabilities: [mail, website]</code></pre>
+            </div>
+
+            <div class="code-block">
+              <div class="code-head">
+                <span>从源码检查、测试与生成安装包（Node.js 24+，产物位于 artifacts/）</span>
+                <button type="button" class="rg-btn rg-btn-sm copy-trigger" data-target="cmd-build">
+                  <svg class="px-icon" width="12" height="12"><use href="#px-copy" /></svg>
+                  <span>复制命令</span>
+                </button>
+              </div>
+              <pre id="cmd-build"><code>npm ci
+npm run check
+npm test
+npm run package:plugin</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 底部横幅 -->
+    <section class="bottom-cta">
+      <div class="container">
+        <div class="cta-banner">
+          <div class="cta-banner-copy">
+            <h2>开始用 Resume Grill 整理你的下一轮投递</h2>
+            <p>开源免费（MIT License） · 简历与投递记录留在本地 · 原生适配 DSH 工作台。</p>
+          </div>
+          <div class="cta-banner-actions">
+            <a
+              href="https://github.com/MIU-MA/resume-grill-agent/releases/latest"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="rg-btn rg-btn-banner-primary rg-btn-lg"
+            >
+              <svg class="px-icon" width="14" height="14"><use href="#px-download" /></svg>
+              <span>下载最新 Release</span>
+            </a>
+            <a
+              href="https://github.com/MIU-MA/resume-grill-agent"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="rg-btn rg-btn-banner-outline rg-btn-lg"
+            >
+              <span>访问 GitHub 仓库</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 页脚 -->
+  <footer class="site-footer">
+    <div class="container footer-cols">
+      <div class="footer-about">
+        <div class="footer-brand">
+          <img src="assets/ds-chan.webp" width="36" height="36" alt="像素 DS 娘" class="pixel-img brand-portrait" />
+          <div>
+            <strong>Resume Grill</strong>
+            <span>v0.4.5 · MIT License</span>
+          </div>
+        </div>
+        <p>在 DSH 工作台里找岗位、按 JD 修改简历、准备投递，简历和记录保存在本机。</p>
+      </div>
+
+      <div class="footer-nav">
+        <h4>使用文档</h4>
+        <ul>
+          <li><a href="https://github.com/MIU-MA/resume-grill-agent/blob/main/docs/dsh.md" target="_blank" rel="noopener noreferrer">DSH 安装与使用说明</a></li>
+          <li><a href="https://github.com/MIU-MA/resume-grill-agent/blob/main/docs/boss.md" target="_blank" rel="noopener noreferrer">BOSS 本机执行器说明</a></li>
+          <li><a href="https://github.com/MIU-MA/resume-grill-agent/blob/main/docs/browser-forms.md" target="_blank" rel="noopener noreferrer">招聘官网代填说明</a></li>
+          <li><a href="https://github.com/MIU-MA/resume-grill-agent/blob/main/docs/mcp.md" target="_blank" rel="noopener noreferrer">MCP 与可选面板说明</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-nav">
+        <h4>项目链接</h4>
+        <ul>
+          <li><a href="https://github.com/MIU-MA/resume-grill-agent" target="_blank" rel="noopener noreferrer">GitHub 仓库</a></li>
+          <li><a href="https://github.com/MIU-MA/resume-grill-agent/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Releases</a></li>
+          <li><a href="https://github.com/MIU-MA/resume-grill-agent/blob/main/docs/development.md" target="_blank" rel="noopener noreferrer">开发约定</a></li>
+          <li><a href="https://github.com/MIU-MA/resume-grill-agent/blob/main/THIRD_PARTY.md" target="_blank" rel="noopener noreferrer">来源与许可声明</a></li>
+          <li><a href="https://linux.do/" target="_blank" rel="noopener noreferrer">LINUX DO 社区</a></li>
+        </ul>
+      </div>
+    </div>
+  </footer>
+
+  <!-- 截图放大预览弹层 -->
+  <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="工作台截图大图">
+    <div class="lightbox-mask" id="lightbox-mask"></div>
+    <div class="lightbox-dialog">
+      <div class="lightbox-head">
+        <span id="lightbox-title">工作台界面预览</span>
+        <button type="button" id="lightbox-close" class="rg-btn rg-btn-sm">关闭 [ESC]</button>
+      </div>
+      <img id="lightbox-img" src="assets/screenshots/dsh-overview.png" alt="放大的工作台截图" />
+    </div>
+  </div>
+
+  <!-- 复制提示 -->
+  <div id="copy-toast" class="copy-toast" role="status" aria-live="polite" hidden>
+    已复制到剪贴板
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
